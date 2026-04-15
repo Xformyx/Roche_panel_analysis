@@ -1,0 +1,175 @@
+# ============================================================
+# Roche_nxt ctDNA Analysis Pipeline - All-in-One Image
+# Based on Roche/Dockerfile, adapted for Nextflow
+# Image: roche_nxt_analysis:latest
+# ============================================================
+
+ARG UBUNTU_IMAGE=ubuntu:20.04
+FROM ${UBUNTU_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV TZ=Asia/Seoul
+
+# 0) Base system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    wget curl git ca-certificates gnupg \
+    build-essential zlib1g-dev libbz2-dev liblzma-dev libncurses5-dev \
+    libcurl4-openssl-dev libssl-dev autoconf automake pkg-config unzip bzip2 \
+    libxml2-dev libcairo2-dev libpango1.0-dev libharfbuzz-dev libfribidi-dev \
+    fastp fastqc default-jre default-jdk perl \
+    python3.8 python3-pip \
+    tzdata \
+ && ln -fs /usr/share/zoneinfo/Asia/Seoul /etc/localtime \
+ && dpkg-reconfigure --frontend noninteractive tzdata \
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -sf /usr/bin/python3 /usr/bin/python
+
+# 1) R (4.x from CRAN)
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
+      | gpg --dearmor -o /etc/apt/keyrings/cran-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/cran-archive-keyring.gpg] https://cloud.r-project.org/bin/linux/ubuntu focal-cran40/" \
+      > /etc/apt/sources.list.d/cran-r.list && \
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      r-base r-base-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN R -q -e "stopifnot(getRversion() >= '4.3.0'); cat('R version OK:', R.version.string, '\n')"
+
+# 2) BWA
+RUN cd /tmp && \
+    wget https://github.com/lh3/bwa/archive/refs/tags/v0.7.18.tar.gz && \
+    tar xzf v0.7.18.tar.gz && \
+    cd bwa-0.7.18 && make && cp bwa /usr/local/bin/ && \
+    cd /tmp && rm -rf bwa-0.7.18 v0.7.18.tar.gz
+
+# samtools
+RUN cd /tmp && \
+    wget https://github.com/samtools/samtools/releases/download/1.21/samtools-1.21.tar.bz2 && \
+    tar xjf samtools-1.21.tar.bz2 && \
+    cd samtools-1.21 && ./configure --prefix=/usr/local && make && make install && \
+    cd /tmp && rm -rf samtools-1.21 samtools-1.21.tar.bz2
+
+# bedtools
+RUN cd /tmp && \
+    wget https://github.com/arq5x/bedtools2/releases/download/v2.31.1/bedtools-2.31.1.tar.gz && \
+    tar xzf bedtools-2.31.1.tar.gz && \
+    cd bedtools2 && make && cp bin/* /usr/local/bin/ && \
+    cd /tmp && rm -rf bedtools2 bedtools-2.31.1.tar.gz
+
+# 3) Java-based tools
+# GATK
+RUN mkdir -p /tools/gatk && cd /tools/gatk && \
+    wget https://github.com/broadinstitute/gatk/releases/download/4.2.6.1/gatk-4.2.6.1.zip && \
+    unzip gatk-4.2.6.1.zip && rm gatk-4.2.6.1.zip && \
+    ln -s /tools/gatk/gatk-4.2.6.1/gatk /usr/local/bin/gatk
+
+# fgbio
+RUN mkdir -p /tools/fgbio && cd /tools/fgbio && \
+    wget https://github.com/fulcrumgenomics/fgbio/releases/download/2.2.1/fgbio-2.2.1.jar
+
+# seqtk
+RUN cd /tmp && \
+    wget https://github.com/lh3/seqtk/archive/refs/tags/v1.4.tar.gz && \
+    tar xzf v1.4.tar.gz && cd seqtk-1.4 && make && \
+    cp seqtk /usr/local/bin/ && \
+    cd /tmp && rm -rf seqtk-1.4 v1.4.tar.gz
+
+# VarDict
+RUN mkdir -p /tools/vardict && cd /tools/vardict && \
+    wget https://github.com/AstraZeneca-NGS/VarDictJava/releases/download/v1.8.3/VarDict-1.8.3.tar && \
+    tar xf VarDict-1.8.3.tar && rm VarDict-1.8.3.tar
+
+# SnpEff + SnpSift
+RUN mkdir -p /tools/snpsift && cd /tools/snpsift && \
+    wget https://sourceforge.net/projects/snpeff/files/snpEff_latest_core.zip && \
+    unzip snpEff_latest_core.zip && rm snpEff_latest_core.zip
+
+# 4) Python requirements
+RUN pip3 install --no-cache-dir multiqc
+
+# 5) R packages (CRAN + Bioc 3.21 + ctDNAtools)
+ENV R_REPOS=https://cran.r-project.org
+RUN R -e "options(repos=c(CRAN='${R_REPOS}'), Ncpus=4L); invisible(TRUE)"
+
+RUN R -e "install.packages(c( \
+    'magrittr','dplyr','tidyr','purrr','assertthat','rlang','furrr','ellipsis','optparse', \
+    'data.table','ggplot2','remotes' \
+  ), repos='${R_REPOS}', Ncpus=4L)"
+
+RUN R -e "install.packages('BiocManager', repos='${R_REPOS}')" && \
+    R -e "BiocManager::install(version='3.21', ask=FALSE, update=FALSE)"
+
+RUN R -e "BiocManager::install(c( \
+      'BSgenome', 'BSgenome.Hsapiens.UCSC.hg19', 'BSgenome.Hsapiens.UCSC.hg38', \
+      'Rsamtools', 'GenomicRanges', 'IRanges', 'GenomeInfoDb', 'BiocGenerics', \
+      'GenomicAlignments', 'Biostrings', 'VariantAnnotation', 'GenomeInfoDbData', \
+      'Rhtslib', 'SummarizedExperiment' \
+    ), ask=FALSE, update=FALSE, Ncpus=4L)"
+
+RUN echo "=== Installing ctDNAtools from GitHub ===" && \
+    INSTALLED=0 && \
+    for URL in \
+      https://github.com/alkodsi/ctDNAtools/archive/refs/tags/0.4.1.tar.gz \
+      https://github.com/alkodsi/ctDNAtools/archive/refs/tags/v0.4.1.tar.gz \
+      https://github.com/alkodsi/ctDNAtools/archive/refs/heads/master.tar.gz; do \
+      echo "Trying $URL" && \
+      if wget -q -O /tmp/ctDNAtools.tar.gz "$URL" 2>/dev/null; then \
+        if R CMD INSTALL /tmp/ctDNAtools.tar.gz 2>&1 | tee /tmp/install.log && grep -qE "(DONE|installed)" /tmp/install.log; then \
+          rm -f /tmp/ctDNAtools.tar.gz /tmp/install.log && \
+          INSTALLED=1 && break; \
+        fi; \
+        rm -f /tmp/ctDNAtools.tar.gz /tmp/install.log; \
+      fi; \
+    done && \
+    [ "$INSTALLED" -eq 1 ] || (echo "ERROR: Failed to install ctDNAtools" >&2 && exit 1) && \
+    R -e "library(ctDNAtools); cat('ctDNAtools version:', as.character(packageVersion('ctDNAtools')), '\n')"
+
+# 6) KAPA_NHL R scripts
+ARG KAPA_NHL_REF=main
+ENV KAPA_NHL_HOME=/tools/kapa_nhl
+
+RUN mkdir -p ${KAPA_NHL_HOME} && cd /tmp && \
+    wget -O kapa_nhl.tar.gz https://github.com/Roche-CSI/kapa_nhl/archive/refs/heads/${KAPA_NHL_REF}.tar.gz && \
+    tar -xzf kapa_nhl.tar.gz && \
+    cp -r kapa_nhl-${KAPA_NHL_REF}/* ${KAPA_NHL_HOME}/ && \
+    rm -rf kapa_nhl.tar.gz kapa_nhl-${KAPA_NHL_REF}
+
+RUN test -f "${KAPA_NHL_HOME}/R/create_bg_panel.R" && \
+    test -f "${KAPA_NHL_HOME}/R/create_blocklist.R" && \
+    test -f "${KAPA_NHL_HOME}/R/longitudinal_analysis.R" && \
+    test -f "${KAPA_NHL_HOME}/R/mismatch_rate.R" && \
+    test -f "${KAPA_NHL_HOME}/R/select_reporters.R"
+
+RUN printf '#!/bin/sh\nexec Rscript %s/R/create_bg_panel.R "$@"\n'       "${KAPA_NHL_HOME}" > /usr/local/bin/kapa-create-bg-panel       && \
+    printf '#!/bin/sh\nexec Rscript %s/R/create_blocklist.R "$@"\n'     "${KAPA_NHL_HOME}" > /usr/local/bin/kapa-create-blocklist     && \
+    printf '#!/bin/sh\nexec Rscript %s/R/longitudinal_analysis.R "$@"\n'"${KAPA_NHL_HOME}" > /usr/local/bin/kapa-longitudinal-analysis && \
+    printf '#!/bin/sh\nexec Rscript %s/R/mismatch_rate.R "$@"\n'        "${KAPA_NHL_HOME}" > /usr/local/bin/kapa-mismatch-rate        && \
+    printf '#!/bin/sh\nexec Rscript %s/R/select_reporters.R "$@"\n'     "${KAPA_NHL_HOME}" > /usr/local/bin/kapa-select-reporters     && \
+    chmod +x /usr/local/bin/kapa-*
+
+# 7) Java 17 (for Nextflow) + Nextflow
+RUN mkdir -p /opt/java && cd /opt/java && \
+    wget -q https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jre_x64_linux_hotspot_17.0.13_11.tar.gz && \
+    tar xzf OpenJDK17U-jre_x64_linux_hotspot_17.0.13_11.tar.gz && \
+    rm OpenJDK17U-jre_x64_linux_hotspot_17.0.13_11.tar.gz
+
+ENV NXF_JAVA_HOME=/opt/java/jdk-17.0.13+11-jre
+
+RUN curl -s https://get.nextflow.io | bash && \
+    mv nextflow /usr/local/bin/ && \
+    chmod +x /usr/local/bin/nextflow
+
+# 8) Environment variables for tool paths (used by Nextflow modules)
+ENV FGBIO_JAR=/tools/fgbio/fgbio-2.2.1.jar
+ENV VARDICT_HOME=/tools/vardict/VarDict-1.8.3
+ENV SNPEFF_JAR=/tools/snpsift/snpEff/snpEff.jar
+ENV SNPSIFT_JAR=/tools/snpsift/snpEff/SnpSift.jar
+ENV KAPA_NHL_R=${KAPA_NHL_HOME}/R
+
+# 9) Working directory
+RUN mkdir -p /work && chmod -R 777 /work
+WORKDIR /work
+CMD ["/bin/bash"]

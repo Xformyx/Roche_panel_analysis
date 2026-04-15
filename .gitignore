@@ -1,0 +1,39 @@
+# ===== Data & References (large, site-specific) =====
+data/
+fastq/
+
+# ===== Nextflow runtime =====
+.nextflow/
+.nextflow.log*
+work/
+results/
+
+# ===== Logs & Database =====
+log/
+
+# ===== Environment (contains site-specific paths) =====
+.env
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+
+# ===== Docker images (offline deploy artifacts) =====
+deploy/images/
+
+# ===== IDE / OS =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Nextflow binaries (downloadable) =====
+bin/nextflow
+bin/nextflow_v23

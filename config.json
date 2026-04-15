@@ -1,0 +1,76 @@
+{
+  "comment": "Roche_nxt KAPA ctDNA Analysis Pipeline - Configuration (compatible with Roche format)",
+  "version": "1.0",
+
+  "system": {
+    "total_cpu_cores": 40,
+    "total_memory_gb": 196,
+    "reserved_cores": 4,
+    "reserved_memory_gb": 16
+  },
+
+  "paths": {
+    "fastq_dir": "fastq",
+    "results_dir": "results",
+    "log_dir": "log",
+    "data_dir": "data"
+  },
+
+  "references": {
+    "default": "hg38",
+    "hg38": {
+      "genome": "data/refs/hg38/ucsc.hg38.fasta",
+      "dict": "data/refs/hg38/ucsc.hg38.dict",
+      "genome_file": "data/refs/hg38/genome_file.txt",
+      "bed_files": {
+        "default": "capture_targets",
+        "capture_targets": "data/bed/hg38/NHL_bed/KAPA_HyperCap_DS_NHL_Panel_capture_targets.bed",
+        "primary_targets": "data/bed/hg38/NHL_bed/KAPA_HyperCap_DS_NHL_Panel_primary_targets.bed",
+        "longitudinal_targets": "data/bed/hg38/NHL_bed/KAPA_HyperCap_DS_NHL_Panel_capture_targets_for_longitudinal.bed",
+        "custom_targets": "data/bed/hg38/SNUH_bed/coords.cons.bed"
+      }
+    },
+    "hg19": {
+      "genome": "data/refs/hg19/hg19.fa",
+      "dict": "data/refs/hg19/hg19.dict",
+      "genome_file": "data/refs/hg19/genome_file.txt",
+      "bed_files": {
+        "default": "capture_targets",
+        "capture_targets": "data/bed/hg19/NHL_bed/NHL_hg19_capture_targets.bed",
+        "primary_targets": "data/bed/hg19/NHL_bed/NHL_hg19_primary_targets.bed"
+      }
+    },
+    "dbsnp": "data/dbsnp/All_20180418.vcf"
+  },
+
+  "sample_analysis": {
+    "default_parameters": {
+      "af_threshold": 0.005,
+      "output_subdir": "0_005"
+    }
+  },
+
+  "select_report": {
+    "germline_cutoff": 0.0005,
+    "min_af": 0.005,
+    "max_af": 0.35,
+    "min_dp": 1000,
+    "min_vd": 15,
+    "min_mq": 55,
+    "min_qual": 45,
+    "min_sbf": 1e-05,
+    "max_nm": 4
+  },
+
+  "longitudinal_analysis": {
+    "reads_threshold": 1000,
+    "pvalue_threshold": 0.001,
+    "vaf_threshold": 0.1,
+    "n_sim": 10000
+  },
+
+  "docker": {
+    "analysis_image": "roche_nxt_analysis:latest",
+    "web_image": "roche_nxt_web:latest"
+  }
+}

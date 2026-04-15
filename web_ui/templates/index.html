@@ -1,0 +1,2752 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Roche Panel Analysis</title>
+<link rel="icon" type="image/png" href="/favicon.ico?v=2">
+<link rel="apple-touch-icon" href="/static/roche-logo.png?v=2">
+<style>
+/* ===== RESET & BASE ===== */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --primary:#2563EB;--primary-dark:#1D4ED8;--primary-light:#DBEAFE;
+  --bg:#F1F5F9;--card:#FFFFFF;--sidebar:#1E293B;--sidebar-hover:#334155;
+  --text:#1E293B;--text-light:#64748B;--text-muted:#94A3B8;
+  --border:#E2E8F0;--shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1);
+  --green:#10B981;--green-bg:#D1FAE5;--red:#EF4444;--red-bg:#FEE2E2;
+  --yellow:#F59E0B;--yellow-bg:#FEF3C7;--teal:#14B8A6;--teal-bg:#CCFBF1;
+  --blue:#3B82F6;--blue-bg:#DBEAFE;--gray:#6B7280;--gray-bg:#F3F4F6;
+  --slate:#94A3B8;
+  --radius:8px;--radius-lg:12px;
+  --font:'Apple SD Gothic Neo','Malgun Gothic',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'SF Mono','Cascadia Code','Fira Code','Consolas',monospace;
+}
+html{font-size:14px}
+body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow:hidden}
+a{color:var(--primary);text-decoration:none}
+button{font-family:var(--font);cursor:pointer;border:none;outline:none}
+input,select,textarea{font-family:var(--font);font-size:.9rem;border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;outline:none;transition:border .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+textarea{resize:vertical}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 14px;text-align:left}
+th{font-weight:600;color:var(--text-light);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid var(--border)}
+td{border-bottom:1px solid var(--border);font-size:.9rem}
+tbody tr:hover{background:#F8FAFC}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--text-muted);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-light)}
+
+/* ===== SIDEBAR ===== */
+.sidebar{width:240px;background:var(--sidebar);color:#fff;display:flex;flex-direction:column;flex-shrink:0;height:100vh;position:fixed;left:0;top:0;z-index:100}
+.sidebar-logo{padding:24px 20px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:12px}
+.sidebar-logo .logo-icon{width:40px;height:40px;background:transparent;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
+.sidebar-logo .logo-icon img{width:100%;height:100%;object-fit:contain;display:block}
+.sidebar-logo .logo-text{font-size:1rem;font-weight:700;line-height:1.3}
+.sidebar-logo .logo-sub{font-size:.7rem;color:var(--text-muted);font-weight:400}
+.sidebar-nav{flex:1;padding:16px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;color:var(--text-muted);transition:all .15s;cursor:pointer;border-left:3px solid transparent;font-size:.9rem}
+.nav-item:hover{background:var(--sidebar-hover);color:#fff}
+.nav-item.active{background:rgba(37,99,235,.15);color:#fff;border-left-color:var(--primary)}
+.nav-item svg{width:20px;height:20px;flex-shrink:0}
+.sidebar-footer{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:.75rem;color:var(--text-muted)}
+
+/* ===== MAIN ===== */
+.main{margin-left:240px;flex:1;display:flex;flex-direction:column;height:100vh}
+.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.breadcrumb{display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--text-light)}
+.breadcrumb .crumb-active{color:var(--text);font-weight:600}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-time{font-size:.8rem;color:var(--text-muted)}
+.content{flex:1;overflow-y:auto;padding:24px 28px}
+
+/* ===== PAGE VISIBILITY ===== */
+.page{display:none}
+.page.active{display:block}
+
+/* ===== STAT CARDS ===== */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:var(--card);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);cursor:pointer;transition:transform .15s,box-shadow .15s;border-left:4px solid transparent;position:relative;overflow:hidden}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.stat-card .stat-value{font-size:2rem;font-weight:700;line-height:1}
+.stat-card .stat-label{font-size:.85rem;color:var(--text-light);margin-top:6px}
+.stat-card .stat-icon{position:absolute;right:16px;top:16px;width:40px;height:40px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;opacity:.8}
+.stat-card .stat-icon svg{width:22px;height:22px}
+.stat-card.blue{border-left-color:var(--primary)}.stat-card.blue .stat-value{color:var(--primary)}.stat-card.blue .stat-icon{background:var(--primary-light);color:var(--primary)}
+.stat-card.green{border-left-color:var(--green)}.stat-card.green .stat-value{color:var(--green)}.stat-card.green .stat-icon{background:var(--green-bg);color:var(--green)}
+.stat-card.red{border-left-color:var(--red)}.stat-card.red .stat-value{color:var(--red)}.stat-card.red .stat-icon{background:var(--red-bg);color:var(--red)}
+.stat-card.teal{border-left-color:var(--teal)}.stat-card.teal .stat-value{color:var(--teal)}.stat-card.teal .stat-icon{background:var(--teal-bg);color:var(--teal)}
+
+/* ===== SECTIONS ===== */
+.section{background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow);margin-bottom:24px;overflow:hidden}
+.section-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.section-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.section-body{padding:20px}
+
+/* ===== RESOURCE MONITOR ===== */
+.resource-bars{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.resource-item{display:flex;flex-direction:column;gap:8px}
+.resource-label{display:flex;justify-content:space-between;align-items:center;font-size:.85rem;font-weight:600}
+.resource-label span:last-child{font-weight:400;color:var(--text-light);font-size:.8rem}
+.resource-bar-bg{height:10px;background:var(--border);border-radius:5px;overflow:hidden}
+.resource-bar-fill{height:100%;border-radius:5px;transition:width .5s ease,background .3s}
+.resource-bar-fill.green{background:var(--green)}
+.resource-bar-fill.yellow{background:var(--yellow)}
+.resource-bar-fill.red{background:var(--red)}
+.resource-bar-fill.blue{background:var(--primary)}
+
+/* ===== STATUS BADGE ===== */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-size:.75rem;font-weight:600;white-space:nowrap}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.badge-registered{background:#F1F5F9;color:var(--slate)}.badge-registered::before{background:var(--slate)}
+.badge-running{background:var(--blue-bg);color:var(--blue)}.badge-running::before{background:var(--blue);animation:pulse-dot 1.5s infinite}
+.badge-queued{background:var(--yellow-bg);color:var(--yellow)}.badge-queued::before{background:var(--yellow)}
+.badge-completed{background:var(--green-bg);color:var(--green)}.badge-completed::before{background:var(--green)}
+.badge-failed{background:var(--red-bg);color:var(--red)}.badge-failed::before{background:var(--red)}
+.badge-cancelled{background:var(--gray-bg);color:var(--gray)}.badge-cancelled::before{background:var(--gray)}
+.badge-cancelling{background:var(--yellow-bg);color:var(--orange)}.badge-cancelling::before{background:var(--orange);animation:pulse-dot 1s infinite}
+.badge-starting{background:var(--blue-bg);color:var(--blue)}.badge-starting::before{background:var(--blue);animation:pulse-dot 1s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+/* ===== BUTTONS ===== */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius);font-size:.85rem;font-weight:600;transition:all .15s}
+.btn svg{width:16px;height:16px}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-dark)}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}.btn-outline:hover{background:var(--bg)}
+.btn-sm{padding:5px 10px;font-size:.78rem}
+.btn-danger{background:var(--red);color:#fff}.btn-danger:hover{background:#DC2626}
+.btn-ghost{background:transparent;color:var(--text-light);padding:6px}.btn-ghost:hover{background:var(--bg);color:var(--text)}
+
+/* ===== FILTER TABS ===== */
+.filter-bar{display:flex;align-items:center;gap:8px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.filter-btn{padding:6px 14px;border-radius:99px;font-size:.8rem;font-weight:500;background:var(--bg);color:var(--text-light);border:1px solid transparent;transition:all .15s;cursor:pointer}
+.filter-btn:hover{color:var(--text);border-color:var(--border)}
+.filter-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.filter-bar .spacer{flex:1}
+.order-search-bar{padding:0 20px 14px}
+.order-search-input{width:100%;max-width:420px;padding:9px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem;background:var(--card)}
+.order-search-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.sortable-th{cursor:pointer;user-select:none;white-space:nowrap}
+.sortable-th:hover{color:var(--primary)}
+.sort-arrow{display:inline-block;font-size:.65rem;margin-left:4px;min-width:1em;opacity:.85;vertical-align:middle}
+.order-type-selector{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px}
+.order-type-btn{flex:1;padding:10px 16px;font-size:.9rem;font-weight:600;background:var(--bg);color:var(--text-light);border:none;cursor:pointer;transition:all .15s;text-align:center}
+.order-type-btn:not(:last-child){border-right:1px solid var(--border)}
+.order-type-btn.active{background:var(--primary);color:#fff}
+.order-type-btn:hover:not(.active){background:var(--border)}
+.longit-ref-section{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-top:12px}
+.longit-ref-label{font-size:.8rem;font-weight:600;color:var(--primary);margin-bottom:8px}
+.longit-ref-select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:.85rem;background:#fff}
+.longit-ref-select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none}
+.longit-followup-list{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);margin-top:8px}
+.longit-followup-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:.85rem}
+.longit-followup-item:last-child{border-bottom:none}
+.longit-followup-item label{cursor:pointer;display:flex;align-items:center;gap:8px;flex:1}
+.badge-type{display:inline-block;font-size:.65rem;font-weight:600;padding:2px 6px;border-radius:4px;vertical-align:middle;margin-left:6px}
+.badge-type-baseline{background:var(--blue-bg);color:var(--blue)}
+.badge-type-longitudinal{background:#F3E8FF;color:#7C3AED}
+.longit-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:700;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.longit-overlay.open{opacity:1;pointer-events:auto}
+.longit-panel{background:var(--card);border-radius:var(--radius-lg);width:95vw;max-width:1200px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.longit-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border)}
+.longit-head h2{display:flex;align-items:center;gap:10px;font-size:1.1rem}
+.longit-body{flex:1;overflow:auto;padding:20px 24px}
+.longit-body table{font-size:.85rem}
+.longit-body th{position:sticky;top:0;background:var(--card);z-index:1}
+.longit-meta{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.longit-meta-item{font-size:.85rem;color:var(--text-light)}
+.longit-meta-item strong{color:var(--text)}
+
+/* ===== ACTION ICONS ===== */
+.action-btn{width:30px;height:30px;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;transition:all .15s;background:transparent;color:var(--text-light)}
+.action-btn:hover{background:var(--bg)}
+.action-btn svg{width:16px;height:16px}
+.action-btn.act-start:hover{color:var(--green);background:var(--green-bg)}
+.action-btn.act-stop:hover{color:var(--red);background:var(--red-bg)}
+.action-btn.act-rerun:hover{color:var(--primary);background:var(--primary-light)}
+.action-btn.act-force:hover{color:var(--yellow);background:var(--yellow-bg)}
+.action-btn.act-delete:hover{color:var(--red);background:var(--red-bg)}
+.actions-cell{display:flex;gap:2px;align-items:center}
+
+/* ===== DOWNLOAD ICONS ===== */
+.dl-btn{width:28px;height:28px;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;transition:all .15s;background:transparent;cursor:pointer;border:none;padding:0}
+.dl-btn svg{width:18px;height:18px}
+.dl-btn.dl-vcf{color:var(--green)}.dl-btn.dl-vcf:hover{background:var(--green-bg)}
+.dl-btn.dl-log{color:var(--primary)}.dl-btn.dl-log:hover{background:var(--primary-light)}
+.dl-btn.disabled{color:var(--text-muted);opacity:.35;cursor:not-allowed;pointer-events:none}
+.result-cell{display:flex;gap:4px;align-items:center}
+
+/* ===== LOG PANEL ===== */
+.log-panel{background:#1E293B;border-radius:var(--radius-lg);padding:0;display:none;flex-direction:column;max-height:380px;margin-top:16px;box-shadow:var(--shadow);max-width:calc(100vw - 240px - 56px)}
+.log-panel.open{display:flex}
+.log-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #334155;flex-shrink:0}
+.log-header span{color:#94A3B8;font-size:.8rem;font-weight:600}
+.log-header .log-actions{display:flex;gap:8px}
+.log-header button{background:#334155;color:#CBD5E1;border:none;padding:4px 10px;border-radius:4px;font-size:.75rem;cursor:pointer}
+.log-header button:hover{background:#475569}
+.log-body{flex:1;overflow:auto;padding:12px 16px;font-family:var(--mono);font-size:.78rem;color:#E2E8F0;line-height:1.7;white-space:pre-wrap;word-break:break-all}
+
+/* ===== MODAL ===== */
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.2);width:100%;max-width:720px;animation:modal-in .2s ease}
+@keyframes modal-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+.modal-head{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-head h2{font-size:1.1rem;font-weight:700}
+.modal-close{width:32px;height:32px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-light);cursor:pointer;transition:all .15s}
+.modal-close:hover{background:var(--bg);color:var(--text)}
+.modal-body{padding:24px;max-height:calc(100vh - 200px);overflow-y:auto}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+
+/* ===== FORM ===== */
+.form-section{margin-bottom:24px}
+.form-section:last-child{margin-bottom:0}
+.form-section-title{font-size:.85rem;font-weight:700;color:var(--primary);margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group.full{grid-column:1/-1}
+.form-group label{font-size:.8rem;font-weight:600;color:var(--text-light)}
+.form-group input,.form-group select,.form-group textarea{width:100%}
+.checkbox-group{display:flex;flex-wrap:wrap;gap:16px;padding:8px 0}
+.checkbox-item{display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer}
+.checkbox-item input[type="checkbox"]{width:16px;height:16px;accent-color:var(--primary);cursor:pointer}
+
+/* ===== FASTQ BROWSER ===== */
+.file-browser{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.file-browser-header{background:var(--bg);padding:8px 12px;font-size:.8rem;color:var(--text-light);display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+.file-browser-header .path-text{font-family:var(--mono);font-size:.75rem}
+.file-browser-list{max-height:240px;overflow-y:auto}
+.file-browser-item{display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;transition:background .1s;font-size:.85rem;border-bottom:1px solid #F1F5F9}
+.file-browser-item:last-child{border-bottom:none}
+.file-browser-item:hover{background:#F8FAFC}
+.file-browser-item.selected{background:var(--primary-light)}
+.file-browser-item svg{width:18px;height:18px;flex-shrink:0;color:var(--text-muted)}
+.file-browser-item.dir svg{color:var(--yellow)}
+.file-browser-item .file-info{flex:1;display:flex;flex-direction:column;gap:2px}
+.file-browser-item .file-name{font-weight:500}
+.file-browser-item .file-meta{font-size:.72rem;color:var(--text-muted)}
+
+/* ===== TOAST ===== */
+.toast-container{position:fixed;top:20px;right:20px;z-index:999;display:flex;flex-direction:column;gap:8px}
+.toast{padding:12px 18px;border-radius:var(--radius);box-shadow:var(--shadow-md);font-size:.85rem;font-weight:500;display:flex;align-items:center;gap:8px;animation:toast-in .25s ease;min-width:280px}
+.toast svg{width:18px;height:18px;flex-shrink:0}
+@keyframes toast-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+.toast-success{background:#065F46;color:#fff}
+.toast-error{background:#991B1B;color:#fff}
+.toast-info{background:var(--sidebar);color:#fff}
+
+/* ===== CONFIRM DIALOG ===== */
+.confirm-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:300;display:none;align-items:center;justify-content:center}
+.confirm-overlay.open{display:flex}
+.confirm-box{background:var(--card);border-radius:var(--radius-lg);padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:400px;width:100%;text-align:center}
+.confirm-box .confirm-icon{width:48px;height:48px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.confirm-box .confirm-icon.warn{background:var(--yellow-bg);color:var(--yellow)}
+.confirm-box .confirm-icon.danger{background:var(--red-bg);color:var(--red)}
+.confirm-box .confirm-icon svg{width:24px;height:24px}
+.confirm-box h3{margin-bottom:8px;font-size:1rem}
+.confirm-box p{color:var(--text-light);font-size:.85rem;margin-bottom:20px;line-height:1.5}
+.confirm-box .confirm-actions{display:flex;gap:10px;justify-content:center}
+
+/* ===== SETUP PAGE ===== */
+.settings-form{max-width:640px}
+.toggle-switch{position:relative;display:inline-block;width:44px;height:24px}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:var(--border);border-radius:24px;transition:.2s}
+.toggle-slider::before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle-switch input:checked+.toggle-slider{background:var(--primary)}
+.toggle-switch input:checked+.toggle-slider::before{transform:translateX(20px)}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.toggle-info .toggle-label{font-size:.9rem;font-weight:600}
+.toggle-info .toggle-desc{font-size:.78rem;color:var(--text-light);margin-top:2px}
+
+/* ===== EMPTY STATE ===== */
+.empty-state{text-align:center;padding:48px 20px;color:var(--text-muted)}
+.empty-state svg{width:48px;height:48px;margin-bottom:12px;opacity:.5}
+.empty-state p{font-size:.9rem}
+
+/* ===== CLICKABLE ROW ===== */
+.order-row{cursor:pointer;transition:background .1s}
+.order-row:hover{background:#F8FAFC}
+.order-row.selected{background:var(--primary-light)}
+
+/* ===== REVIEW MODAL ===== */
+.review-overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:20px}
+.review-overlay.open{display:flex}
+.review-panel{background:var(--card);border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.25);width:100%;max-width:1400px;height:calc(100vh - 40px);display:flex;flex-direction:column;animation:modal-in .2s ease}
+.review-head{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.review-head h2{font-size:1.05rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.review-head h2 .review-count{font-size:.8rem;font-weight:500;color:var(--text-light);background:var(--bg);padding:2px 10px;border-radius:99px}
+.review-filters{padding:12px 24px;border-bottom:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:center;flex-shrink:0}
+.review-filters input,.review-filters select{font-size:.82rem;padding:6px 10px;min-width:0}
+.review-filters input{width:130px}
+.review-filters .filter-label{font-size:.75rem;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:.03em}
+.review-filters .filter-group{display:flex;align-items:center;gap:5px}
+.review-filters .filter-sep{width:1px;height:24px;background:var(--border);margin:0 4px}
+.review-body{flex:1;overflow:auto;position:relative}
+.review-body table{font-size:.82rem}
+.review-body th{position:sticky;top:0;background:var(--card);z-index:2;cursor:pointer;user-select:none;white-space:nowrap}
+.review-body th:hover{color:var(--primary)}
+.review-body th .sort-arrow{display:inline-block;width:12px;margin-left:2px;color:var(--text-muted);font-size:.7rem}
+.review-body th .sort-arrow.asc::after{content:'\\25B2'}
+.review-body th .sort-arrow.desc::after{content:'\\25BC'}
+.review-body td{white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.review-body td.cell-gene{font-weight:600;color:var(--primary-dark)}
+.review-body td.cell-effect{font-size:.78rem;max-width:180px}
+.review-body td.cell-af{font-weight:600}
+.review-body td.cell-filter-pass{color:var(--green);font-weight:600}
+.review-body td.cell-filter-fail{color:var(--red)}
+.review-foot{padding:10px 24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--text-light);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.review-foot .review-dl-btn{display:inline-flex;align-items:center;gap:4px;color:var(--primary);cursor:pointer;font-weight:600;font-size:.8rem;background:none;border:none}
+.review-foot .review-dl-btn:hover{text-decoration:underline}
+.action-btn.act-review:hover{color:#7C3AED;background:#EDE9FE}
+.action-btn.act-qc:hover{color:var(--teal);background:var(--teal-bg)}
+
+/* ===== QC MODAL ===== */
+.qc-overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
+.qc-overlay.open{display:flex}
+.qc-panel{background:var(--card);border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.25);width:100%;max-width:1100px;animation:modal-in .2s ease}
+.qc-head{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.qc-head h2{font-size:1.05rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.qc-head h2 svg{color:var(--teal)}
+
+/* summary cards */
+.qc-summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;padding:20px 24px;border-bottom:1px solid var(--border)}
+.qc-kpi{background:var(--bg);border-radius:var(--radius);padding:14px 16px;position:relative}
+.qc-kpi .kpi-label{font-size:.72rem;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+.qc-kpi .kpi-value{font-size:1.35rem;font-weight:700;line-height:1.2}
+.qc-kpi .kpi-sub{font-size:.72rem;color:var(--text-muted);margin-top:2px}
+.qc-kpi.good .kpi-value{color:var(--green)}
+.qc-kpi.warn .kpi-value{color:var(--yellow)}
+.qc-kpi.bad .kpi-value{color:var(--red)}
+.qc-kpi.neutral .kpi-value{color:var(--primary)}
+
+/* tabs */
+.qc-tabs{display:flex;border-bottom:1px solid var(--border);padding:0 24px;gap:0;flex-shrink:0;overflow-x:auto}
+.qc-tab{padding:10px 18px;font-size:.82rem;font-weight:600;color:var(--text-light);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap}
+.qc-tab:hover{color:var(--text)}
+.qc-tab.active{color:var(--primary);border-bottom-color:var(--primary)}
+
+/* tab content */
+.qc-tab-content{display:none;padding:20px 24px}
+.qc-tab-content.active{display:block}
+.qc-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px}
+.qc-detail-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #F1F5F9}
+.qc-detail-row:last-child{border-bottom:none}
+.qc-detail-label{font-size:.82rem;color:var(--text-light);font-weight:500}
+.qc-detail-value{font-size:.82rem;font-weight:600;font-family:var(--mono);text-align:right}
+.qc-section-title{font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.05em;padding:8px 0 4px;border-bottom:2px solid var(--primary-light);margin-bottom:4px;grid-column:1/-1}
+
+/* coverage chart */
+.cov-chart{display:flex;align-items:flex-end;gap:3px;height:140px;padding:12px 0}
+.cov-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%}
+.cov-bar{width:100%;border-radius:3px 3px 0 0;background:var(--primary);transition:height .3s;min-height:2px}
+.cov-bar-label{font-size:.65rem;color:var(--text-muted);writing-mode:vertical-lr;text-orientation:mixed;transform:rotate(180deg)}
+.cov-bar-val{font-size:.68rem;font-weight:600;color:var(--text)}
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon"><img src="/static/roche-logo.png?v=2" alt="Roche" width="40" height="40"></div>
+    <div>
+      <div class="logo-text">Roche Panel Analysis</div>
+      <div class="logo-sub">Nextflow ctDNA Pipeline</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active" data-page="dashboard" onclick="navigateTo('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>대시보드</span>
+    </div>
+    <div class="nav-item" data-page="orders" onclick="navigateTo('orders')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span>오더 관리</span>
+    </div>
+    <div class="nav-item" data-page="setup" onclick="navigateTo('setup')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>설정</span>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div>Copyright © 2026 Xformyx. All rights reserved.</div>
+  </div>
+</aside>
+
+<!-- ===== MAIN CONTENT ===== -->
+<div class="main">
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="breadcrumb">
+      <span>홈</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      <span class="crumb-active" id="breadcrumbTitle">대시보드</span>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-time" id="topbarTime"></span>
+    </div>
+  </div>
+
+  <!-- Content area -->
+  <div class="content">
+
+    <!-- ==================== DASHBOARD PAGE ==================== -->
+    <div class="page active" id="page-dashboard">
+
+      <!-- Stat Cards -->
+      <div class="stat-grid">
+        <div class="stat-card blue" onclick="filterOrdersByStatus(null)">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">전체 오더</div>
+        </div>
+        <div class="stat-card green" onclick="filterOrdersByStatus('running')">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <div class="stat-value" id="stat-running">0</div>
+          <div class="stat-label">실행 중</div>
+        </div>
+        <div class="stat-card red" onclick="filterOrdersByStatus('failed')">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <div class="stat-value" id="stat-failed">0</div>
+          <div class="stat-label">실패</div>
+        </div>
+        <div class="stat-card teal" onclick="filterOrdersByStatus('completed')">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="stat-value" id="stat-completed">0</div>
+          <div class="stat-label">완료</div>
+        </div>
+      </div>
+
+      <!-- Resource Monitor -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            시스템 리소스
+          </div>
+          <span style="font-size:.75rem;color:var(--text-muted)" id="resourceLastUpdate">업데이트 중...</span>
+        </div>
+        <div class="section-body">
+          <div class="resource-bars">
+            <div class="resource-item">
+              <div class="resource-label"><span>CPU</span><span id="cpuDetail">-- / -- cores</span></div>
+              <div class="resource-bar-bg"><div class="resource-bar-fill green" id="cpuBar" style="width:0%"></div></div>
+            </div>
+            <div class="resource-item">
+              <div class="resource-label"><span>메모리</span><span id="memDetail">-- / -- GB</span></div>
+              <div class="resource-bar-bg"><div class="resource-bar-fill green" id="memBar" style="width:0%"></div></div>
+            </div>
+            <div class="resource-item">
+              <div class="resource-label"><span>디스크</span><span id="diskDetail">-- / -- GB</span></div>
+              <div class="resource-bar-bg"><div class="resource-bar-fill green" id="diskBar" style="width:0%"></div></div>
+            </div>
+            <div class="resource-item">
+              <div class="resource-label"><span>파이프라인 슬롯</span><span id="slotDetail">-- / --</span></div>
+              <div class="resource-bar-bg"><div class="resource-bar-fill blue" id="slotBar" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            최근 활동
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>오더명</th>
+                <th>샘플</th>
+                <th>상태</th>
+                <th>업데이트</th>
+              </tr>
+            </thead>
+            <tbody id="recentActivityBody">
+              <tr><td colspan="4" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== ORDERS PAGE ==================== -->
+    <div class="page" id="page-orders">
+      <div class="section">
+        <!-- Filter bar -->
+        <div class="filter-bar">
+          <button class="filter-btn active" data-status="" onclick="setOrderFilter(this,'')">전체</button>
+          <button class="filter-btn" data-status="registered" onclick="setOrderFilter(this,'registered')">등록</button>
+          <button class="filter-btn" data-status="running" onclick="setOrderFilter(this,'running')">실행 중</button>
+          <button class="filter-btn" data-status="completed" onclick="setOrderFilter(this,'completed')">완료</button>
+          <button class="filter-btn" data-status="failed" onclick="setOrderFilter(this,'failed')">실패</button>
+          <button class="filter-btn" data-status="cancelled" onclick="setOrderFilter(this,'cancelled')">취소</button>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" onclick="openCreateModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            오더 생성
+          </button>
+        </div>
+
+        <div class="order-search-bar">
+          <input type="search" id="orderSearchInput" class="order-search-input" placeholder="검색 (오더명, 환자이름, 샘플이름, 차트번호)" autocomplete="off" oninput="onOrderSearchInput()">
+        </div>
+
+        <!-- Order table -->
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>오더명</th>
+                <th>환자</th>
+                <th>샘플</th>
+                <th>차트번호</th>
+                <th>상태</th>
+                <th class="sortable-th" onclick="toggleOrderSort('created_at')">오더생성일시<span class="sort-arrow" id="sortArrowCreated"></span></th>
+                <th class="sortable-th" onclick="toggleOrderSort('result_at')">결과생성일시<span class="sort-arrow" id="sortArrowResult"></span></th>
+                <th>결과</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody id="orderTableBody">
+              <tr><td colspan="9" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Log Panel (outside the table section) -->
+      <div class="log-panel" id="logPanel">
+        <div class="log-header">
+          <span id="logPanelTitle">로그</span>
+          <div class="log-actions">
+            <button onclick="downloadLog()">다운로드</button>
+            <button onclick="closeLogPanel()">닫기</button>
+          </div>
+        </div>
+        <div class="log-body" id="logBody"></div>
+      </div>
+    </div>
+
+    <!-- ==================== SETUP PAGE ==================== -->
+    <div class="page" id="page-setup">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            파이프라인 설정
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="settings-form">
+
+            <!-- Resource Settings -->
+            <div class="form-section">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="2"/><path d="M6 9h4v6H6z"/><line x1="14" y1="9" x2="18" y2="9"/><line x1="14" y1="12" x2="18" y2="12"/><line x1="14" y1="15" x2="16" y2="15"/></svg>
+                리소스 설정
+              </div>
+              <div id="resource-info-panel" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  <span style="font-weight:600;color:var(--text-primary);">시스템 감지 결과</span>
+                  <button class="btn btn-ghost btn-sm" onclick="loadResourceInfo()" style="margin-left:auto;font-size:.72rem;">새로고침</button>
+                </div>
+                <div id="resource-detected" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.82rem;">
+                  <span>로딩 중...</span>
+                </div>
+              </div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>최대 CPU 코어 <span style="font-size:.72rem;color:var(--text-muted)">(0 = 자동감지)</span></label>
+                  <input type="number" id="set-max_cpus" min="0" max="256" value="0">
+                </div>
+                <div class="form-group">
+                  <label>최대 메모리 (GB) <span style="font-size:.72rem;color:var(--text-muted)">(0 = 자동감지)</span></label>
+                  <input type="number" id="set-max_memory" min="0" max="4096" value="0">
+                </div>
+                <div class="form-group">
+                  <label>최대 동시 실행 수 <span style="font-size:.72rem;color:var(--text-muted)">(0 = 자동계산)</span></label>
+                  <input type="number" id="set-max_concurrent_samples" min="0" max="20" value="0">
+                </div>
+                <div class="form-group">
+                  <label>기본 AF Threshold</label>
+                  <input type="number" id="set-default_af_threshold" step="0.001" min="0" value="0.005">
+                </div>
+              </div>
+              <span style="font-size:.72rem;color:var(--text-muted);display:block;margin-top:4px;">
+                0으로 설정하면 서버 리소스를 자동 감지합니다. 샘플 1개 기준 약 20 CPU, 30 GB 메모리를 사용합니다.
+                동시 실행 수는 (CPU / 20)과 (메모리 / 30) 중 작은 값으로 자동 계산됩니다.
+              </span>
+            </div>
+
+            <!-- General Settings -->
+            <div class="form-section">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                일반 설정
+              </div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>기본 레퍼런스</label>
+                  <select id="set-default_reference">
+                    <option value="hg38">hg38</option>
+                    <option value="hg19">hg19</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>기본 Nextflow 프로파일</label>
+                  <select id="set-default_profile">
+                    <option value="docker">Docker (기본)</option>
+                    <option value="offline">Offline (폐쇄망)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Nextflow Settings -->
+            <div class="form-section">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                Nextflow 설정
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-label">Resume 활성화</div>
+                  <div class="toggle-desc">Nextflow 캐시를 활용하여 이전 실행 결과를 재사용합니다. (-resume)</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="set-nf_resume" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-label">Work 디렉토리 자동 정리</div>
+                  <div class="toggle-desc">분석 완료 후 Nextflow work 디렉토리를 자동으로 삭제합니다.</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="set-clean_work_dir">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- File Management -->
+            <div class="form-section">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                파일 관리
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-label">BAM 파일 삭제</div>
+                  <div class="toggle-desc">분석 완료 후 BAM 파일을 자동으로 삭제합니다.</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="set-remove_bams" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <div class="toggle-label">중간 파일 삭제</div>
+                  <div class="toggle-desc">분석 중간 파일을 자동으로 삭제하여 디스크를 절약합니다.</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="set-delete_intermediate" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div style="margin-top:16px">
+                <div class="form-group">
+                  <label>FASTQ 소스 디렉토리 (호스트)</label>
+                  <input type="text" id="set-fastq_host_dir" placeholder="/home/ken/Roche/fastq">
+                  <span style="font-size:.72rem;color:var(--text-muted);margin-top:4px;display:block">.env 파일의 FASTQ_HOST_DIR에 저장됩니다. 변경 후 컨테이너를 재시작해야 적용됩니다.</span>
+                </div>
+                <div class="form-group" style="margin-top:12px">
+                  <label>BED 파일 디렉토리 (호스트)</label>
+                  <input type="text" id="set-bed_host_dir" placeholder="/home/ken/Roche/data/bed/hg38">
+                  <span style="font-size:.72rem;color:var(--text-muted);margin-top:4px;display:block">.env 파일의 BED_HOST_DIR에 저장됩니다. 변경 후 컨테이너를 재시작해야 적용됩니다.</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding-top:8px">
+              <button class="btn btn-primary" onclick="saveSettings()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                설정 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ===== CREATE ORDER MODAL ===== -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="createModalTitle">새 오더 생성</h2>
+      <button class="modal-close" onclick="closeCreateModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Order Type Selector (hidden when longitudinal disabled) -->
+      <div id="orderTypeSection" style="display:none">
+        <div class="order-type-selector">
+          <button type="button" class="order-type-btn active" data-type="baseline" onclick="setOrderType('baseline',this)">Baseline 분석</button>
+          <button type="button" class="order-type-btn" data-type="longitudinal" onclick="setOrderType('longitudinal',this)">Longitudinal 분석</button>
+        </div>
+      </div>
+
+      <!-- Longitudinal Reference Selection (hidden by default) -->
+      <div id="longitRefSection" style="display:none">
+        <div class="form-section">
+          <div class="form-section-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+            Longitudinal 참조 오더
+          </div>
+          <div class="longit-ref-section">
+            <div class="longit-ref-label">Baseline 오더 (필수) — 최초 조직 샘플</div>
+            <select class="longit-ref-select" id="ord-baseline_order_id" onchange="onBaselineSelected()">
+              <option value="">-- Baseline 오더 선택 --</option>
+            </select>
+          </div>
+          <div class="longit-ref-section" style="margin-top:8px">
+            <div class="longit-ref-label">Germline 오더 (필수) — Germline 샘플</div>
+            <select class="longit-ref-select" id="ord-germline_order_id">
+              <option value="">-- Germline 오더 선택 --</option>
+            </select>
+          </div>
+          <div class="longit-ref-section" style="margin-top:8px">
+            <div class="longit-ref-label">이전 Followup 오더 (선택) — VAF 비교용</div>
+            <div class="longit-followup-list" id="longitFollowupList">
+              <div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">Baseline 오더를 먼저 선택하세요.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Order Info -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          오더 정보
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>오더명 *</label>
+            <input type="text" id="ord-order_name" placeholder="예: NHL_Panel_20240101">
+          </div>
+          <div class="form-group">
+            <label>환자명</label>
+            <input type="text" id="ord-patient_name">
+          </div>
+          <div class="form-group">
+            <label>생년월일</label>
+            <input type="date" id="ord-patient_dob">
+          </div>
+          <div class="form-group">
+            <label>차트번호</label>
+            <input type="text" id="ord-chart_number">
+          </div>
+          <div class="form-group">
+            <label>진료과</label>
+            <input type="text" id="ord-department">
+          </div>
+          <div class="form-group">
+            <label>담당의</label>
+            <input type="text" id="ord-doctor_name">
+          </div>
+          <div class="form-group full">
+            <label>진단명</label>
+            <input type="text" id="ord-diagnosis">
+          </div>
+          <div class="form-group full">
+            <label>의사 소견</label>
+            <textarea id="ord-doctor_comment" rows="2" placeholder="특이사항 입력"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sample Selection -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          샘플 선택
+        </div>
+        <div class="file-browser" id="fastqBrowser">
+          <div class="file-browser-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>FASTQ 파일 브라우저</span>
+            <span class="path-text" id="fastqCurrentPath">/</span>
+          </div>
+          <div class="file-browser-list" id="fastqFileList">
+            <div style="padding:20px;text-align:center;color:var(--text-muted)">불러오는 중...</div>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <div class="form-group">
+            <label>샘플명 *</label>
+            <input type="text" id="ord-sample_name" placeholder="FASTQ 선택 시 자동 입력">
+          </div>
+        </div>
+      </div>
+
+      <!-- Analysis Parameters -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          분석 파라미터
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>레퍼런스</label>
+            <select id="ord-reference">
+              <option value="hg38">hg38</option>
+              <option value="hg19">hg19</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Nextflow 프로파일</label>
+            <select id="ord-profile">
+              <option value="docker">Docker (기본)</option>
+              <option value="offline">Offline (폐쇄망)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>AF Threshold</label>
+            <input type="number" id="ord-af_threshold" step="0.001" min="0" value="0.005">
+          </div>
+          <div class="form-group full">
+            <label>BED 파일</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="ord-bed_file" placeholder="선택 안함 (기본: capture_targets)" readonly style="flex:1">
+              <button class="btn btn-outline btn-sm" type="button" onclick="openBedBrowser()">찾기</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="clearBedFile()">초기화</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BED File Browser (hidden by default) -->
+      <div class="form-section" id="bedBrowserSection" style="display:none">
+        <div class="file-browser" id="bedBrowser">
+          <div class="file-browser-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>BED 파일 브라우저</span>
+            <span class="path-text" id="bedCurrentPath">hg38</span>
+          </div>
+          <div class="file-browser-list" id="bedFileList"></div>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div class="form-section">
+        <div class="form-section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          옵션
+        </div>
+        <div class="checkbox-group">
+          <label class="checkbox-item"><input type="checkbox" id="ord-remove_bams" checked> BAM 파일 삭제</label>
+          <label class="checkbox-item"><input type="checkbox" id="ord-delete_intermediate" checked> 중간 파일 삭제</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeCreateModal()">취소</button>
+      <button class="btn btn-primary" id="createModalSubmitBtn" onclick="submitOrder()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span id="createModalSubmitText">등록</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== REVIEW MODAL ===== -->
+<div class="review-overlay" id="reviewOverlay">
+  <div class="review-panel">
+    <div class="review-head">
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span id="reviewTitle">Variant Review</span>
+        <span class="review-count" id="reviewCount">0 variants</span>
+      </h2>
+      <button class="modal-close" onclick="closeReview()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="review-filters">
+      <div class="filter-group">
+        <span class="filter-label">Gene</span>
+        <input type="text" id="rv-gene" placeholder="유전자명" oninput="applyReviewFilters()">
+      </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">Chr</span>
+        <select id="rv-chrom" onchange="applyReviewFilters()"><option value="">전체</option></select>
+      </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">Position</span>
+        <input type="number" id="rv-pos-from" placeholder="시작" oninput="applyReviewFilters()">
+        <span style="color:var(--text-muted)">~</span>
+        <input type="number" id="rv-pos-to" placeholder="끝" oninput="applyReviewFilters()">
+      </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">VAF</span>
+        <input type="number" id="rv-af-min" placeholder="min" step="0.01" oninput="applyReviewFilters()" style="width:80px">
+        <span style="color:var(--text-muted)">~</span>
+        <input type="number" id="rv-af-max" placeholder="max" step="0.01" oninput="applyReviewFilters()" style="width:80px">
+      </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">Filter</span>
+        <select id="rv-filter" onchange="applyReviewFilters()">
+          <option value="">전체</option>
+          <option value="PASS">PASS</option>
+          <option value="non-PASS">non-PASS</option>
+        </select>
+      </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">Type</span>
+        <select id="rv-type" onchange="applyReviewFilters()"><option value="">전체</option></select>
+      </div>
+    </div>
+    <div class="review-body">
+      <table>
+        <thead><tr id="reviewTableHead"></tr></thead>
+        <tbody id="reviewTableBody">
+          <tr><td colspan="14" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="review-foot">
+      <span id="reviewFilteredCount">0 / 0 variants</span>
+      <button class="review-dl-btn" id="reviewDlBtn" onclick="downloadReviewVcf()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        VCF 다운로드
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== QC MODAL ===== -->
+<div class="qc-overlay" id="qcOverlay">
+  <div class="qc-panel">
+    <div class="qc-head">
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span id="qcTitle">QC Report</span>
+      </h2>
+      <button class="modal-close" onclick="closeQC()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="qc-summary" id="qcSummary"></div>
+    <div class="qc-tabs" id="qcTabs"></div>
+    <div id="qcTabContents"></div>
+  </div>
+</div>
+
+<!-- ===== LONGITUDINAL RESULT MODAL ===== -->
+<div class="longit-overlay" id="longitOverlay">
+  <div class="longit-panel">
+    <div class="longit-head">
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span id="longitTitle">Longitudinal Analysis</span>
+      </h2>
+      <button class="modal-close" onclick="closeLongit()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="longit-body" id="longitBody">
+      <p style="text-align:center;color:var(--text-muted);padding:40px">데이터를 불러오는 중...</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CONFIRM DIALOG ===== -->
+<div class="confirm-overlay" id="confirmDialog">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirmIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+    <h3 id="confirmTitle">확인</h3>
+    <p id="confirmMessage">이 작업을 수행하시겠습니까?</p>
+    <div class="confirm-actions">
+      <button class="btn btn-outline" onclick="closeConfirm()">취소</button>
+      <button class="btn btn-danger" id="confirmOkBtn" onclick="confirmAction()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST CONTAINER ===== -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ===== JAVASCRIPT ===== -->
+<script>
+/* ================================================================
+   STATE
+   ================================================================ */
+var currentPage = 'dashboard';
+var currentOrderFilter = '';
+var currentOrderType = 'baseline';
+var longitudinalEnabled = false;
+var completedOrdersCache = [];
+var editingOrderId = null;
+var selectedLogOrderId = null;
+var selectedLogSample = null;
+var logRefreshTimer = null;
+var dashboardTimer = null;
+var resourceTimer = null;
+var ordersTimer = null;
+var cachedOrders = [];
+var orderSortColumn = 'created_at';
+var orderSortDir = 'desc';
+var pendingConfirmCallback = null;
+var selectedFastq = null;
+var currentFastqPath = '';
+var currentBedPath = 'hg38';
+
+/* ================================================================
+   NAVIGATION
+   ================================================================ */
+function navigateTo(page, skipLoad) {
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  document.querySelector('.nav-item[data-page="' + page + '"]').classList.add('active');
+
+  var titles = { dashboard: '대시보드', orders: '오더 관리', setup: '설정' };
+  document.getElementById('breadcrumbTitle').textContent = titles[page] || page;
+
+  stopAllTimers();
+
+  if (!skipLoad) {
+    if (page === 'dashboard') loadDashboard();
+    if (page === 'orders') loadOrders();
+    if (page === 'setup') loadSettings();
+  }
+
+  if (page === 'dashboard') {
+    startDashboardTimers();
+  }
+  if (page === 'orders') {
+    startOrdersTimer();
+  }
+}
+
+function stopAllTimers() {
+  if (dashboardTimer) { clearInterval(dashboardTimer); dashboardTimer = null; }
+  if (resourceTimer) { clearInterval(resourceTimer); resourceTimer = null; }
+  if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
+  if (ordersTimer) { clearInterval(ordersTimer); ordersTimer = null; }
+}
+
+function startDashboardTimers() {
+  loadResources();
+  dashboardTimer = setInterval(loadDashboard, 10000);
+  resourceTimer = setInterval(loadResources, 5000);
+}
+
+function startOrdersTimer() {
+  ordersTimer = setInterval(loadOrders, 5000);
+}
+
+function filterOrdersByStatus(status) {
+  navigateTo('orders', true);
+  currentOrderFilter = status || '';
+  document.querySelectorAll('.filter-btn').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-status') === (status || ''));
+  });
+  loadOrders();
+}
+
+/* ================================================================
+   UTILITY
+   ================================================================ */
+function formatDate(iso) {
+  if (!iso) return '-';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  var mm = String(d.getMonth() + 1).padStart(2, '0');
+  var dd = String(d.getDate()).padStart(2, '0');
+  var hh = String(d.getHours()).padStart(2, '0');
+  var mi = String(d.getMinutes()).padStart(2, '0');
+  return d.getFullYear() + '-' + mm + '-' + dd + ' ' + hh + ':' + mi;
+}
+
+function formatDateShort(iso) {
+  if (!iso) return '-';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  var mm = String(d.getMonth() + 1).padStart(2, '0');
+  var dd = String(d.getDate()).padStart(2, '0');
+  var hh = String(d.getHours()).padStart(2, '0');
+  var mi = String(d.getMinutes()).padStart(2, '0');
+  return mm + '/' + dd + ' ' + hh + ':' + mi;
+}
+
+function formatSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var i = 0;
+  var val = bytes;
+  while (val >= 1024 && i < units.length - 1) { val /= 1024; i++; }
+  return val.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
+function statusBadge(status) {
+  var labels = {
+    registered: '등록', running: '실행 중', queued: '대기', completed: '완료',
+    failed: '실패', cancelled: '취소', cancelling: '취소 중...', starting: '시작 중...'
+  };
+  return '<span class="badge badge-' + status + '">' + (labels[status] || status) + '</span>';
+}
+
+function escapeHtml(text) {
+  var el = document.createElement('div');
+  el.textContent = text;
+  return el.innerHTML;
+}
+
+function resourceBarClass(pct) {
+  if (pct > 80) return 'red';
+  if (pct > 60) return 'yellow';
+  return 'green';
+}
+
+/* ================================================================
+   TOAST
+   ================================================================ */
+function showToast(msg, type) {
+  type = type || 'info';
+  var icons = {
+    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+  };
+  var container = document.getElementById('toastContainer');
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  toast.innerHTML = (icons[type] || '') + escapeHtml(msg);
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(20px)';
+    toast.style.transition = 'all .3s';
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 3000);
+}
+
+/* ================================================================
+   CONFIRM DIALOG
+   ================================================================ */
+function showConfirm(title, message, callback, isDanger) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMessage').textContent = message;
+  var icon = document.getElementById('confirmIcon');
+  icon.className = 'confirm-icon ' + (isDanger ? 'danger' : 'warn');
+  var okBtn = document.getElementById('confirmOkBtn');
+  okBtn.className = isDanger ? 'btn btn-danger' : 'btn btn-primary';
+  okBtn.textContent = '확인';
+  pendingConfirmCallback = callback;
+  document.getElementById('confirmDialog').classList.add('open');
+}
+
+function confirmAction() {
+  document.getElementById('confirmDialog').classList.remove('open');
+  if (pendingConfirmCallback) { pendingConfirmCallback(); pendingConfirmCallback = null; }
+}
+
+function closeConfirm() {
+  document.getElementById('confirmDialog').classList.remove('open');
+  pendingConfirmCallback = null;
+}
+
+/* ================================================================
+   API HELPERS
+   ================================================================ */
+function apiFetch(url, opts) {
+  opts = opts || {};
+  return fetch(url, opts).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+/* ================================================================
+   DASHBOARD
+   ================================================================ */
+function loadDashboard() {
+  apiFetch('/api/dashboard').then(function(data) {
+    document.getElementById('stat-total').textContent = data.total || 0;
+    document.getElementById('stat-running').textContent = data.running || 0;
+    document.getElementById('stat-failed').textContent = data.failed || 0;
+    document.getElementById('stat-completed').textContent = data.completed || 0;
+
+    var tbody = document.getElementById('recentActivityBody');
+    if (!data.recent || data.recent.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><p>최근 활동이 없습니다.</p></td></tr>';
+      return;
+    }
+    var html = '';
+    data.recent.forEach(function(r) {
+      html += '<tr class="order-row" onclick="filterOrdersByStatus(null)">'
+        + '<td>' + escapeHtml(r.order_name || '-') + '</td>'
+        + '<td>' + escapeHtml(r.sample_name || '-') + '</td>'
+        + '<td>' + statusBadge(r.status) + '</td>'
+        + '<td>' + formatDateShort(r.updated_at) + '</td>'
+        + '</tr>';
+    });
+    tbody.innerHTML = html;
+  }).catch(function() {});
+}
+
+function loadResources() {
+  apiFetch('/api/resources').then(function(d) {
+    var cpuPct = d.cpu_percent || 0;
+    var memPct = d.mem_percent || 0;
+    var diskPct = d.disk_percent || 0;
+
+    document.getElementById('cpuBar').style.width = cpuPct + '%';
+    document.getElementById('cpuBar').className = 'resource-bar-fill ' + resourceBarClass(cpuPct);
+    document.getElementById('cpuDetail').textContent = cpuPct.toFixed(1) + '% / ' + d.cpu_count + ' cores';
+
+    document.getElementById('memBar').style.width = memPct + '%';
+    document.getElementById('memBar').className = 'resource-bar-fill ' + resourceBarClass(memPct);
+    document.getElementById('memDetail').textContent = d.mem_used_gb + ' / ' + d.mem_total_gb + ' GB';
+
+    document.getElementById('diskBar').style.width = diskPct + '%';
+    document.getElementById('diskBar').className = 'resource-bar-fill ' + resourceBarClass(diskPct);
+    document.getElementById('diskDetail').textContent = d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB';
+
+    document.getElementById('resourceLastUpdate').textContent = '마지막 업데이트: ' + new Date().toLocaleTimeString('ko-KR');
+  }).catch(function() {});
+
+  apiFetch('/api/system_resources').then(function(r) {
+    var running = r.currently_running || 0;
+    var maxConc = r.max_concurrent_samples || 1;
+    var pct = Math.min(100, (running / maxConc) * 100);
+    document.getElementById('slotBar').style.width = pct + '%';
+    document.getElementById('slotBar').className = 'resource-bar-fill ' + resourceBarClass(pct);
+    document.getElementById('slotDetail').textContent = running + ' / ' + maxConc + ' (' + r.cpus_per_sample + 'cpu, ' + r.memory_per_sample_gb + 'GB / 샘플)';
+  }).catch(function() {});
+}
+
+/* ================================================================
+   ORDERS
+   ================================================================ */
+function setOrderFilter(btn, status) {
+  currentOrderFilter = status;
+  document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  loadOrders();
+}
+
+function parseOrderDate(s) {
+  if (!s) return null;
+  var t = Date.parse(s);
+  return isNaN(t) ? null : t;
+}
+
+/** 화면의 결과생성일시와 동일: 완료/실패/취소일 때만 updated_at 기준 */
+function resultDateSortKey(o) {
+  if (o.status !== 'completed' && o.status !== 'failed' && o.status !== 'cancelled') return null;
+  return parseOrderDate(o.updated_at);
+}
+
+function filterOrdersBySearch(list) {
+  var el = document.getElementById('orderSearchInput');
+  var q = (el ? el.value : '').trim().toLowerCase();
+  if (!q) return list.slice();
+  return list.filter(function(o) {
+    var fields = [
+      o.order_name || '',
+      o.patient_name || '',
+      o.sample_name || '',
+      o.chart_number || ''
+    ].map(function(x) { return String(x).toLowerCase(); });
+    return fields.some(function(f) { return f.indexOf(q) !== -1; });
+  });
+}
+
+function sortOrdersList(list) {
+  var col = orderSortColumn;
+  var dir = orderSortDir === 'asc' ? 1 : -1;
+  return list.slice().sort(function(a, b) {
+    var va, vb;
+    if (col === 'created_at') {
+      va = parseOrderDate(a.created_at);
+      vb = parseOrderDate(b.created_at);
+    } else {
+      va = resultDateSortKey(a);
+      vb = resultDateSortKey(b);
+    }
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return (va - vb) * dir;
+  });
+}
+
+function updateOrderSortArrows() {
+  var c = document.getElementById('sortArrowCreated');
+  var r = document.getElementById('sortArrowResult');
+  if (c) c.textContent = orderSortColumn === 'created_at' ? (orderSortDir === 'asc' ? '▲' : '▼') : '';
+  if (r) r.textContent = orderSortColumn === 'result_at' ? (orderSortDir === 'asc' ? '▲' : '▼') : '';
+}
+
+function toggleOrderSort(col) {
+  if (orderSortColumn === col) {
+    orderSortDir = orderSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    orderSortColumn = col;
+    orderSortDir = 'desc';
+  }
+  renderOrderTable();
+}
+
+function onOrderSearchInput() {
+  renderOrderTable();
+}
+
+function renderOrderTable() {
+  var tbody = document.getElementById('orderTableBody');
+  if (!tbody) return;
+  updateOrderSortArrows();
+
+  if (!cachedOrders || cachedOrders.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+      + '<p>등록된 오더가 없습니다.</p></td></tr>';
+    return;
+  }
+
+  var filtered = filterOrdersBySearch(cachedOrders);
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+      + '<p>검색 조건에 맞는 오더가 없습니다.</p></td></tr>';
+    return;
+  }
+
+  var orders = sortOrdersList(filtered);
+  var html = '';
+  orders.forEach(function(o) {
+    var actions = buildActionButtons(o);
+    var resultIcons = buildResultIcons(o);
+    var rowClass = 'order-row' + (selectedLogOrderId === o.id ? ' selected' : '');
+    var logClick = 'onclick="toggleLog(\'' + o.id + '\',\'' + escapeHtml(o.sample_name) + '\',\'' + o.status + '\')"';
+    var typeBadge = '';
+    if (o.order_type === 'longitudinal') typeBadge = '<span class="badge-type badge-type-longitudinal">L</span>';
+    html += '<tr class="' + rowClass + '" data-id="' + o.id + '" data-sample="' + escapeHtml(o.sample_name) + '" data-status="' + o.status + '">'
+      + '<td ' + logClick + '>' + escapeHtml(o.order_name || '-') + typeBadge + '</td>'
+      + '<td ' + logClick + '>' + escapeHtml(o.patient_name || '-') + '</td>'
+      + '<td ' + logClick + '>' + escapeHtml(o.sample_name || '-') + '</td>'
+      + '<td ' + logClick + '>' + escapeHtml(o.chart_number || '-') + '</td>'
+      + '<td ' + logClick + '>' + statusBadge(o.status) + '</td>'
+      + '<td ' + logClick + '>' + formatDateShort(o.created_at) + '</td>'
+      + '<td ' + logClick + '>' + (o.status === 'completed' || o.status === 'failed' || o.status === 'cancelled' ? formatDateShort(o.updated_at) : '-') + '</td>'
+      + '<td><div class="result-cell">' + resultIcons + '</div></td>'
+      + '<td><div class="actions-cell">' + actions + '</div></td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function loadOrders() {
+  var url = '/api/orders';
+  if (currentOrderFilter) url += '?status=' + currentOrderFilter;
+  apiFetch(url).then(function(orders) {
+    cachedOrders = orders || [];
+    renderOrderTable();
+  }).catch(function(err) {
+    showToast('오더 목록을 불러올 수 없습니다.', 'error');
+    cachedOrders = [];
+    renderOrderTable();
+  });
+}
+
+function buildActionButtons(order) {
+  var s = order.status;
+  var id = order.id;
+  var btns = '';
+
+  if (s === 'cancelling' || s === 'starting') {
+    return '<span style="font-size:.75rem;color:var(--text-muted);white-space:nowrap;">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite;vertical-align:middle;margin-right:4px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>'
+      + (s === 'cancelling' ? '중지 처리 중...' : '시작 처리 중...') + '</span>';
+  }
+
+  if (s === 'registered' || s === 'failed' || s === 'cancelled') {
+    btns += '<button class="action-btn" title="수정" style="color:var(--blue)" onclick="event.stopPropagation();openEditModal(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>';
+    btns += '<button class="action-btn act-start" title="실행" onclick="event.stopPropagation();startOrder(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>';
+  }
+
+  if (s === 'running') {
+    btns += '<button class="action-btn act-stop" title="중지" onclick="event.stopPropagation();stopOrder(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>';
+  }
+
+  if (s === 'failed' || s === 'cancelled' || s === 'completed') {
+    btns += '<button class="action-btn act-rerun" title="이어서 실행 (Resume)" onclick="event.stopPropagation();rerunOrder(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>';
+  }
+
+  if (s !== 'running') {
+    btns += '<button class="action-btn act-force" title="처음부터 실행" onclick="event.stopPropagation();forceOrder(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></button>';
+  }
+
+  if (order.has_vcf) {
+    btns += '<button class="action-btn act-review" title="결과 Review" onclick="event.stopPropagation();openReview(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>';
+  }
+
+  if (order.has_qc) {
+    btns += '<button class="action-btn act-qc" title="QC 결과" onclick="event.stopPropagation();openQC(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></button>';
+  }
+
+  if (order.order_type === 'longitudinal' && (s === 'completed')) {
+    btns += '<button class="action-btn" title="Longitudinal 결과" style="color:#7C3AED" onclick="event.stopPropagation();openLongit(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></button>';
+  }
+
+  btns += '<button class="action-btn act-delete" title="삭제" onclick="event.stopPropagation();deleteOrder(\'' + id + '\')">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
+
+  return btns;
+}
+
+function buildResultIcons(order) {
+  var sample = encodeURIComponent(order.sample_name);
+  var vcfSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2l1 3 2-6 1 3h2"/></svg>';
+  var logSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>';
+  var icons = '';
+
+  if (order.has_vcf) {
+    icons += '<button class="dl-btn dl-vcf" title="VCF 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/vcf\',\'_blank\')">' + vcfSvg + '</button>';
+  } else {
+    icons += '<button class="dl-btn dl-vcf disabled" title="VCF 미생성">' + vcfSvg + '</button>';
+  }
+
+  if (order.has_log) {
+    icons += '<button class="dl-btn dl-log" title="로그 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/log\',\'_blank\')">' + logSvg + '</button>';
+  } else {
+    icons += '<button class="dl-btn dl-log disabled" title="로그 미생성">' + logSvg + '</button>';
+  }
+
+  return icons;
+}
+
+/* ================================================================
+   ORDER ACTIONS
+   ================================================================ */
+function setOrderStatusLocally(orderId, tempStatus) {
+  if (!cachedOrders) return;
+  for (var i = 0; i < cachedOrders.length; i++) {
+    if (cachedOrders[i].id === orderId) {
+      cachedOrders[i]._origStatus = cachedOrders[i]._origStatus || cachedOrders[i].status;
+      cachedOrders[i].status = tempStatus;
+      break;
+    }
+  }
+  renderOrderTable(cachedOrders);
+}
+
+function startOrder(id) {
+  setOrderStatusLocally(id, 'starting');
+  showToast('분석 시작 요청 중...', 'info');
+  apiFetch('/api/orders/' + id + '/start', { method: 'POST' }).then(function(r) {
+    if (r.success) { showToast('Nextflow 분석을 시작했습니다.', 'success'); resetLogForOrder(id); }
+    else { showToast(r.error || '실행에 실패했습니다.', 'error'); }
+    loadOrders();
+  }).catch(function() { showToast('요청에 실패했습니다.', 'error'); loadOrders(); });
+}
+
+function stopOrder(id) {
+  showConfirm('분석 중지', '실행 중인 Nextflow 파이프라인을 중지하시겠습니까?', function() {
+    setOrderStatusLocally(id, 'cancelling');
+    showToast('분석 중지 요청 중... 잠시 기다려 주세요.', 'info');
+    apiFetch('/api/orders/' + id + '/stop', { method: 'POST' }).then(function(r) {
+      if (r.success) { showToast('분석을 중지했습니다.', 'success'); }
+      else { showToast(r.error || '중지에 실패했습니다.', 'error'); }
+      loadOrders();
+    }).catch(function() { showToast('요청에 실패했습니다.', 'error'); loadOrders(); });
+  }, true);
+}
+
+function rerunOrder(id) {
+  showConfirm('이어서 실행 (Resume)', 'Nextflow 캐시를 활용하여 이전 결과부터 이어서 실행합니다. 계속하시겠습니까?', function() {
+    setOrderStatusLocally(id, 'starting');
+    showToast('Resume 실행 요청 중...', 'info');
+    apiFetch('/api/orders/' + id + '/rerun', { method: 'POST' }).then(function(r) {
+      if (r.success) { showToast('Resume 실행을 시작했습니다.', 'success'); resetLogForOrder(id); }
+      else { showToast(r.error || '재실행에 실패했습니다.', 'error'); }
+      loadOrders();
+    }).catch(function() { showToast('요청에 실패했습니다.', 'error'); loadOrders(); });
+  }, false);
+}
+
+function forceOrder(id) {
+  showConfirm('처음부터 실행', 'Work 디렉토리와 결과를 모두 삭제하고 처음부터 다시 실행합니다. 계속하시겠습니까?', function() {
+    setOrderStatusLocally(id, 'starting');
+    showToast('처음부터 실행 요청 중...', 'info');
+    apiFetch('/api/orders/' + id + '/force', { method: 'POST' }).then(function(r) {
+      if (r.success) { showToast('처음부터 실행을 시작했습니다.', 'success'); resetLogForOrder(id); }
+      else { showToast(r.error || '강제 실행에 실패했습니다.', 'error'); }
+      loadOrders();
+    }).catch(function() { showToast('요청에 실패했습니다.', 'error'); loadOrders(); });
+  }, true);
+}
+
+function deleteOrder(id) {
+  showConfirm('오더 삭제', '이 오더를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.', function() {
+    apiFetch('/api/orders/' + id + '/delete', { method: 'DELETE' }).then(function(r) {
+      if (r.success) {
+        showToast('오더를 삭제했습니다.', 'success');
+        if (selectedLogOrderId === id) closeLogPanel();
+        loadOrders();
+      } else { showToast(r.error || '삭제에 실패했습니다.', 'error'); }
+    }).catch(function() { showToast('요청에 실패했습니다.', 'error'); });
+  }, true);
+}
+
+/* ================================================================
+   VARIANT REVIEW
+   ================================================================ */
+var reviewAllData = [];
+var reviewFilteredData = [];
+var reviewSortCol = '';
+var reviewSortAsc = true;
+var reviewColumns = [];
+var reviewSampleName = '';
+
+var colLabels = {
+  CHROM:'Chr', POS:'Position', REF:'Ref', ALT:'Alt', GENE:'Gene',
+  EFFECT:'Effect', AF:'VAF', DP:'Depth', VD:'Var Depth',
+  FILTER:'Filter', TYPE:'Type', QUAL:'Qual', ID:'ID', DBSNP_COMMON:'dbSNP'
+};
+
+function openReview(orderId) {
+  document.getElementById('reviewOverlay').classList.add('open');
+  document.getElementById('reviewTableBody').innerHTML = '<tr><td colspan="14" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>';
+  clearReviewFilters();
+
+  apiFetch('/api/orders/' + orderId + '/vcf_data').then(function(r) {
+    if (!r.success) { showToast(r.error || '데이터를 불러올 수 없습니다.', 'error'); return; }
+    reviewAllData = r.data;
+    reviewColumns = r.columns;
+    reviewSampleName = r.sample_name;
+    document.getElementById('reviewTitle').textContent = r.order_name || r.sample_name;
+    document.getElementById('reviewDlBtn').onclick = function() {
+      window.open('/api/download/' + encodeURIComponent(r.sample_name) + '/txt', '_blank');
+    };
+
+    buildReviewHeader();
+    populateReviewDropdowns();
+    applyReviewFilters();
+  }).catch(function() { showToast('Variant 데이터를 불러올 수 없습니다.', 'error'); });
+}
+
+function closeReview() {
+  document.getElementById('reviewOverlay').classList.remove('open');
+  reviewAllData = [];
+  reviewFilteredData = [];
+}
+
+function clearReviewFilters() {
+  document.getElementById('rv-gene').value = '';
+  document.getElementById('rv-pos-from').value = '';
+  document.getElementById('rv-pos-to').value = '';
+  document.getElementById('rv-af-min').value = '';
+  document.getElementById('rv-af-max').value = '';
+  var chromSel = document.getElementById('rv-chrom');
+  chromSel.innerHTML = '<option value="">전체</option>';
+  var typeSel = document.getElementById('rv-type');
+  typeSel.innerHTML = '<option value="">전체</option>';
+  document.getElementById('rv-filter').value = '';
+}
+
+function buildReviewHeader() {
+  var headRow = document.getElementById('reviewTableHead');
+  var html = '';
+  reviewColumns.forEach(function(c) {
+    var label = colLabels[c] || c;
+    html += '<th onclick="sortReview(\'' + c + '\')">' + label + '<span class="sort-arrow" id="rv-sort-' + c + '"></span></th>';
+  });
+  headRow.innerHTML = html;
+}
+
+function populateReviewDropdowns() {
+  var chroms = {};
+  var types = {};
+  reviewAllData.forEach(function(r) {
+    if (r.CHROM) chroms[r.CHROM] = 1;
+    if (r.TYPE) types[r.TYPE] = 1;
+  });
+
+  var chromSel = document.getElementById('rv-chrom');
+  chromSel.innerHTML = '<option value="">전체</option>';
+  Object.keys(chroms).sort(function(a, b) {
+    var na = parseInt(a.replace('chr', '')) || 99;
+    var nb = parseInt(b.replace('chr', '')) || 99;
+    return na - nb;
+  }).forEach(function(c) { chromSel.innerHTML += '<option value="' + c + '">' + c + '</option>'; });
+
+  var typeSel = document.getElementById('rv-type');
+  typeSel.innerHTML = '<option value="">전체</option>';
+  Object.keys(types).sort().forEach(function(t) { typeSel.innerHTML += '<option value="' + t + '">' + t + '</option>'; });
+}
+
+function applyReviewFilters() {
+  var gene = document.getElementById('rv-gene').value.trim().toUpperCase();
+  var chrom = document.getElementById('rv-chrom').value;
+  var posFrom = document.getElementById('rv-pos-from').value ? parseInt(document.getElementById('rv-pos-from').value) : null;
+  var posTo = document.getElementById('rv-pos-to').value ? parseInt(document.getElementById('rv-pos-to').value) : null;
+  var afMin = document.getElementById('rv-af-min').value ? parseFloat(document.getElementById('rv-af-min').value) : null;
+  var afMax = document.getElementById('rv-af-max').value ? parseFloat(document.getElementById('rv-af-max').value) : null;
+  var filterVal = document.getElementById('rv-filter').value;
+  var typeVal = document.getElementById('rv-type').value;
+
+  reviewFilteredData = reviewAllData.filter(function(r) {
+    if (gene && (!r.GENE || r.GENE.toUpperCase().indexOf(gene) === -1)) return false;
+    if (chrom && r.CHROM !== chrom) return false;
+    var pos = parseInt(r.POS);
+    if (posFrom !== null && pos < posFrom) return false;
+    if (posTo !== null && pos > posTo) return false;
+    var af = parseFloat(r.AF);
+    if (afMin !== null && (isNaN(af) || af < afMin)) return false;
+    if (afMax !== null && (isNaN(af) || af > afMax)) return false;
+    if (filterVal === 'PASS' && r.FILTER !== 'PASS') return false;
+    if (filterVal === 'non-PASS' && r.FILTER === 'PASS') return false;
+    if (typeVal && r.TYPE !== typeVal) return false;
+    return true;
+  });
+
+  if (reviewSortCol) {
+    sortReviewData();
+  }
+
+  renderReviewTable();
+}
+
+function sortReview(col) {
+  if (reviewSortCol === col) {
+    reviewSortAsc = !reviewSortAsc;
+  } else {
+    reviewSortCol = col;
+    reviewSortAsc = true;
+  }
+
+  document.querySelectorAll('#reviewTableHead .sort-arrow').forEach(function(el) {
+    el.className = 'sort-arrow';
+  });
+  var arrow = document.getElementById('rv-sort-' + col);
+  if (arrow) arrow.className = 'sort-arrow ' + (reviewSortAsc ? 'asc' : 'desc');
+
+  sortReviewData();
+  renderReviewTable();
+}
+
+function sortReviewData() {
+  var col = reviewSortCol;
+  var asc = reviewSortAsc;
+  var numericCols = { POS:1, AF:1, DP:1, VD:1, QUAL:1 };
+  reviewFilteredData.sort(function(a, b) {
+    var va = a[col] || '';
+    var vb = b[col] || '';
+    if (numericCols[col]) {
+      va = parseFloat(va) || 0;
+      vb = parseFloat(vb) || 0;
+    } else {
+      va = va.toString().toLowerCase();
+      vb = vb.toString().toLowerCase();
+    }
+    if (va < vb) return asc ? -1 : 1;
+    if (va > vb) return asc ? 1 : -1;
+    return 0;
+  });
+}
+
+function renderReviewTable() {
+  var tbody = document.getElementById('reviewTableBody');
+  var total = reviewAllData.length;
+  var filtered = reviewFilteredData.length;
+  document.getElementById('reviewCount').textContent = total + ' variants';
+  document.getElementById('reviewFilteredCount').textContent = filtered + ' / ' + total + ' variants';
+
+  if (filtered === 0) {
+    tbody.innerHTML = '<tr><td colspan="' + reviewColumns.length + '" class="empty-state"><p>조건에 맞는 변이가 없습니다.</p></td></tr>';
+    return;
+  }
+
+  var html = '';
+  reviewFilteredData.forEach(function(r) {
+    html += '<tr>';
+    reviewColumns.forEach(function(c) {
+      var val = escapeHtml(r[c] || '');
+      var cls = '';
+      if (c === 'GENE') cls = ' class="cell-gene"';
+      else if (c === 'EFFECT') { cls = ' class="cell-effect"'; val = val.replace(/_/g, ' '); }
+      else if (c === 'AF') {
+        cls = ' class="cell-af"';
+        var afNum = parseFloat(r[c]);
+        if (!isNaN(afNum)) {
+          val = afNum.toFixed(4);
+          if (afNum >= 0.05) val = '<span style="color:var(--red)">' + val + '</span>';
+          else if (afNum >= 0.01) val = '<span style="color:var(--yellow)">' + val + '</span>';
+          else val = '<span style="color:var(--text-light)">' + val + '</span>';
+        }
+      } else if (c === 'FILTER') {
+        cls = r[c] === 'PASS' ? ' class="cell-filter-pass"' : ' class="cell-filter-fail"';
+      }
+      html += '<td' + cls + ' title="' + escapeHtml(r[c] || '') + '">' + val + '</td>';
+    });
+    html += '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function downloadReviewVcf() {
+  if (reviewSampleName) {
+    window.open('/api/download/' + encodeURIComponent(reviewSampleName) + '/txt', '_blank');
+  }
+}
+
+/* ================================================================
+   QC VIEWER
+   ================================================================ */
+var qcData = null;
+
+function openQC(orderId) {
+  document.getElementById('qcOverlay').classList.add('open');
+  document.getElementById('qcSummary').innerHTML = '<div style="padding:12px;color:var(--text-muted);text-align:center;grid-column:1/-1">QC 데이터를 불러오는 중...</div>';
+  document.getElementById('qcTabs').innerHTML = '';
+  document.getElementById('qcTabContents').innerHTML = '';
+
+  apiFetch('/api/orders/' + orderId + '/qc_data').then(function(d) {
+    if (!d.success) { showToast(d.error || 'QC 데이터를 불러올 수 없습니다.', 'error'); return; }
+    qcData = d;
+    document.getElementById('qcTitle').textContent = (d.order_name || d.sample_name) + ' — QC Report';
+    renderQCSummary(d);
+    renderQCTabs(d);
+  }).catch(function() { showToast('QC 데이터 로딩 실패', 'error'); });
+}
+
+function closeQC() {
+  document.getElementById('qcOverlay').classList.remove('open');
+  qcData = null;
+}
+
+function fmtNum(v, decimals) {
+  var n = parseFloat(v);
+  if (isNaN(n)) return '-';
+  if (decimals !== undefined) return n.toFixed(decimals);
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'G';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return n.toFixed(n % 1 === 0 ? 0 : 2);
+}
+
+function fmtPct(v) {
+  var n = parseFloat(v);
+  if (isNaN(n)) return '-';
+  return (n * 100).toFixed(2) + '%';
+}
+
+function kpiClass(val, goodThresh, warnThresh, higherIsBetter) {
+  var n = parseFloat(val);
+  if (isNaN(n)) return 'neutral';
+  if (higherIsBetter) {
+    if (n >= goodThresh) return 'good';
+    if (n >= warnThresh) return 'warn';
+    return 'bad';
+  } else {
+    if (n <= goodThresh) return 'good';
+    if (n <= warnThresh) return 'warn';
+    return 'bad';
+  }
+}
+
+function renderQCSummary(d) {
+  var html = '';
+  var hs = d.hs_metrics_umi_deduped || d.hs_metrics_aligned || {};
+  var dup = d.duplicates || {};
+  var fastp = d.fastp || {};
+  var ins = d.insert_size_umi_deduped || d.insert_size_aligned || {};
+  var aln = d.alignment_umi_deduped || d.alignment_aligned || {};
+
+  var meanCov = parseFloat(hs.mean_target_coverage);
+  html += '<div class="qc-kpi ' + kpiClass(meanCov, 500, 100, true) + '">'
+    + '<div class="kpi-label">Mean Target Depth</div>'
+    + '<div class="kpi-value">' + fmtNum(meanCov, 1) + 'x</div>'
+    + '<div class="kpi-sub">Median: ' + fmtNum(hs.median_target_coverage, 0) + 'x</div></div>';
+
+  var dupPct = parseFloat(dup.percent_duplication);
+  html += '<div class="qc-kpi ' + kpiClass(dupPct, 0.10, 0.30, false) + '">'
+    + '<div class="kpi-label">Duplication Rate</div>'
+    + '<div class="kpi-value">' + fmtPct(dup.percent_duplication) + '</div>'
+    + '<div class="kpi-sub">Optical dups: ' + fmtNum(dup.read_pair_optical_duplicates) + '</div></div>';
+
+  var onTargetPct = parseFloat(hs.pct_usable_bases_on_target);
+  html += '<div class="qc-kpi ' + kpiClass(onTargetPct, 0.30, 0.15, true) + '">'
+    + '<div class="kpi-label">On-target Rate</div>'
+    + '<div class="kpi-value">' + fmtPct(hs.pct_usable_bases_on_target) + '</div>'
+    + '<div class="kpi-sub">Selected: ' + fmtPct(hs.pct_selected_bases) + '</div></div>';
+
+  var q30 = parseFloat(fastp.after_q30_rate);
+  html += '<div class="qc-kpi ' + kpiClass(q30, 0.90, 0.80, true) + '">'
+    + '<div class="kpi-label">Q30 (After Trim)</div>'
+    + '<div class="kpi-value">' + fmtPct(fastp.after_q30_rate) + '</div>'
+    + '<div class="kpi-sub">Q20: ' + fmtPct(fastp.after_q20_rate) + '</div></div>';
+
+  html += '<div class="qc-kpi neutral">'
+    + '<div class="kpi-label">Total Reads (Raw)</div>'
+    + '<div class="kpi-value">' + fmtNum(fastp.before_total_reads) + '</div>'
+    + '<div class="kpi-sub">After trim: ' + fmtNum(fastp.after_total_reads) + '</div></div>';
+
+  var alnPct = parseFloat(aln.pct_pf_reads_aligned);
+  html += '<div class="qc-kpi ' + kpiClass(alnPct, 0.95, 0.85, true) + '">'
+    + '<div class="kpi-label">Alignment Rate</div>'
+    + '<div class="kpi-value">' + fmtPct(aln.pct_pf_reads_aligned) + '</div>'
+    + '<div class="kpi-sub">Reads: ' + fmtNum(aln.total_reads) + '</div></div>';
+
+  var medIns = parseFloat(ins.median_insert_size);
+  html += '<div class="qc-kpi neutral">'
+    + '<div class="kpi-label">Insert Size (Median)</div>'
+    + '<div class="kpi-value">' + fmtNum(medIns, 0) + ' bp</div>'
+    + '<div class="kpi-sub">SD: ' + fmtNum(ins.standard_deviation, 1) + '</div></div>';
+
+  var fold80 = parseFloat(hs.fold_80_base_penalty);
+  html += '<div class="qc-kpi ' + kpiClass(fold80, 1.5, 2.5, false) + '">'
+    + '<div class="kpi-label">Uniformity (Fold-80)</div>'
+    + '<div class="kpi-value">' + fmtNum(fold80, 2) + '</div>'
+    + '<div class="kpi-sub">Lower is more uniform</div></div>';
+
+  document.getElementById('qcSummary').innerHTML = html;
+}
+
+function renderQCTabs(d) {
+  var tabs = [];
+  if (d.hs_metrics_umi_deduped || d.hs_metrics_aligned) tabs.push({ id: 'coverage', label: 'Coverage' });
+  if (d.fastp) tabs.push({ id: 'trimming', label: 'Trimming (fastp)' });
+  if (d.alignment_umi_deduped || d.alignment_aligned) tabs.push({ id: 'alignment', label: 'Alignment' });
+  if (d.insert_size_umi_deduped || d.insert_size_aligned) tabs.push({ id: 'insertsize', label: 'Insert Size' });
+  if (d.duplicates) tabs.push({ id: 'duplicates', label: 'Duplicates' });
+  if (d.mismatch_rate) tabs.push({ id: 'mismatch', label: 'Mismatch Rate' });
+
+  var tabHtml = '';
+  tabs.forEach(function(t, i) {
+    tabHtml += '<div class="qc-tab' + (i === 0 ? ' active' : '') + '" data-tab="' + t.id + '" onclick="switchQCTab(\'' + t.id + '\')">' + t.label + '</div>';
+  });
+  document.getElementById('qcTabs').innerHTML = tabHtml;
+
+  var contentHtml = '';
+  tabs.forEach(function(t, i) {
+    contentHtml += '<div class="qc-tab-content' + (i === 0 ? ' active' : '') + '" id="qc-content-' + t.id + '">';
+    contentHtml += buildQCTabContent(t.id, d);
+    contentHtml += '</div>';
+  });
+  document.getElementById('qcTabContents').innerHTML = contentHtml;
+}
+
+function switchQCTab(tabId) {
+  document.querySelectorAll('.qc-tab').forEach(function(t) { t.classList.toggle('active', t.getAttribute('data-tab') === tabId); });
+  document.querySelectorAll('.qc-tab-content').forEach(function(c) { c.classList.toggle('active', c.id === 'qc-content-' + tabId); });
+}
+
+function buildQCTabContent(tabId, d) {
+  switch(tabId) {
+    case 'coverage': return buildCoverageTab(d);
+    case 'trimming': return buildTrimmingTab(d);
+    case 'alignment': return buildAlignmentTab(d);
+    case 'insertsize': return buildInsertSizeTab(d);
+    case 'duplicates': return buildDuplicatesTab(d);
+    case 'mismatch': return buildMismatchTab(d);
+    default: return '';
+  }
+}
+
+function qcRow(label, value) {
+  return '<div class="qc-detail-row"><span class="qc-detail-label">' + label + '</span><span class="qc-detail-value">' + value + '</span></div>';
+}
+
+function buildCoverageTab(d) {
+  var html = '';
+  var hs = d.hs_metrics_umi_deduped || {};
+  var hsA = d.hs_metrics_aligned || {};
+
+  // Coverage depth distribution chart
+  var depths = ['1x','10x','20x','30x','50x','100x','250x','500x','1000x'];
+  var keys = ['pct_target_bases_1x','pct_target_bases_10x','pct_target_bases_20x','pct_target_bases_30x','pct_target_bases_50x','pct_target_bases_100x','pct_target_bases_250x','pct_target_bases_500x','pct_target_bases_1000x'];
+  var hasChart = hs.pct_target_bases_1x !== undefined;
+
+  if (hasChart) {
+    html += '<div style="margin-bottom:16px"><div style="font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:8px">Target Bases Coverage Distribution (UMI Deduped)</div>';
+    html += '<div class="cov-chart">';
+    for (var i = 0; i < depths.length; i++) {
+      var pct = parseFloat(hs[keys[i]]) || 0;
+      var h = Math.max(pct * 100, 1);
+      var color = pct >= 0.8 ? 'var(--green)' : pct >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+      html += '<div class="cov-bar-wrap">'
+        + '<div class="cov-bar-val">' + (pct * 100).toFixed(1) + '%</div>'
+        + '<div style="flex:1;display:flex;align-items:flex-end;width:100%"><div class="cov-bar" style="height:' + h + '%;background:' + color + '"></div></div>'
+        + '<div class="cov-bar-label">' + depths[i] + '</div>'
+        + '</div>';
+    }
+    html += '</div></div>';
+  }
+
+  // Detail metrics
+  html += '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">UMI Deduped BAM</div>';
+  html += qcRow('Mean Target Coverage', fmtNum(hs.mean_target_coverage, 1) + 'x');
+  html += qcRow('Median Target Coverage', fmtNum(hs.median_target_coverage, 0) + 'x');
+  html += qcRow('Max Target Coverage', fmtNum(hs.max_target_coverage) + 'x');
+  html += qcRow('Fold Enrichment', fmtNum(hs.fold_enrichment, 1));
+  html += qcRow('Fold-80 Base Penalty', fmtNum(hs.fold_80_base_penalty, 2));
+  html += qcRow('Zero Coverage Targets', fmtPct(hs.zero_cvg_targets_pct));
+  html += qcRow('On-target Bases', fmtNum(hs.on_target_bases));
+  html += qcRow('Usable Bases on Target', fmtPct(hs.pct_usable_bases_on_target));
+  html += qcRow('Selected Bases', fmtPct(hs.pct_selected_bases));
+  html += qcRow('Target Territory', fmtNum(hs.target_territory) + ' bp');
+  if (d.ontarget_umi_deduped) html += qcRow('On-target Reads (Mapped)', fmtNum(d.ontarget_umi_deduped));
+
+  if (hsA.mean_target_coverage) {
+    html += '<div class="qc-section-title">Aligned BAM (Pre-dedup)</div>';
+    html += qcRow('Mean Target Coverage', fmtNum(hsA.mean_target_coverage, 1) + 'x');
+    html += qcRow('Median Target Coverage', fmtNum(hsA.median_target_coverage, 0) + 'x');
+    html += qcRow('Fold Enrichment', fmtNum(hsA.fold_enrichment, 1));
+    html += qcRow('Zero Coverage Targets', fmtPct(hsA.zero_cvg_targets_pct));
+    if (d.ontarget_aligned) html += qcRow('On-target Reads (Mapped)', fmtNum(d.ontarget_aligned));
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function buildTrimmingTab(d) {
+  var f = d.fastp || {};
+  var html = '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">Before Filtering</div>';
+  html += qcRow('Total Reads', fmtNum(f.before_total_reads));
+  html += qcRow('Total Bases', fmtNum(f.before_total_bases));
+  html += qcRow('Q20 Rate', fmtPct(f.before_q20_rate));
+  html += qcRow('Q30 Rate', fmtPct(f.before_q30_rate));
+  html += qcRow('GC Content', fmtPct(f.before_gc_content));
+
+  html += '<div class="qc-section-title">After Filtering</div>';
+  html += qcRow('Total Reads', fmtNum(f.after_total_reads));
+  html += qcRow('Total Bases', fmtNum(f.after_total_bases));
+  html += qcRow('Q20 Rate', fmtPct(f.after_q20_rate));
+  html += qcRow('Q30 Rate', fmtPct(f.after_q30_rate));
+  html += qcRow('GC Content', fmtPct(f.after_gc_content));
+  html += qcRow('R1 Mean Length', fmtNum(f.after_read1_mean_length, 0) + ' bp');
+  html += qcRow('R2 Mean Length', fmtNum(f.after_read2_mean_length, 0) + ' bp');
+
+  if (f.passed_filter_reads !== undefined) {
+    html += '<div class="qc-section-title">Filtering Results</div>';
+    html += qcRow('Passed Filter', fmtNum(f.passed_filter_reads));
+    html += qcRow('Low Quality', fmtNum(f.low_quality_reads));
+    html += qcRow('Too Short', fmtNum(f.too_short_reads));
+    html += qcRow('Adapter Trimmed', fmtNum(f.adapter_trimmed_reads));
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function buildAlignmentTab(d) {
+  var html = '<div class="qc-detail-grid">';
+  var sections = [
+    { key: 'alignment_umi_deduped', title: 'UMI Deduped BAM' },
+    { key: 'alignment_aligned', title: 'Aligned BAM' }
+  ];
+  sections.forEach(function(sec) {
+    var a = d[sec.key];
+    if (!a) return;
+    html += '<div class="qc-section-title">' + sec.title + '</div>';
+    html += qcRow('Total Reads', fmtNum(a.total_reads));
+    html += qcRow('Reads Aligned', fmtNum(a.pf_reads_aligned));
+    html += qcRow('Alignment Rate', fmtPct(a.pct_pf_reads_aligned));
+    html += qcRow('Mismatch Rate', fmtPct(a.pf_mismatch_rate));
+    html += qcRow('Chimera Rate', fmtPct(a.pct_chimeras));
+    html += qcRow('Adapter Rate', fmtPct(a.pct_adapter));
+    html += qcRow('Mean Read Length', fmtNum(a.mean_read_length, 1) + ' bp');
+    html += qcRow('Paired Alignment', fmtPct(a.pct_reads_aligned_in_pairs));
+    html += qcRow('Strand Balance', fmtNum(a.strand_balance, 4));
+  });
+  html += '</div>';
+  return html;
+}
+
+function buildInsertSizeTab(d) {
+  var html = '<div class="qc-detail-grid">';
+  var sections = [
+    { key: 'insert_size_umi_deduped', title: 'UMI Deduped BAM' },
+    { key: 'insert_size_aligned', title: 'Aligned BAM' }
+  ];
+  sections.forEach(function(sec) {
+    var ins = d[sec.key];
+    if (!ins) return;
+    html += '<div class="qc-section-title">' + sec.title + '</div>';
+    html += qcRow('Median Insert Size', fmtNum(ins.median_insert_size, 0) + ' bp');
+    html += qcRow('Mean Insert Size', fmtNum(ins.mean_insert_size, 1) + ' bp');
+    html += qcRow('Mode Insert Size', fmtNum(ins.mode_insert_size, 0) + ' bp');
+    html += qcRow('Standard Deviation', fmtNum(ins.standard_deviation, 1) + ' bp');
+    html += qcRow('Min Insert Size', fmtNum(ins.min_insert_size, 0) + ' bp');
+    html += qcRow('Read Pairs', fmtNum(ins.read_pairs));
+  });
+  html += '</div>';
+  return html;
+}
+
+function buildDuplicatesTab(d) {
+  var dup = d.duplicates || {};
+  var html = '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">MarkDuplicates (GATK)</div>';
+  html += qcRow('Read Pairs Examined', fmtNum(dup.read_pairs_examined));
+  html += qcRow('Duplicate Pairs', fmtNum(dup.read_pair_duplicates));
+  html += qcRow('Optical Duplicates', fmtNum(dup.read_pair_optical_duplicates));
+  html += qcRow('Duplication Rate', fmtPct(dup.percent_duplication));
+  html += qcRow('Estimated Library Size', fmtNum(dup.estimated_library_size));
+  html += '</div>';
+  return html;
+}
+
+function buildMismatchTab(d) {
+  var mm = d.mismatch_rate || {};
+  var html = '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">Mismatch Rate Analysis</div>';
+  html += qcRow('Overall Rate', (parseFloat(mm.rate) * 100).toFixed(4) + '%');
+  html += qcRow('C>A', (parseFloat(mm.CA || 0) * 100).toFixed(4) + '%');
+  html += qcRow('C>G', (parseFloat(mm.CG || 0) * 100).toFixed(4) + '%');
+  html += qcRow('C>T', (parseFloat(mm.CT || 0) * 100).toFixed(4) + '%');
+  html += qcRow('T>A', (parseFloat(mm.TA || 0) * 100).toFixed(4) + '%');
+  html += qcRow('T>C', (parseFloat(mm.TC || 0) * 100).toFixed(4) + '%');
+  html += qcRow('T>G', (parseFloat(mm.TG || 0) * 100).toFixed(4) + '%');
+  html += '</div>';
+  return html;
+}
+
+/* ================================================================
+   LOG PANEL
+   ================================================================ */
+function resetLogForOrder(orderId) {
+  if (selectedLogOrderId === orderId) {
+    document.getElementById('logBody').textContent = '새 분석이 시작되었습니다. 로그를 기다리는 중...';
+    if (logRefreshTimer) clearInterval(logRefreshTimer);
+    logRefreshTimer = setInterval(function() { loadLog(orderId); }, 3000);
+  }
+}
+
+function toggleLog(orderId, sampleName, status) {
+  if (selectedLogOrderId === orderId) {
+    closeLogPanel();
+    return;
+  }
+  selectedLogOrderId = orderId;
+  selectedLogSample = sampleName;
+  document.getElementById('logPanelTitle').textContent = sampleName + ' 로그';
+  document.getElementById('logBody').textContent = '로그를 불러오는 중...';
+  document.getElementById('logPanel').classList.add('open');
+
+  document.querySelectorAll('.order-row').forEach(function(r) { r.classList.remove('selected'); });
+  var row = document.querySelector('tr[data-id="' + orderId + '"]');
+  if (row) row.classList.add('selected');
+
+  loadLog(orderId);
+
+  if (logRefreshTimer) clearInterval(logRefreshTimer);
+  if (status === 'running') {
+    logRefreshTimer = setInterval(function() { loadLog(orderId); }, 3000);
+  }
+}
+
+function loadLog(orderId) {
+  if (selectedLogOrderId !== orderId) return;
+  if (logRefreshPaused) return;
+  apiFetch('/api/orders/' + orderId + '/logs').then(function(r) {
+    if (!r.success) return;
+    var body = document.getElementById('logBody');
+    var wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 50;
+    body.textContent = r.logs;
+    if (wasAtBottom) body.scrollTop = body.scrollHeight;
+  }).catch(function() {});
+}
+
+var logRefreshPaused = false;
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast('클립보드에 복사되었습니다.', 'success');
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      showToast('클립보드에 복사되었습니다.', 'success');
+    } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+document.getElementById('logBody').addEventListener('mousedown', function() {
+  logRefreshPaused = true;
+});
+
+document.getElementById('logBody').addEventListener('mouseup', function() {
+  var text = (window.getSelection() || '').toString();
+  if (text.length > 0) {
+    copyToClipboard(text);
+  }
+  setTimeout(function() { logRefreshPaused = false; }, 2000);
+});
+
+function closeLogPanel() {
+  selectedLogOrderId = null;
+  selectedLogSample = null;
+  document.getElementById('logPanel').classList.remove('open');
+  document.querySelectorAll('.order-row').forEach(function(r) { r.classList.remove('selected'); });
+  if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
+}
+
+function downloadLog() {
+  if (!selectedLogSample) return;
+  window.open('/api/download/' + encodeURIComponent(selectedLogSample) + '/log', '_blank');
+}
+
+/* ================================================================
+   CREATE ORDER MODAL
+   ================================================================ */
+function openCreateModal() {
+  editingOrderId = null;
+  document.getElementById('createModalTitle').textContent = '새 오더 생성';
+  document.getElementById('createModalSubmitText').textContent = '등록';
+  document.getElementById('createModal').classList.add('open');
+  resetOrderForm();
+  currentFastqPath = '';
+  selectedFastq = null;
+  loadFastqFiles('');
+  loadDefaultSettings();
+}
+
+function openEditModal(orderId) {
+  editingOrderId = orderId;
+  document.getElementById('createModalTitle').textContent = '오더 수정';
+  document.getElementById('createModalSubmitText').textContent = '저장';
+  document.getElementById('createModal').classList.add('open');
+  resetOrderForm();
+  currentFastqPath = '';
+
+  apiFetch('/api/orders/' + orderId).then(function(o) {
+    document.getElementById('ord-order_name').value = o.order_name || '';
+    document.getElementById('ord-patient_name').value = o.patient_name || '';
+    document.getElementById('ord-patient_dob').value = o.patient_dob || '';
+    document.getElementById('ord-chart_number').value = o.chart_number || '';
+    document.getElementById('ord-department').value = o.department || '';
+    document.getElementById('ord-doctor_name').value = o.doctor_name || '';
+    document.getElementById('ord-diagnosis').value = o.diagnosis || '';
+    document.getElementById('ord-doctor_comment').value = o.doctor_comment || '';
+    document.getElementById('ord-sample_name').value = o.sample_name || '';
+    document.getElementById('ord-reference').value = o.reference || 'hg38';
+    document.getElementById('ord-profile').value = o.profile || 'docker';
+    document.getElementById('ord-af_threshold').value = o.af_threshold || 0.005;
+    document.getElementById('ord-bed_file').value = o.bed_file || '';
+    document.getElementById('ord-remove_bams').checked = o.remove_bams === 'Y';
+    document.getElementById('ord-delete_intermediate').checked = o.delete_intermediate === 'Y';
+
+    selectedFastq = { name: o.sample_name, r1: o.r1_fastq, r2: o.r2_fastq };
+
+    if (o.r1_fastq) {
+      var parts = o.r1_fastq.split('/');
+      if (parts.length > 1) {
+        currentFastqPath = parts.slice(0, -1).join('/');
+      }
+    }
+    loadFastqFiles(currentFastqPath);
+
+    if (longitudinalEnabled && o.order_type === 'longitudinal') {
+      currentOrderType = 'longitudinal';
+      document.querySelectorAll('.order-type-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.type === 'longitudinal');
+      });
+      document.getElementById('longitRefSection').style.display = 'block';
+      loadCompletedOrders().then ? loadCompletedOrders() : apiFetch('/api/orders/completed_list').then(function(orders) {
+        completedOrdersCache = orders || [];
+        populateRefSelects();
+        if (o.baseline_order_id) document.getElementById('ord-baseline_order_id').value = o.baseline_order_id;
+        if (o.germline_order_id) document.getElementById('ord-germline_order_id').value = o.germline_order_id;
+        if (o.baseline_order_id) onBaselineSelected();
+        if (o.followup_order_ids) {
+          var fuIds = o.followup_order_ids.split(',');
+          setTimeout(function() {
+            document.querySelectorAll('.longit-fu-check').forEach(function(cb) {
+              if (fuIds.indexOf(cb.value) !== -1) cb.checked = true;
+            });
+          }, 200);
+        }
+      });
+    }
+  }).catch(function() {
+    showToast('오더 정보를 불러올 수 없습니다.', 'error');
+    closeCreateModal();
+  });
+}
+
+function closeCreateModal() {
+  editingOrderId = null;
+  document.getElementById('createModal').classList.remove('open');
+}
+
+function resetOrderForm() {
+  var fields = ['order_name','patient_name','patient_dob','chart_number','department','doctor_name','diagnosis','doctor_comment','sample_name'];
+  fields.forEach(function(f) { document.getElementById('ord-' + f).value = ''; });
+  document.getElementById('ord-bed_file').value = '';
+  document.getElementById('ord-remove_bams').checked = true;
+  document.getElementById('ord-delete_intermediate').checked = true;
+  document.getElementById('bedBrowserSection').style.display = 'none';
+  currentOrderType = 'baseline';
+  document.querySelectorAll('.order-type-btn').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.type === 'baseline');
+  });
+  document.getElementById('longitRefSection').style.display = 'none';
+  document.getElementById('ord-baseline_order_id').value = '';
+  document.getElementById('ord-germline_order_id').value = '';
+}
+
+function loadDefaultSettings() {
+  apiFetch('/api/settings').then(function(s) {
+    if (s.default_reference) document.getElementById('ord-reference').value = s.default_reference;
+    if (s.default_profile) document.getElementById('ord-profile').value = s.default_profile;
+    if (s.default_af_threshold) document.getElementById('ord-af_threshold').value = s.default_af_threshold;
+    if (s.remove_bams) document.getElementById('ord-remove_bams').checked = s.remove_bams === 'Y';
+    if (s.delete_intermediate) document.getElementById('ord-delete_intermediate').checked = s.delete_intermediate === 'Y';
+  }).catch(function() {});
+}
+
+function submitOrder() {
+  var orderName = document.getElementById('ord-order_name').value.trim();
+  var sampleName = document.getElementById('ord-sample_name').value.trim();
+
+  if (!sampleName) { showToast('샘플명을 입력해주세요.', 'error'); return; }
+  if (!selectedFastq && !editingOrderId) { showToast('FASTQ 파일을 선택해주세요.', 'error'); return; }
+  if (!orderName) orderName = sampleName;
+
+  if (currentOrderType === 'longitudinal' && longitudinalEnabled) {
+    var blId = document.getElementById('ord-baseline_order_id').value;
+    var glId = document.getElementById('ord-germline_order_id').value;
+    if (!blId) { showToast('Baseline 오더를 선택해주세요.', 'error'); return; }
+    if (!glId) { showToast('Germline 오더를 선택해주세요.', 'error'); return; }
+  }
+
+  var data = {
+    order_name: orderName,
+    patient_name: document.getElementById('ord-patient_name').value.trim(),
+    patient_dob: document.getElementById('ord-patient_dob').value,
+    chart_number: document.getElementById('ord-chart_number').value.trim(),
+    department: document.getElementById('ord-department').value.trim(),
+    doctor_name: document.getElementById('ord-doctor_name').value.trim(),
+    diagnosis: document.getElementById('ord-diagnosis').value.trim(),
+    doctor_comment: document.getElementById('ord-doctor_comment').value.trim(),
+    sample_name: sampleName,
+    r1_fastq: selectedFastq ? selectedFastq.r1 : '',
+    r2_fastq: selectedFastq ? selectedFastq.r2 : '',
+    reference: document.getElementById('ord-reference').value,
+    profile: document.getElementById('ord-profile').value,
+    af_threshold: parseFloat(document.getElementById('ord-af_threshold').value) || 0.005,
+    bed_file: document.getElementById('ord-bed_file').value,
+    remove_bams: document.getElementById('ord-remove_bams').checked ? 'Y' : 'N',
+    delete_intermediate: document.getElementById('ord-delete_intermediate').checked ? 'Y' : 'N',
+    order_type: currentOrderType
+  };
+
+  if (currentOrderType === 'longitudinal' && longitudinalEnabled) {
+    data.baseline_order_id = document.getElementById('ord-baseline_order_id').value;
+    data.germline_order_id = document.getElementById('ord-germline_order_id').value;
+    var fuChecks = document.querySelectorAll('.longit-fu-check:checked');
+    var fuIds = [];
+    fuChecks.forEach(function(cb) { fuIds.push(cb.value); });
+    data.followup_order_ids = fuIds;
+  }
+
+  var url = editingOrderId ? '/api/orders/' + editingOrderId : '/api/orders';
+  var method = editingOrderId ? 'PUT' : 'POST';
+
+  apiFetch(url, {
+    method: method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function(r) {
+    if (r.success) {
+      showToast(editingOrderId ? '오더가 수정되었습니다.' : '오더가 등록되었습니다.', 'success');
+      closeCreateModal();
+      loadOrders();
+    } else {
+      showToast(r.error || (editingOrderId ? '오더 수정에 실패했습니다.' : '오더 등록에 실패했습니다.'), 'error');
+    }
+  }).catch(function() { showToast('요청에 실패했습니다.', 'error'); });
+}
+
+/* ================================================================
+   FASTQ FILE BROWSER
+   ================================================================ */
+function loadFastqFiles(path) {
+  currentFastqPath = path;
+  document.getElementById('fastqCurrentPath').textContent = '/' + (path || '');
+  var list = document.getElementById('fastqFileList');
+  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted)">불러오는 중...</div>';
+
+  apiFetch('/api/fastq_files?path=' + encodeURIComponent(path)).then(function(data) {
+    var html = '';
+
+    if (data.parent_path !== null && data.parent_path !== undefined) {
+      html += '<div class="file-browser-item dir" onclick="loadFastqFiles(\'' + escapeHtml(data.parent_path) + '\')">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>'
+        + '<div class="file-info"><div class="file-name">.. (상위 폴더)</div></div></div>';
+    }
+
+    if (data.directories) {
+      data.directories.forEach(function(d) {
+        html += '<div class="file-browser-item dir" onclick="loadFastqFiles(\'' + escapeHtml(d.path) + '\')">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
+          + '<div class="file-info"><div class="file-name">' + escapeHtml(d.name) + '</div></div></div>';
+      });
+    }
+
+    if (data.samples) {
+      data.samples.forEach(function(s, idx) {
+        var isSelected = selectedFastq && selectedFastq.r1 === s.r1;
+        var radioId = 'fq-radio-' + idx;
+        html += '<label class="file-browser-item' + (isSelected ? ' selected' : '') + '" for="' + radioId + '" style="display:flex;align-items:flex-start">'
+          + '<input type="radio" name="fastq-select" id="' + radioId + '" ' + (isSelected ? 'checked' : '')
+          + ' onchange="selectFastq(this.closest(\'.file-browser-item\'),\'' + escapeHtml(s.name) + '\',\'' + escapeHtml(s.r1) + '\',\'' + escapeHtml(s.r2) + '\')"'
+          + ' style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:var(--primary);cursor:pointer">'
+          + '<div class="file-info" style="margin-left:8px">'
+          + '<div class="file-name">' + escapeHtml(s.name) + '</div>'
+          + '<div class="file-meta" style="color:var(--primary)">R1: ' + escapeHtml(s.r1.split('/').pop()) + ' (' + formatSize(s.size_r1) + ')</div>'
+          + '<div class="file-meta" style="color:var(--teal)">R2: ' + escapeHtml(s.r2.split('/').pop()) + ' (' + formatSize(s.size_r2) + ')</div>'
+          + '</div></label>';
+      });
+    }
+
+    if (!html) {
+      html = '<div style="padding:20px;text-align:center;color:var(--text-muted)">파일이 없습니다.</div>';
+    }
+    list.innerHTML = html;
+  }).catch(function() {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">파일 목록을 불러올 수 없습니다.</div>';
+  });
+}
+
+function selectFastq(el, name, r1, r2) {
+  selectedFastq = { name: name, r1: r1, r2: r2 };
+  document.getElementById('ord-sample_name').value = name;
+  var orderField = document.getElementById('ord-order_name');
+  if (!orderField.value.trim()) {
+    orderField.value = name;
+  }
+  document.querySelectorAll('#fastqFileList .file-browser-item').forEach(function(item) { item.classList.remove('selected'); });
+  el.classList.add('selected');
+}
+
+/* ================================================================
+   BED FILE BROWSER
+   ================================================================ */
+function openBedBrowser() {
+  var sec = document.getElementById('bedBrowserSection');
+  sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
+  if (sec.style.display === 'block') {
+    currentBedPath = '';
+    loadBedFiles('');
+  }
+}
+
+function clearBedFile() {
+  document.getElementById('ord-bed_file').value = '';
+  document.getElementById('bedBrowserSection').style.display = 'none';
+}
+
+function loadBedFiles(path) {
+  currentBedPath = path;
+  document.getElementById('bedCurrentPath').textContent = path || '/';
+  var list = document.getElementById('bedFileList');
+  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted)">불러오는 중...</div>';
+
+  apiFetch('/api/bed_files?path=' + encodeURIComponent(path)).then(function(data) {
+    var html = '';
+
+    if (data.parent_path !== null && data.parent_path !== undefined) {
+      html += '<div class="file-browser-item dir" onclick="loadBedFiles(\'' + escapeHtml(data.parent_path) + '\')">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>'
+        + '<div class="file-info"><div class="file-name">.. (상위 폴더)</div></div></div>';
+    }
+
+    if (data.directories) {
+      data.directories.forEach(function(d) {
+        html += '<div class="file-browser-item dir" onclick="loadBedFiles(\'' + escapeHtml(d.path) + '\')">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
+          + '<div class="file-info"><div class="file-name">' + escapeHtml(d.name) + '</div></div></div>';
+      });
+    }
+
+    if (data.files) {
+      data.files.forEach(function(f) {
+        html += '<div class="file-browser-item" onclick="selectBedFile(\'' + escapeHtml(f.path) + '\')">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>'
+          + '<div class="file-info">'
+          + '<div class="file-name">' + escapeHtml(f.name) + '</div>'
+          + '<div class="file-meta">' + formatSize(f.size) + '</div>'
+          + '</div></div>';
+      });
+    }
+
+    if (!html) {
+      html = '<div style="padding:20px;text-align:center;color:var(--text-muted)">BED 파일이 없습니다.</div>';
+    }
+    list.innerHTML = html;
+  }).catch(function() {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">파일 목록을 불러올 수 없습니다.</div>';
+  });
+}
+
+function selectBedFile(path) {
+  document.getElementById('ord-bed_file').value = path;
+  document.getElementById('bedBrowserSection').style.display = 'none';
+  showToast('BED 파일 선택: ' + path.split('/').pop(), 'success');
+}
+
+/* ================================================================
+   SETTINGS
+   ================================================================ */
+function loadSettings() {
+  apiFetch('/api/settings').then(function(s) {
+    if (s.max_concurrent_samples !== undefined) document.getElementById('set-max_concurrent_samples').value = s.max_concurrent_samples;
+    if (s.max_cpus !== undefined) document.getElementById('set-max_cpus').value = s.max_cpus;
+    if (s.max_memory !== undefined) document.getElementById('set-max_memory').value = s.max_memory;
+    if (s.default_reference) document.getElementById('set-default_reference').value = s.default_reference;
+    if (s.default_profile) document.getElementById('set-default_profile').value = s.default_profile;
+    if (s.default_af_threshold !== undefined) document.getElementById('set-default_af_threshold').value = s.default_af_threshold;
+    document.getElementById('set-remove_bams').checked = s.remove_bams === 'Y';
+    document.getElementById('set-delete_intermediate').checked = s.delete_intermediate === 'Y';
+    document.getElementById('set-nf_resume').checked = (s.nf_resume || 'Y') === 'Y';
+    document.getElementById('set-clean_work_dir').checked = s.clean_work_dir === 'Y';
+    if (s.fastq_host_dir) document.getElementById('set-fastq_host_dir').value = s.fastq_host_dir;
+    if (s.bed_host_dir) document.getElementById('set-bed_host_dir').value = s.bed_host_dir;
+  }).catch(function() { showToast('설정을 불러올 수 없습니다.', 'error'); });
+  loadResourceInfo();
+}
+
+function loadResourceInfo() {
+  apiFetch('/api/system_resources').then(function(r) {
+    var panel = document.getElementById('resource-detected');
+    var html = '';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-primary);border-radius:4px;">'
+      + '<span style="color:var(--text-muted)">서버 CPU</span>'
+      + '<span style="font-weight:600;">' + r.system_cpus + ' 코어</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-primary);border-radius:4px;">'
+      + '<span style="color:var(--text-muted)">서버 메모리</span>'
+      + '<span style="font-weight:600;">' + r.system_memory_gb + ' GB</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-primary);border-radius:4px;">'
+      + '<span style="color:var(--text-muted)">적용 CPU</span>'
+      + '<span style="font-weight:600;color:var(--primary)">' + r.max_cpus + ' 코어</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-primary);border-radius:4px;">'
+      + '<span style="color:var(--text-muted)">적용 메모리</span>'
+      + '<span style="font-weight:600;color:var(--primary)">' + r.max_memory_gb + ' GB</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-primary);border-radius:4px;">'
+      + '<span style="color:var(--text-muted)">최대 동시 실행</span>'
+      + '<span style="font-weight:600;color:var(--primary)">' + r.max_concurrent_samples + '개</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-primary);border-radius:4px;">'
+      + '<span style="color:var(--text-muted)">샘플당 할당</span>'
+      + '<span style="font-weight:600;">' + r.cpus_per_sample + ' CPU / ' + r.memory_per_sample_gb + ' GB</span></div>';
+
+    var runColor = r.currently_running > 0 ? 'var(--orange)' : 'var(--green)';
+    html += '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-primary);border-radius:4px;grid-column:1/-1;">'
+      + '<span style="color:var(--text-muted)">현재 실행 중</span>'
+      + '<span style="font-weight:600;color:' + runColor + '">' + r.currently_running + ' / ' + r.max_concurrent_samples + '개</span></div>';
+
+    panel.innerHTML = html;
+  }).catch(function() {
+    document.getElementById('resource-detected').innerHTML = '<span style="color:var(--red)">리소스 정보를 가져올 수 없습니다.</span>';
+  });
+}
+
+function saveSettings() {
+  var data = {
+    max_cpus: document.getElementById('set-max_cpus').value,
+    max_memory: document.getElementById('set-max_memory').value,
+    max_concurrent_samples: document.getElementById('set-max_concurrent_samples').value,
+    default_reference: document.getElementById('set-default_reference').value,
+    default_profile: document.getElementById('set-default_profile').value,
+    default_af_threshold: document.getElementById('set-default_af_threshold').value,
+    remove_bams: document.getElementById('set-remove_bams').checked ? 'Y' : 'N',
+    delete_intermediate: document.getElementById('set-delete_intermediate').checked ? 'Y' : 'N',
+    nf_resume: document.getElementById('set-nf_resume').checked ? 'Y' : 'N',
+    clean_work_dir: document.getElementById('set-clean_work_dir').checked ? 'Y' : 'N',
+    fastq_host_dir: document.getElementById('set-fastq_host_dir').value.trim(),
+    bed_host_dir: document.getElementById('set-bed_host_dir').value.trim()
+  };
+
+  apiFetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function(r) {
+    if (r.success) {
+      showToast('설정이 저장되었습니다.', 'success');
+      loadResourceInfo();
+      if (r.restart_needed) {
+        setTimeout(function() { showToast('리소스/디렉토리 변경은 즉시 적용됩니다. (.env에도 저장됨)', 'info'); }, 500);
+      }
+    } else showToast('설정 저장에 실패했습니다.', 'error');
+  }).catch(function() { showToast('요청에 실패했습니다.', 'error'); });
+}
+
+/* ================================================================
+   LONGITUDINAL — ORDER TYPE
+   ================================================================ */
+function checkFeatures() {
+  apiFetch('/api/features').then(function(f) {
+    longitudinalEnabled = !!f.longitudinal;
+    var sec = document.getElementById('orderTypeSection');
+    if (sec) sec.style.display = longitudinalEnabled ? 'block' : 'none';
+  }).catch(function() {});
+}
+
+function setOrderType(type, btn) {
+  currentOrderType = type;
+  document.querySelectorAll('.order-type-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  var longitSec = document.getElementById('longitRefSection');
+  if (type === 'longitudinal') {
+    longitSec.style.display = 'block';
+    loadCompletedOrders();
+  } else {
+    longitSec.style.display = 'none';
+  }
+}
+
+function loadCompletedOrders() {
+  apiFetch('/api/orders/completed_list').then(function(orders) {
+    completedOrdersCache = orders || [];
+    populateRefSelects();
+  }).catch(function() { completedOrdersCache = []; });
+}
+
+function populateRefSelects() {
+  var blSel = document.getElementById('ord-baseline_order_id');
+  var glSel = document.getElementById('ord-germline_order_id');
+  var html = '<option value="">-- 오더 선택 --</option>';
+  completedOrdersCache.forEach(function(o) {
+    var label = escapeHtml(o.order_name || o.sample_name) + ' (' + escapeHtml(o.sample_name) + ')';
+    if (o.patient_name) label += ' - ' + escapeHtml(o.patient_name);
+    if (o.chart_number) label += ' [' + escapeHtml(o.chart_number) + ']';
+    html += '<option value="' + o.id + '">' + label + '</option>';
+  });
+  blSel.innerHTML = html;
+  glSel.innerHTML = html;
+  document.getElementById('longitFollowupList').innerHTML =
+    '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">Baseline 오더를 먼저 선택하세요.</div>';
+}
+
+function onBaselineSelected() {
+  var blId = document.getElementById('ord-baseline_order_id').value;
+  var listEl = document.getElementById('longitFollowupList');
+  if (!blId) {
+    listEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">Baseline 오더를 먼저 선택하세요.</div>';
+    return;
+  }
+  var followups = completedOrdersCache.filter(function(o) {
+    return o.order_type === 'longitudinal' && o.id !== blId;
+  });
+  if (followups.length === 0) {
+    listEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">선택 가능한 이전 Followup 오더가 없습니다.</div>';
+    return;
+  }
+  var html = '';
+  followups.forEach(function(o) {
+    var label = escapeHtml(o.order_name || o.sample_name) + ' (' + escapeHtml(o.sample_name) + ')';
+    html += '<div class="longit-followup-item"><label>'
+      + '<input type="checkbox" value="' + o.id + '" class="longit-fu-check">'
+      + label + '</label><span style="font-size:.75rem;color:var(--text-muted)">' + formatDateShort(o.created_at) + '</span></div>';
+  });
+  listEl.innerHTML = html;
+}
+
+/* ================================================================
+   LONGITUDINAL — RESULT VIEWER
+   ================================================================ */
+function openLongit(orderId) {
+  document.getElementById('longitOverlay').classList.add('open');
+  document.getElementById('longitBody').innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:40px">데이터를 불러오는 중...</p>';
+  apiFetch('/api/orders/' + orderId + '/longitudinal_data').then(function(d) {
+    if (!d.success) { document.getElementById('longitBody').innerHTML = '<p style="text-align:center;color:var(--red);padding:40px">' + escapeHtml(d.error || 'Error') + '</p>'; return; }
+    renderLongitResult(d);
+  }).catch(function() {
+    document.getElementById('longitBody').innerHTML = '<p style="text-align:center;color:var(--red);padding:40px">데이터를 불러올 수 없습니다.</p>';
+  });
+}
+
+function closeLongit() {
+  document.getElementById('longitOverlay').classList.remove('open');
+}
+
+function renderLongitResult(d) {
+  var body = document.getElementById('longitBody');
+  document.getElementById('longitTitle').textContent = 'Longitudinal Analysis — ' + (d.order_name || d.sample_name);
+
+  var meta = '<div class="longit-meta">';
+  if (d.baseline) meta += '<div class="longit-meta-item"><strong>Baseline:</strong> ' + escapeHtml(d.baseline.order_name) + ' (' + escapeHtml(d.baseline.sample_name) + ')</div>';
+  meta += '<div class="longit-meta-item"><strong>Current Followup:</strong> ' + escapeHtml(d.current_followup.order_name) + ' (' + escapeHtml(d.current_followup.sample_name) + ')</div>';
+  if (d.prior_followups && d.prior_followups.length > 0) {
+    meta += '<div class="longit-meta-item"><strong>Prior Followups:</strong> ' + d.prior_followups.length + '</div>';
+  }
+  meta += '</div>';
+
+  var allSources = [];
+  if (d.prior_followups) {
+    d.prior_followups.forEach(function(fu) {
+      if (fu.data) allSources.push({ label: fu.order_name || fu.sample_name, sample: fu.sample_name, date: fu.created_at, data: fu.data });
+    });
+  }
+  if (d.current_followup && d.current_followup.data) {
+    allSources.push({ label: d.current_followup.order_name || d.current_followup.sample_name, sample: d.current_followup.sample_name, date: d.current_followup.created_at, data: d.current_followup.data });
+  }
+
+  if (allSources.length === 0) {
+    body.innerHTML = meta + '<p style="text-align:center;color:var(--text-muted);padding:40px">Longitudinal 분석 결과가 아직 없습니다.</p>';
+    return;
+  }
+
+  var variantMap = {};
+  allSources.forEach(function(src, idx) {
+    src.data.forEach(function(row) {
+      var key = (row.chr || row.CHROM || '') + ':' + (row.pos || row.POS || '') + ':' + (row.ref || row.REF || '') + ':' + (row.alt || row.ALT || '');
+      if (!variantMap[key]) {
+        variantMap[key] = { chr: row.chr || row.CHROM || '', pos: row.pos || row.POS || '', ref: row.ref || row.REF || '', alt: row.alt || row.ALT || '', gene: row.gene || row.GENE || '', vafs: {} };
+      }
+      var vaf = parseFloat(row.vaf || row.VAF || row.followup_vaf || 0);
+      variantMap[key].vafs[idx] = vaf;
+    });
+  });
+
+  var variants = Object.values(variantMap);
+  variants.sort(function(a, b) { return a.chr.localeCompare(b.chr) || (parseInt(a.pos) - parseInt(b.pos)); });
+
+  var html = meta;
+  html += '<div style="overflow-x:auto"><table><thead><tr>';
+  html += '<th>Chr</th><th>Pos</th><th>Ref</th><th>Alt</th><th>Gene</th>';
+  allSources.forEach(function(src) {
+    html += '<th style="white-space:nowrap">' + escapeHtml(src.label) + '<br><span style="font-size:.7rem;color:var(--text-muted)">' + formatDateShort(src.date) + '</span></th>';
+  });
+  if (allSources.length >= 2) html += '<th>Change</th>';
+  html += '</tr></thead><tbody>';
+
+  if (variants.length === 0) {
+    html += '<tr><td colspan="' + (5 + allSources.length + (allSources.length >= 2 ? 1 : 0)) + '" class="empty-state"><p>변이가 없습니다.</p></td></tr>';
+  } else {
+    variants.forEach(function(v) {
+      html += '<tr><td>' + escapeHtml(v.chr) + '</td><td>' + escapeHtml(v.pos) + '</td><td>' + escapeHtml(v.ref) + '</td><td>' + escapeHtml(v.alt) + '</td><td>' + escapeHtml(v.gene) + '</td>';
+      allSources.forEach(function(src, idx) {
+        var val = v.vafs[idx];
+        var display = val !== undefined ? (val * 100).toFixed(2) + '%' : '-';
+        var color = val !== undefined ? (val > 0.05 ? 'var(--red)' : val > 0.01 ? 'var(--yellow)' : 'var(--green)') : 'var(--text-muted)';
+        html += '<td style="color:' + color + ';font-weight:600">' + display + '</td>';
+      });
+      if (allSources.length >= 2) {
+        var first = v.vafs[0], last = v.vafs[allSources.length - 1];
+        if (first !== undefined && last !== undefined) {
+          var diff = last - first;
+          var arrow = diff > 0.001 ? '<span style="color:var(--red)">&#9650; +' + (diff * 100).toFixed(2) + '%</span>'
+                    : diff < -0.001 ? '<span style="color:var(--green)">&#9660; ' + (diff * 100).toFixed(2) + '%</span>'
+                    : '<span style="color:var(--text-muted)">&#8211; 0%</span>';
+          html += '<td>' + arrow + '</td>';
+        } else {
+          html += '<td>-</td>';
+        }
+      }
+      html += '</tr>';
+    });
+  }
+  html += '</tbody></table></div>';
+  body.innerHTML = html;
+}
+
+/* ================================================================
+   CLOCK
+   ================================================================ */
+function updateClock() {
+  var now = new Date();
+  var opts = { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  document.getElementById('topbarTime').textContent = now.toLocaleDateString('ko-KR', opts);
+}
+
+/* ================================================================
+   KEYBOARD SHORTCUTS
+   ================================================================ */
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    if (document.getElementById('confirmDialog').classList.contains('open')) { closeConfirm(); return; }
+    if (document.getElementById('longitOverlay').classList.contains('open')) { closeLongit(); return; }
+    if (document.getElementById('qcOverlay').classList.contains('open')) { closeQC(); return; }
+    if (document.getElementById('reviewOverlay').classList.contains('open')) { closeReview(); return; }
+    if (document.getElementById('createModal').classList.contains('open')) { closeCreateModal(); return; }
+  }
+});
+
+/* ================================================================
+   INIT
+   ================================================================ */
+(function init() {
+  updateClock();
+  setInterval(updateClock, 1000);
+  checkFeatures();
+  loadDashboard();
+  startDashboardTimers();
+})();
+</script>
+
+</body>
+</html>

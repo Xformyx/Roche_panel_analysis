@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  roche-nxt-web:
+    build:
+      context: ./web_ui
+      dockerfile: Dockerfile
+    image: roche_nxt_web:latest
+    container_name: roche_nxt_web
+    user: "${UID:-1004}:${GID:-1004}"
+    group_add:
+      - "${DOCKER_GID:-113}"
+    ports:
+      - "${WEB_PORT:-8080}:5000"
+    volumes:
+      # Live web UI code/templates from host (otherwise image /app is stale until rebuild)
+      - ${HOST_DIR:-.}/web_ui:/app
+      - ${HOST_DIR:-.}:/roche_nxt
+      - ${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}:/fastq_source:ro
+      - ${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}:/bed_source:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Asia/Seoul}
+      - ROCHE_NXT_DIR=/roche_nxt
+      - HOST_DIR=${HOST_DIR:-.}
+      - ANALYSIS_IMAGE=roche_nxt_analysis:latest
+      - FASTQ_HOST_DIR=${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}
+      - BED_HOST_DIR=${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}
+      - ENABLE_LONGITUDINAL=${ENABLE_LONGITUDINAL:-false}
+      - MAX_CPUS=${MAX_CPUS:-0}
+      - MAX_MEMORY=${MAX_MEMORY:-0}
+      - MAX_CONCURRENT_SAMPLES=${MAX_CONCURRENT_SAMPLES:-0}
