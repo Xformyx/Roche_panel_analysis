@@ -7,7 +7,7 @@ IMAGE_DIR="${SCRIPT_DIR}/images"
 ENV_FILE="${PROJECT_DIR}/.env"
 
 echo "============================================"
-echo "Roche_nxt Pipeline - Offline Installation"
+echo "Roche Panel Analysis - Installation"
 echo "============================================"
 echo ""
 
@@ -66,15 +66,28 @@ if [ -f "$ENV_FILE" ]; then
     sed -i "s|^UID=.*|UID=${CURRENT_UID}|" "$ENV_FILE"
     sed -i "s|^GID=.*|GID=${CURRENT_GID}|" "$ENV_FILE"
 else
-    echo "  Creating .env file..."
-    cat > "$ENV_FILE" << ENVEOF
+    echo "  Creating .env file from template..."
+    if [ -f "${PROJECT_DIR}/.env.example" ]; then
+        cp "${PROJECT_DIR}/.env.example" "$ENV_FILE"
+        sed -i "s|^HOST_DIR=.*|HOST_DIR=${HOST_DIR}|" "$ENV_FILE"
+        sed -i "s|^UID=.*|UID=${CURRENT_UID}|" "$ENV_FILE"
+        sed -i "s|^GID=.*|GID=${CURRENT_GID}|" "$ENV_FILE"
+    else
+        cat > "$ENV_FILE" << ENVEOF
 HOST_DIR=${HOST_DIR}
+FASTQ_HOST_DIR=${HOST_DIR}/fastq
+BED_HOST_DIR=${HOST_DIR}/data/bed/hg38
 WEB_PORT=8080
 UID=${CURRENT_UID}
 GID=${CURRENT_GID}
 DOCKER_GID=${DOCKER_GID}
 TZ=Asia/Seoul
+ENABLE_LONGITUDINAL=true
+MAX_CPUS=0
+MAX_MEMORY=0
+MAX_CONCURRENT_SAMPLES=0
 ENVEOF
+    fi
 fi
 
 echo "  HOST_DIR = $HOST_DIR"
