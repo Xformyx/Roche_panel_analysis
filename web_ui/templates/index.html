@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>Roche Panel Analysis</title>
-<link rel="icon" type="image/png" href="/favicon.ico?v=2">
-<link rel="apple-touch-icon" href="/static/roche-logo.png?v=2">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/leaninbio-icon.png?v=4">
+<link rel="shortcut icon" type="image/png" href="/static/leaninbio-icon.png?v=4">
+<link rel="apple-touch-icon" href="/static/leaninbio-icon.png?v=4">
 <style>
 /* ===== RESET & BASE ===== */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -56,6 +57,8 @@ tbody tr:hover{background:#F8FAFC}
 .nav-item.active{background:rgba(37,99,235,.15);color:#fff;border-left-color:var(--primary)}
 .nav-item svg{width:20px;height:20px;flex-shrink:0}
 .sidebar-footer{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:.75rem;color:var(--text-muted)}
+.sidebar-footer-brand{margin-bottom:12px;text-align:center}
+.sidebar-footer-brand img{max-width:100%;height:auto;display:block;opacity:.95}
 
 /* ===== MAIN ===== */
 .main{margin-left:240px;flex:1;display:flex;flex-direction:column;height:100vh}
@@ -357,10 +360,9 @@ tbody tr:hover{background:#F8FAFC}
 <!-- ===== SIDEBAR ===== -->
 <aside class="sidebar">
   <div class="sidebar-logo">
-    <div class="logo-icon"><img src="/static/roche-logo.png?v=2" alt="Roche" width="40" height="40"></div>
+    <div class="logo-icon"><img src="/static/leaninbio-icon.png?v=3" alt="" width="40" height="40"></div>
     <div>
       <div class="logo-text">Roche Panel Analysis</div>
-      <div class="logo-sub">Nextflow ctDNA Pipeline</div>
     </div>
   </div>
   <nav class="sidebar-nav">
@@ -378,7 +380,10 @@ tbody tr:hover{background:#F8FAFC}
     </div>
   </nav>
   <div class="sidebar-footer">
-    <div>Copyright © 2026 Xformyx. All rights reserved.</div>
+    <div class="sidebar-footer-brand">
+      <img src="/static/leaninbio-footer.png?v=3" alt="(주)린인바이오 LeaninBio">
+    </div>
+    <div>Copyright © 2026 LeaninBio. All rights reserved.</div>
   </div>
 </aside>
 

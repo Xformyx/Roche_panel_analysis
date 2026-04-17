@@ -14,7 +14,7 @@ import subprocess
 import time
 import psutil
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_file, g
+from flask import Flask, render_template, request, jsonify, send_file, g, make_response
 
 app = Flask(__name__)
 # Host-mounted templates (docker) must be picked up without restarting the process
@@ -542,11 +542,22 @@ def browse_bed(subdir=""):
 # ---------------------------------------------------------------------------
 @app.route("/favicon.ico")
 def favicon():
-    """Browsers request /favicon.ico by default; PNG is fine for modern clients."""
-    path = os.path.join(app.static_folder, "roche-logo.png")
+    """Some browsers only request /favicon.ico; serve icon with no-cache headers."""
+    path = os.path.join(app.static_folder, "leaninbio-icon.png")
     if not os.path.isfile(path):
         return ("", 404)
-    return send_file(path, mimetype="image/png", max_age=0)
+    resp = make_response(send_file(path, mimetype="image/png", max_age=0))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@app.after_request
+def _static_no_cache_for_icons(response):
+    """Prevent aggressive favicon caching when served from /static/ in dev."""
+    if request.path.startswith("/static/") and "leaninbio-icon" in request.path:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @app.route("/")
