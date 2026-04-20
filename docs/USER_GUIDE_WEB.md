@@ -270,19 +270,13 @@ VAF 비교 테이블에서 확인할 수 있는 정보:
 | 기본 Nextflow 프로파일 | Docker | Docker 또는 Offline |
 | 기본 AF Threshold | 0.005 | 기본 Allele Frequency 임계값 |
 
-### 8.3 Nextflow 설정
+### 8.3 파일 정리 및 데이터 경로
+
+섹션 제목은 항목을 묶어 보여 주는 용도이며, 클릭할 수 있는 메뉴가 아닙니다.
 
 | 설정 | 기본값 | 설명 |
 |------|--------|------|
-| Resume 활성화 | ON | Nextflow 캐시 재사용 (`-resume`) |
-| Work 디렉토리 자동 정리 | OFF | 완료 후 work 디렉토리 삭제 |
-
-### 8.4 파일 관리
-
-| 설정 | 기본값 | 설명 |
-|------|--------|------|
-| BAM 파일 삭제 | ON | 완료 후 BAM 파일 자동 삭제 |
-| 중간 파일 삭제 | ON | 중간 파일 삭제로 디스크 절약 |
+| 분석 완료 후 work 디렉터리 정리 | ON | Nextflow `--delete_intermediate`에 해당. 분석 종료 후 work를 정리하며, VarDict용 최종 BAM·BAI는 먼저 `results/샘플명/output/bam/`에 복사·유지됩니다. |
 | FASTQ 소스 디렉토리 | `.env` 설정값 | FASTQ 파일 위치 (호스트 경로) |
 | BED 파일 디렉토리 | `.env` 설정값 | BED 파일 위치 (호스트 경로) |
 

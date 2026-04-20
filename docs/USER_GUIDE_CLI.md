@@ -230,9 +230,12 @@ nextflow run main.nf \
 
 ### 폐쇄망 환경
 
+`docker` 프로파일이 `docker.offline = true`를 포함하므로 별도 설정 없이 동일하게 사용할 수 있습니다.
+이미지(`roche_nxt_analysis:latest`)만 사전에 빌드/로드되어 있으면 네트워크 접근 없이 실행됩니다.
+
 ```bash
 nextflow run main.nf \
-    -profile offline \
+    -profile docker \
     --input samples.csv \
     --outdir results
 ```
@@ -243,10 +246,9 @@ nextflow run main.nf \
 
 | 프로파일 | 설명 |
 |---------|------|
-| `docker` | 표준 Docker 실행 (인터넷 연결) |
-| `offline` | 폐쇄망 Docker 실행 (이미지 pull 비활성화) |
-| `local` | Docker 없이 직접 실행 (도구가 로컬에 설치된 경우) |
-| `test` | 테스트 데이터로 실행 |
+| `docker` | 호스트에서 Nextflow를 실행할 때 사용 (에어갭 환경 포함 — 이미지 pull 비활성화됨) |
+| `local`  | 분석 컨테이너 내부에서 Nextflow를 실행할 때 사용 (웹 UI가 자동으로 사용) |
+| `test`   | 샘플 테스트 데이터로 실행 |
 
 ### 프로파일 조합
 

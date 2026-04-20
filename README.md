@@ -49,7 +49,9 @@ nextflow run main.nf \
 | [설치 매뉴얼](docs/INSTALL.md) | 온라인/오프라인 환경 설치 |
 | [Web UI 사용자 매뉴얼](docs/USER_GUIDE_WEB.md) | 웹 인터페이스 사용법 |
 | [CLI 사용자 매뉴얼](docs/USER_GUIDE_CLI.md) | 명령줄 사용법, 파라미터 |
-| [배포 가이드](deploy/DEPLOYMENT_GUIDE.md) | 폐쇄망 배포 절차 |
+| [운영 지침서](docs/OPERATIONS.md) | 내부 개발 / 고객 배포 / 라이선스 갱신 / 장애 대응 런북 |
+| [라이선스 가이드](LICENSE.md) | 서명 라이선스 설계, 키 관리, DEV_MODE |
+| [배포 가이드](deploy/DEPLOYMENT_GUIDE.md) | 폐쇄망 배포 절차 (간이) |
 
 ## 디렉토리 구조
 

@@ -25,6 +25,16 @@ __pycache__/
 # ===== Docker images (offline deploy artifacts) =====
 deploy/images/
 
+# ===== Licensing =====
+# Private signing keys, customer licenses, and the on-disk license file
+# must never be committed. The public key under web_ui/_vendor_keys IS
+# committed (it is baked into the image at build time).
+license/*.json
+deploy/licenses/
+*.signing_key.b64
+*.signing_key
+*_signing_key*
+
 # ===== IDE / OS =====
 .idea/
 .vscode/

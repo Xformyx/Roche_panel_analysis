@@ -18,10 +18,14 @@ services:
       - ${HOST_DIR:-.}:/roche_nxt
       - ${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}:/fastq_source:ro
       - ${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}:/bed_source:ro
+      - ${LIFTOVER_HOST_DIR:-/home/ken/roche_data/liftover}:/liftover:ro
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      # DEV_MODE bypasses signed-license verification and honours the legacy
+      # ENABLE_* env vars below. Never set DEV_MODE=1 on customer deployments.
+      - DEV_MODE=${DEV_MODE:-1}
       - TZ=${TZ:-Asia/Seoul}
       - ROCHE_NXT_DIR=/roche_nxt
       - HOST_DIR=${HOST_DIR:-.}
@@ -29,6 +33,11 @@ services:
       - FASTQ_HOST_DIR=${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}
       - BED_HOST_DIR=${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}
       - ENABLE_LONGITUDINAL=${ENABLE_LONGITUDINAL:-false}
+      - ENABLE_IGV=${ENABLE_IGV:-false}
+      - ENABLE_HG19_VIEW=${ENABLE_HG19_VIEW:-false}
+      - LIFTOVER_CHAIN_HG38_TO_HG19=${LIFTOVER_CHAIN_HG38_TO_HG19:-/liftover/hg38ToHg19.over.chain.gz}
       - MAX_CPUS=${MAX_CPUS:-0}
       - MAX_MEMORY=${MAX_MEMORY:-0}
       - MAX_CONCURRENT_SAMPLES=${MAX_CONCURRENT_SAMPLES:-0}
+      # One-time recovery: set to 1, restart container, login as admin/admin1234, then remove or set 0
+      - ROCHE_NXT_RESET_ADMIN_PASSWORD=${ROCHE_NXT_RESET_ADMIN_PASSWORD:-0}

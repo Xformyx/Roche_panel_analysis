@@ -33,6 +33,7 @@ process MARK_DUPLICATES {
 
     output:
     tuple val(sample_id), path("${sample_id}_sorted_rmdups.bam"),                emit: dedup_bam
+    tuple val(sample_id), path("${sample_id}_sorted_rmdups.bai"),                emit: dedup_bai
     tuple val(sample_id), path("${sample_id}_markduplicates_metrics_gatk.txt"),  emit: metrics
 
     script:

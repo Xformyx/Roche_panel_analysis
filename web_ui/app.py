@@ -7,6 +7,7 @@ import os
 import re
 import json
 import glob
+import shutil
 import uuid
 import csv
 import sqlite3
@@ -14,11 +15,14 @@ import subprocess
 import time
 import psutil
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_file, g, make_response
+from flask import Flask, render_template, request, jsonify, send_file, g, make_response, session, Response, abort
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 # Host-mounted templates (docker) must be picked up without restarting the process
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # ---------------------------------------------------------------------------
 # Path resolution
@@ -34,9 +38,66 @@ RESULTS_DIR = os.path.join(BASE_DIR, "results")
 LOG_DIR = os.path.join(BASE_DIR, "log")
 DB_FILE = os.path.join(BASE_DIR, "log", "orders_nxt.db")
 
+
+def _get_flask_secret_key():
+    key = os.environ.get("FLASK_SECRET_KEY", "").strip()
+    if key:
+        return key
+    sk_path = os.path.join(os.path.dirname(DB_FILE), ".flask_secret")
+    try:
+        if os.path.isfile(sk_path):
+            with open(sk_path, "r") as f:
+                return f.read().strip()
+        os.makedirs(os.path.dirname(sk_path), exist_ok=True)
+        key = os.urandom(32).hex()
+        with open(sk_path, "w") as f:
+            f.write(key)
+        os.chmod(sk_path, 0o600)
+        return key
+    except Exception:
+        return "dev-insecure-change-me"
+
+
+app.secret_key = _get_flask_secret_key()
+
 HOST_DIR = os.environ.get("HOST_DIR", "/home/ken/Roche_nxt")
 ANALYSIS_IMAGE = os.environ.get("ANALYSIS_IMAGE", "roche_nxt_analysis:latest")
-ENABLE_LONGITUDINAL = os.environ.get("ENABLE_LONGITUDINAL", "false").lower() in ("true", "1", "yes")
+LIFTOVER_CHAIN_HG38_TO_HG19 = os.environ.get(
+    "LIFTOVER_CHAIN_HG38_TO_HG19",
+    "/liftover/hg38ToHg19.over.chain.gz",
+)
+
+# ---------------------------------------------------------------------------
+# Feature flags — loaded from a signed license.json (DEV_MODE bypasses this).
+# ---------------------------------------------------------------------------
+import license as _license  # local module: web_ui/license.py
+
+try:
+    _LICENSE_INFO = _license.load()
+except _license.LicenseError as _exc:
+    # Fail fast: the server cannot start without a valid license in prod.
+    # In DEV_MODE this branch is never reached (license.load() always succeeds).
+    import sys as _sys
+    print("=" * 70, file=_sys.stderr)
+    print("Roche_nxt license error: {}".format(_exc), file=_sys.stderr)
+    print("  - Place a signed license at {}.".format(_license.LICENSE_PATH), file=_sys.stderr)
+    print("  - Or set DEV_MODE=1 for internal development use.", file=_sys.stderr)
+    print("=" * 70, file=_sys.stderr)
+    raise SystemExit(2)
+
+FEATURES = dict(_LICENSE_INFO["features"])  # copy; app.py never mutates it
+LICENSE_META = {
+    "customer": _LICENSE_INFO.get("customer", ""),
+    "issued": _LICENSE_INFO.get("issued", ""),
+    "expires": _LICENSE_INFO.get("expires", ""),
+    "dev_mode": bool(_LICENSE_INFO.get("dev_mode")),
+}
+
+# Backwards-compatible aliases so existing call sites keep working. They are
+# thin views over FEATURES and are not mutated anywhere.
+ENABLE_LONGITUDINAL = FEATURES["longitudinal"]
+ENABLE_IGV = FEATURES["igv"]
+ENABLE_HG19_VIEW = FEATURES["hg19_view"]
 
 # ---------------------------------------------------------------------------
 # Resource limits  (0 = auto-detect)
@@ -90,6 +151,31 @@ def close_db(exc):
         db.close()
 
 
+@app.before_request
+def _require_auth():
+    ep = request.endpoint
+    if ep == "static" or (request.path or "").startswith("/static/"):
+        return None
+    if ep in ("index", "favicon"):
+        return None
+    if ep == "auth_me":
+        return None
+    if ep == "auth_login" and request.method == "POST":
+        return None
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"error": "Unauthorized", "code": "auth_required"}), 401
+    urow = get_user_by_id(uid)
+    if not urow:
+        session.clear()
+        return jsonify({"error": "Unauthorized", "code": "auth_required"}), 401
+    if urow.get("must_change_password"):
+        if ep in ("auth_change_password", "auth_logout", "auth_me"):
+            return None
+        return jsonify({"error": "Password change required", "code": "must_change_password"}), 403
+    return None
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
     conn = sqlite3.connect(DB_FILE)
@@ -111,7 +197,6 @@ def init_db():
         profile         TEXT DEFAULT 'docker',
         af_threshold    REAL DEFAULT 0.005,
         bed_file        TEXT DEFAULT '',
-        remove_bams     TEXT DEFAULT 'Y',
         delete_intermediate TEXT DEFAULT 'Y',
         order_type      TEXT DEFAULT 'baseline',
         baseline_order_id   TEXT DEFAULT '',
@@ -125,11 +210,25 @@ def init_db():
         created_at      TEXT,
         updated_at      TEXT,
         started_at      TEXT,
-        completed_at    TEXT
+        completed_at    TEXT,
+        created_by_user_id   TEXT DEFAULT '',
+        analysis_by_user_id  TEXT DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS settings (
         key   TEXT PRIMARY KEY,
         value TEXT
+    );
+    CREATE TABLE IF NOT EXISTS users (
+        id                   TEXT PRIMARY KEY,
+        password_hash        TEXT NOT NULL,
+        role                 TEXT NOT NULL DEFAULT 'user',
+        name                 TEXT NOT NULL DEFAULT '',
+        affiliation          TEXT DEFAULT '',
+        phone                TEXT DEFAULT '',
+        email                TEXT DEFAULT '',
+        must_change_password INTEGER NOT NULL DEFAULT 1,
+        created_at           TEXT,
+        created_by           TEXT DEFAULT ''
     );
     """)
     for col, coldef in [
@@ -137,11 +236,46 @@ def init_db():
         ("baseline_order_id", "TEXT DEFAULT ''"),
         ("germline_order_id", "TEXT DEFAULT ''"),
         ("followup_order_ids", "TEXT DEFAULT ''"),
+        ("reuse_work_order_id", "TEXT DEFAULT ''"),
+        ("created_by_user_id", "TEXT DEFAULT ''"),
+        ("analysis_by_user_id", "TEXT DEFAULT ''"),
     ]:
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col} {coldef}")
         except sqlite3.OperationalError:
             pass
+
+    # Legacy: unused columns / settings keys removed from UI
+    try:
+        conn.execute("ALTER TABLE orders DROP COLUMN remove_bams")
+    except sqlite3.OperationalError:
+        pass
+    conn.execute(
+        "DELETE FROM settings WHERE key IN ('nf_resume', 'remove_bam', 'remove_bams')"
+    )
+
+    if not conn.execute("SELECT 1 FROM users WHERE id='admin'").fetchone():
+        now_u = datetime.now().isoformat()
+        conn.execute(
+            """INSERT INTO users (id, password_hash, role, name, must_change_password, created_at, created_by)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                "admin",
+                generate_password_hash("admin1234"),
+                "admin",
+                "Administrator",
+                1,
+                now_u,
+                "system",
+            ),
+        )
+
+    # Recovery: set admin password to admin1234 (one-time). Remove env after use.
+    if os.environ.get("ROCHE_NXT_RESET_ADMIN_PASSWORD", "").lower() in ("1", "true", "yes"):
+        conn.execute(
+            "UPDATE users SET password_hash=?, must_change_password=1 WHERE id='admin'",
+            (generate_password_hash("admin1234"),),
+        )
 
     cur = conn.execute("SELECT COUNT(*) FROM settings")
     if cur.fetchone()[0] == 0:
@@ -150,10 +284,7 @@ def init_db():
             "default_af_threshold": "0.005",
             "default_reference": "hg38",
             "default_profile": "docker",
-            "remove_bams": "Y",
             "delete_intermediate": "Y",
-            "nf_resume": "Y",
-            "clean_work_dir": "N",
             "fastq_base_dir": "",
         }
         conn.executemany(
@@ -166,6 +297,69 @@ def init_db():
 
 def dict_from_row(row):
     return dict(row) if row else None
+
+
+def get_user_by_id(user_id):
+    if not user_id:
+        return None
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    return dict_from_row(row)
+
+
+def find_user_for_login(login_id):
+    """Resolve user by id case-insensitively (e.g. Admin vs admin)."""
+    if not login_id:
+        return None
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE LOWER(id)=LOWER(?)", (login_id.strip(),)).fetchone()
+    return dict_from_row(row)
+
+
+def is_admin_user(user_id):
+    row = get_user_by_id(user_id)
+    return bool(row and row.get("role") == "admin")
+
+
+def format_order_snapshot(order):
+    """Human-readable lines (Korean labels) for order registration fields."""
+    o = dict_from_row(order) if order is not None and not isinstance(order, dict) else order
+    if not o:
+        return ""
+
+    def val(k, default="-"):
+        v = o.get(k)
+        if v is None or v == "":
+            return default
+        return str(v)
+
+    lines = [
+        f"오더명: {val('order_name')}",
+        f"환자명: {val('patient_name')}",
+        f"생년월일: {val('patient_dob')}",
+        f"차트번호: {val('chart_number')}",
+        f"진료과: {val('department')}",
+        f"담당의: {val('doctor_name')}",
+        f"진단: {val('diagnosis')}",
+        f"의사 코멘트: {val('doctor_comment')}",
+        f"샘플명: {val('sample_name')}",
+        f"R1 FASTQ: {val('r1_fastq')}",
+        f"R2 FASTQ: {val('r2_fastq')}",
+        f"레퍼런스: {val('reference')}",
+        f"AF threshold: {val('af_threshold')}",
+        f"BED 파일: {val('bed_file')}",
+        f"중간파일 삭제(work 정리): {val('delete_intermediate')}",
+    ]
+    if (o.get("order_type") or "").strip().lower() == "longitudinal":
+        lines.extend(
+            [
+                f"Baseline 오더 ID: {val('baseline_order_id')}",
+                f"Germline 오더 ID: {val('germline_order_id')}",
+                f"Follow-up 오더 ID: {val('followup_order_ids')}",
+            ]
+        )
+    lines.append(f"오더 생성일시: {val('created_at')}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +512,50 @@ def generate_samplesheet(order, r1_path, r2_path):
     return ss_path
 
 
-def start_analysis(order, force=False, resume=True):
+def purge_order_disk_assets(order):
+    """Remove on-disk artifacts for an order: work, NXF_HOME, results, FASTQ symlink dir, logs, samplesheet."""
+    order_id = order["id"]
+    sample = order["sample_name"]
+    reuse_wid = (order.get("reuse_work_order_id") or "").strip()
+    dir_candidates = [
+        os.path.join(BASE_DIR, "work", order_id),
+        os.path.join(BASE_DIR, "work", ".nxf_home", order_id),
+        os.path.join(FASTQ_DIR, order_id),
+    ]
+    # Longitudinal "reuse work" orders share work/{reuse_id} and results/{sample}; do not delete those trees.
+    if not reuse_wid:
+        dir_candidates.append(os.path.join(RESULTS_DIR, sample))
+    nfwd = (order.get("nf_work_dir") or "").strip()
+    if nfwd and not reuse_wid:
+        dir_candidates.append(nfwd)
+
+    seen_real = set()
+    for d in dir_candidates:
+        if not d:
+            continue
+        try:
+            if not os.path.isdir(d):
+                continue
+            real = os.path.realpath(d)
+            if real in seen_real:
+                continue
+            seen_real.add(real)
+            shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+
+    for fpath in (
+        os.path.join(LOG_DIR, "samplesheets", f"{sample}_{order_id}.csv"),
+        os.path.join(LOG_DIR, f"{sample}_{order_id}_nf.log"),
+    ):
+        try:
+            if os.path.isfile(fpath):
+                os.remove(fpath)
+        except OSError:
+            pass
+
+
+def start_analysis(order, force=False, resume=True, started_by_user_id=None):
     """Start a Nextflow analysis via docker run roche_nxt_analysis."""
     db = get_db()
     now = datetime.now().isoformat()
@@ -358,20 +595,42 @@ def start_analysis(order, force=False, resume=True):
 
     host_samplesheet_dir = os.path.join(host_root, "log", "samplesheets")
     os.makedirs(os.path.join(LOG_DIR, "samplesheets"), exist_ok=True)
-    ss_name = f"{sample}_{order_id}.csv"
-    ss_container_path = f"/work_nxt/log/samplesheets/{ss_name}"
-    ss_host_path = os.path.join(LOG_DIR, "samplesheets", ss_name)
 
-    r1_container = f"/work_nxt_fastq_source/{order['r1_fastq']}"
-    r2_container = f"/work_nxt_fastq_source/{order['r2_fastq']}"
-    with open(ss_host_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["sample_id", "fastq_1", "fastq_2"])
-        writer.writerow([sample, r1_container, r2_container])
+    reuse_wid = (order.get("reuse_work_order_id") or "").strip()
+    longitudinal_reuse = bool(
+        reuse_wid and order.get("order_type") == "longitudinal"
+    )
 
-    run_name = f"run_{sample}_{order_id}_{int(time.time())}"
-    work_dir_rel = f"work/{run_name}"
-    nxf_home_rel = f"work/.nxf_home/{order_id}"
+    # Longitudinal + reuse: must use the *same* --input path and NXF_HOME as the completed
+    # run. A copy named S5_<new_order>.csv breaks Nextflow cache keys; a fresh NXF_HOME has
+    # no session history. Share work/{reuse_id} and work/.nxf_home/{reuse_id} with S5.
+    if longitudinal_reuse:
+        ss_name = f"{sample}_{reuse_wid}.csv"
+        ss_host_path = os.path.join(LOG_DIR, "samplesheets", ss_name)
+        ss_container_path = f"/work_nxt/log/samplesheets/{ss_name}"
+        if not os.path.isfile(ss_host_path):
+            r1_container = f"/work_nxt_fastq_source/{order['r1_fastq']}"
+            r2_container = f"/work_nxt_fastq_source/{order['r2_fastq']}"
+            with open(ss_host_path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["sample_id", "fastq_1", "fastq_2"])
+                writer.writerow([sample, r1_container, r2_container])
+        work_dir_rel = f"work/{reuse_wid}"
+        nxf_home_rel = f"work/.nxf_home/{reuse_wid}"
+    else:
+        ss_name = f"{sample}_{order_id}.csv"
+        ss_host_path = os.path.join(LOG_DIR, "samplesheets", ss_name)
+        ss_container_path = f"/work_nxt/log/samplesheets/{ss_name}"
+        r1_container = f"/work_nxt_fastq_source/{order['r1_fastq']}"
+        r2_container = f"/work_nxt_fastq_source/{order['r2_fastq']}"
+        with open(ss_host_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["sample_id", "fastq_1", "fastq_2"])
+            writer.writerow([sample, r1_container, r2_container])
+        work_dir_rel = f"work/{order_id}"
+        nxf_home_rel = f"work/.nxf_home/{order_id}"
+
+    run_name = f"run_{sample}_{order_id}"
 
     os.makedirs(os.path.join(BASE_DIR, work_dir_rel), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, nxf_home_rel), exist_ok=True)
@@ -379,7 +638,7 @@ def start_analysis(order, force=False, resume=True):
     os.makedirs(LOG_DIR, exist_ok=True)
 
     af = order.get("af_threshold") or 0.005
-    ref = order.get("reference") or "hg38"
+    ref = "hg38"
 
     uid_gid = subprocess.run(["id", "-u"], capture_output=True, text=True).stdout.strip()
     gid = subprocess.run(["id", "-g"], capture_output=True, text=True).stdout.strip()
@@ -390,7 +649,9 @@ def start_analysis(order, force=False, resume=True):
         "-name", run_name,
         "-work-dir", f"/work_nxt/{work_dir_rel}",
         "--input", ss_container_path,
-        "--outdir", f"/work_nxt/results/{sample}",
+        # Per-sample paths come from publishDir: ${params.outdir}/${sample_id}/...
+        # Use results root so outputs land in results/<sample_id>/output, not results/<sample>/<sample>/...
+        "--outdir", "/work_nxt/results",
         "--reference", ref,
         "--af_threshold", str(af),
         "--data_dir", "/work_nxt_data",
@@ -401,8 +662,6 @@ def start_analysis(order, force=False, resume=True):
 
     if order.get("bed_file"):
         nf_cmd.extend(["--target_bed", f"/work_nxt_bed/{order['bed_file']}"])
-    if order.get("remove_bams") == "Y":
-        nf_cmd.append("--remove_bams")
     if order.get("delete_intermediate") == "Y":
         nf_cmd.append("--delete_intermediate")
 
@@ -436,9 +695,10 @@ def start_analysis(order, force=False, resume=True):
 
     container_id = result.stdout.strip()[:12]
 
+    analyst = started_by_user_id if started_by_user_id else ""
     db.execute(
-        "UPDATE orders SET status='running', nf_run_name=?, nf_work_dir=?, pid=0, started_at=?, updated_at=? WHERE id=?",
-        (run_name, os.path.join(BASE_DIR, work_dir_rel), now, now, order_id),
+        "UPDATE orders SET status='running', nf_run_name=?, nf_work_dir=?, pid=0, started_at=?, updated_at=?, analysis_by_user_id=? WHERE id=?",
+        (run_name, os.path.join(BASE_DIR, work_dir_rel), now, now, analyst, order_id),
     )
     db.commit()
     return container_id
@@ -538,6 +798,124 @@ def browse_bed(subdir=""):
 
 
 # ---------------------------------------------------------------------------
+# Routes — Auth & admin users
+# ---------------------------------------------------------------------------
+@app.route("/api/auth/me")
+def auth_me():
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"authenticated": False})
+    row = get_user_by_id(uid)
+    if not row:
+        session.clear()
+        return jsonify({"authenticated": False})
+    return jsonify({
+        "authenticated": True,
+        "user_id": row["id"],
+        "name": row.get("name") or "",
+        "role": row.get("role") or "user",
+        "must_change_password": bool(row.get("must_change_password")),
+    })
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    data = request.json or {}
+    user_id = (data.get("user_id") or data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not user_id or not password:
+        return jsonify({"success": False, "error": "ID와 비밀번호를 입력하세요."}), 400
+    row = find_user_for_login(user_id)
+    if not row or not check_password_hash(row["password_hash"], password):
+        return jsonify({"success": False, "error": "로그인 정보가 올바르지 않습니다."}), 401
+    session["user_id"] = row["id"]
+    session.permanent = True
+    return jsonify({
+        "success": True,
+        "user_id": row["id"],
+        "role": row.get("role"),
+        "must_change_password": bool(row.get("must_change_password")),
+    })
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    session.clear()
+    return jsonify({"success": True})
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+def auth_change_password():
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    data = request.json or {}
+    current = data.get("current_password") or ""
+    new_pw = data.get("new_password") or ""
+    if len(new_pw) < 4:
+        return jsonify({"success": False, "error": "새 비밀번호는 4자 이상이어야 합니다."}), 400
+    row = get_user_by_id(uid)
+    if not row or not check_password_hash(row["password_hash"], current):
+        return jsonify({"success": False, "error": "현재 비밀번호가 올바르지 않습니다."}), 400
+    db = get_db()
+    db.execute(
+        "UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?",
+        (generate_password_hash(new_pw), uid),
+    )
+    db.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/api/admin/users")
+def api_admin_users_list():
+    uid = session.get("user_id")
+    if not is_admin_user(uid):
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, name, affiliation, phone, email, role, must_change_password, created_at, created_by "
+        "FROM users ORDER BY created_at DESC"
+    ).fetchall()
+    return jsonify({"success": True, "users": [dict_from_row(r) for r in rows]})
+
+
+@app.route("/api/admin/users", methods=["POST"])
+def api_admin_users_create():
+    uid = session.get("user_id")
+    if not is_admin_user(uid):
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+    data = request.json or {}
+    new_id = (data.get("user_id") or data.get("id") or "").strip()
+    name = (data.get("name") or "").strip()
+    if not new_id or not name:
+        return jsonify({"success": False, "error": "사용자 ID와 이름은 필수입니다."}), 400
+    db = get_db()
+    if db.execute("SELECT 1 FROM users WHERE id=?", (new_id,)).fetchone():
+        return jsonify({"success": False, "error": "이미 존재하는 ID입니다."}), 400
+    now = datetime.now().isoformat()
+    default_pw = "user1234"
+    db.execute(
+        """INSERT INTO users (id, password_hash, role, name, affiliation, phone, email,
+           must_change_password, created_at, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (
+            new_id,
+            generate_password_hash(default_pw),
+            "user",
+            name,
+            (data.get("affiliation") or "").strip(),
+            (data.get("phone") or "").strip(),
+            (data.get("email") or "").strip(),
+            1,
+            now,
+            uid,
+        ),
+    )
+    db.commit()
+    return jsonify({"success": True, "user_id": new_id})
+
+
+# ---------------------------------------------------------------------------
 # Routes — Pages
 # ---------------------------------------------------------------------------
 @app.route("/favicon.ico")
@@ -562,12 +940,19 @@ def _static_no_cache_for_icons(response):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", has_auth_session=bool(session.get("user_id")))
 
 
 @app.route("/api/features")
 def api_features():
-    return jsonify({"longitudinal": ENABLE_LONGITUDINAL})
+    chain_ready = ENABLE_HG19_VIEW and os.path.isfile(LIFTOVER_CHAIN_HG38_TO_HG19)
+    return jsonify({
+        "longitudinal": ENABLE_LONGITUDINAL,
+        "igv": ENABLE_IGV,
+        "hg19_view": bool(chain_ready),
+        "hg19_chain_missing": ENABLE_HG19_VIEW and not chain_ready,
+        "license": LICENSE_META,
+    })
 
 
 @app.route("/api/system_resources")
@@ -656,7 +1041,7 @@ def api_orders():
         sample = o.get("sample_name", "")
         o["has_vcf"] = bool(glob.glob(os.path.join(RESULTS_DIR, sample, "**", f"{sample}*.vcf"), recursive=True))
         o["has_log"] = bool(glob.glob(os.path.join(LOG_DIR, f"{sample}_*_nf.log")))
-        qc_dir = os.path.join(RESULTS_DIR, sample, sample, "QC_report")
+        qc_dir = os.path.join(RESULTS_DIR, sample, "QC_report")
         o["has_qc"] = os.path.isdir(qc_dir) and bool(os.listdir(qc_dir))
         result.append(o)
     return jsonify(result)
@@ -676,13 +1061,33 @@ def api_completed_list():
 @app.route("/api/orders", methods=["POST"])
 def api_create_order():
     data = request.json
-    if not data.get("sample_name") or not data.get("r1_fastq") or not data.get("r2_fastq"):
-        return jsonify({"success": False, "error": "sample_name, r1_fastq, r2_fastq are required"}), 400
+    order_type = data.get("order_type", "baseline")
+    reuse_wid = (data.get("reuse_work_order_id") or "").strip()
+    if reuse_wid:
+        if order_type != "longitudinal" or not ENABLE_LONGITUDINAL:
+            return jsonify({"success": False, "error": "reuse_work_order_id는 Longitudinal에서만 사용할 수 있습니다."}), 400
+
+    if order_type == "longitudinal" and ENABLE_LONGITUDINAL and reuse_wid:
+        db = get_db()
+        src = db.execute("SELECT * FROM orders WHERE id=?", (reuse_wid,)).fetchone()
+        if not src:
+            return jsonify({"success": False, "error": "reuse_work_order_id: 오더를 찾을 수 없습니다."}), 400
+        src = dict_from_row(src)
+        if src.get("status") != "completed":
+            return jsonify({"success": False, "error": "재사용할 오더는 분석 완료(completed) 상태여야 합니다."}), 400
+        sample_name = src["sample_name"]
+        r1_fastq = src["r1_fastq"]
+        r2_fastq = src["r2_fastq"]
+    else:
+        if not data.get("sample_name") or not data.get("r1_fastq") or not data.get("r2_fastq"):
+            return jsonify({"success": False, "error": "sample_name, r1_fastq, r2_fastq are required"}), 400
+        sample_name = data["sample_name"]
+        r1_fastq = data["r1_fastq"]
+        r2_fastq = data["r2_fastq"]
 
     order_id = datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:6]
     now = datetime.now().isoformat()
 
-    order_type = data.get("order_type", "baseline")
     if order_type == "longitudinal" and ENABLE_LONGITUDINAL:
         if not data.get("baseline_order_id") or not data.get("germline_order_id"):
             return jsonify({"success": False, "error": "Longitudinal requires baseline and germline order selection"}), 400
@@ -690,17 +1095,18 @@ def api_create_order():
     followup_ids = ",".join(data.get("followup_order_ids", [])) if isinstance(data.get("followup_order_ids"), list) else data.get("followup_order_ids", "")
 
     db = get_db()
+    created_by = session.get("user_id") or ""
     db.execute("""
         INSERT INTO orders (id, order_name, patient_name, patient_dob, chart_number,
             department, doctor_name, diagnosis, doctor_comment,
             sample_name, r1_fastq, r2_fastq, reference, profile,
-            af_threshold, bed_file, remove_bams, delete_intermediate,
-            order_type, baseline_order_id, germline_order_id, followup_order_ids,
-            status, created_at, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            af_threshold, bed_file, delete_intermediate,
+            order_type, baseline_order_id, germline_order_id, followup_order_ids, reuse_work_order_id,
+            status, created_at, updated_at, created_by_user_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         order_id,
-        data.get("order_name", data["sample_name"]),
+        data.get("order_name", sample_name),
         data.get("patient_name", ""),
         data.get("patient_dob", ""),
         data.get("chart_number", ""),
@@ -708,20 +1114,21 @@ def api_create_order():
         data.get("doctor_name", ""),
         data.get("diagnosis", ""),
         data.get("doctor_comment", ""),
-        data["sample_name"],
-        data["r1_fastq"],
-        data["r2_fastq"],
-        data.get("reference", "hg38"),
+        sample_name,
+        r1_fastq,
+        r2_fastq,
+        "hg38",
         data.get("profile", "docker"),
         float(data.get("af_threshold", 0.005)),
         data.get("bed_file", ""),
-        data.get("remove_bams", "Y"),
         data.get("delete_intermediate", "Y"),
         order_type,
         data.get("baseline_order_id", ""),
         data.get("germline_order_id", ""),
         followup_ids,
+        reuse_wid,
         "registered", now, now,
+        created_by,
     ))
     db.commit()
     return jsonify({"success": True, "order_id": order_id})
@@ -748,18 +1155,36 @@ def api_update_order(order_id):
     data = request.json
     now = datetime.now().isoformat()
 
+    order_type = data.get("order_type", row["order_type"])
+    reuse_wid = (data.get("reuse_work_order_id") or "").strip() if "reuse_work_order_id" in data else None
+    if reuse_wid is not None and reuse_wid:
+        if order_type != "longitudinal" or not ENABLE_LONGITUDINAL:
+            return jsonify({"success": False, "error": "reuse_work_order_id는 Longitudinal에서만 사용할 수 있습니다."}), 400
+        src = db.execute("SELECT * FROM orders WHERE id=?", (reuse_wid,)).fetchone()
+        if not src:
+            return jsonify({"success": False, "error": "reuse_work_order_id: 오더를 찾을 수 없습니다."}), 400
+        src = dict_from_row(src)
+        if src.get("status") != "completed":
+            return jsonify({"success": False, "error": "재사용할 오더는 분석 완료(completed) 상태여야 합니다."}), 400
+        data["sample_name"] = src["sample_name"]
+        data["r1_fastq"] = src["r1_fastq"]
+        data["r2_fastq"] = src["r2_fastq"]
+
     editable = [
         "order_name", "patient_name", "patient_dob", "chart_number",
         "department", "doctor_name", "diagnosis", "doctor_comment",
         "sample_name", "r1_fastq", "r2_fastq", "reference", "profile",
-        "bed_file", "remove_bams", "delete_intermediate",
+        "bed_file", "delete_intermediate",
         "order_type", "baseline_order_id", "germline_order_id", "followup_order_ids",
+        "reuse_work_order_id",
     ]
     sets = ["updated_at=?"]
     params = [now]
     for col in editable:
         if col in data:
             val = data[col]
+            if col == "reference":
+                val = "hg38"
             if col == "followup_order_ids" and isinstance(val, list):
                 val = ",".join(val)
             sets.append(f"{col}=?")
@@ -782,9 +1207,10 @@ def api_start_order(order_id):
     if not row:
         return jsonify({"success": False, "error": "Order not found"}), 404
     order = dict_from_row(row)
-    nf_resume = get_setting("nf_resume", "Y") == "Y"
     try:
-        cid = start_analysis(order, force=False, resume=nf_resume)
+        cid = start_analysis(
+            order, force=False, resume=True, started_by_user_id=session.get("user_id") or "",
+        )
         return jsonify({"success": True, "container_id": cid})
     except Exception as e:
         now = datetime.now().isoformat()
@@ -820,7 +1246,9 @@ def api_rerun_order(order_id):
     container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
     try:
-        cid = start_analysis(order, force=False, resume=True)
+        cid = start_analysis(
+            order, force=False, resume=True, started_by_user_id=session.get("user_id") or "",
+        )
         return jsonify({"success": True, "container_id": cid})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -834,16 +1262,22 @@ def api_force_order(order_id):
     if not row:
         return jsonify({"success": False, "error": "Order not found"}), 404
     order = dict_from_row(row)
+    if (order.get("reuse_work_order_id") or "").strip():
+        return jsonify({
+            "success": False,
+            "error": "완료 오더 work 재사용(Longitudinal) 모드에서는 강제 재실행을 사용할 수 없습니다. 재실행(Rerun)으로 이어서 실행하세요.",
+        }), 400
     container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
-    import shutil
     if order.get("nf_work_dir") and os.path.isdir(order["nf_work_dir"]):
         shutil.rmtree(order["nf_work_dir"], ignore_errors=True)
     result_dir = os.path.join(RESULTS_DIR, order["sample_name"])
     if os.path.isdir(result_dir):
         shutil.rmtree(result_dir, ignore_errors=True)
     try:
-        cid = start_analysis(order, force=True, resume=False)
+        cid = start_analysis(
+            order, force=True, resume=False, started_by_user_id=session.get("user_id") or "",
+        )
         return jsonify({"success": True, "container_id": cid})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -852,12 +1286,14 @@ def api_force_order(order_id):
 @app.route("/api/orders/<order_id>/delete", methods=["DELETE"])
 def api_delete_order(order_id):
     db = get_db()
-    row = db.execute("SELECT sample_name, status FROM orders WHERE id=?", (order_id,)).fetchone()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
         return jsonify({"success": False, "error": "Order not found"}), 404
-    if row["status"] == "running":
-        container_name = f"nxt_{row['sample_name']}_{order_id[:8]}"
+    order = dict_from_row(row)
+    if order["status"] == "running":
+        container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
+    purge_order_disk_assets(order)
     db.execute("DELETE FROM orders WHERE id=?", (order_id,))
     db.commit()
     return jsonify({"success": True})
@@ -914,9 +1350,13 @@ def _clean_nf_log(raw: str) -> str:
 @app.route("/api/orders/<order_id>/logs")
 def api_order_logs(order_id):
     db = get_db()
-    row = db.execute("SELECT sample_name FROM orders WHERE id=?", (order_id,)).fetchone()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
         return jsonify({"success": False, "error": "Order not found"}), 404
+
+    order_snapshot = format_order_snapshot(row)
+    created_by = (row["created_by_user_id"] or "").strip() or "-"
+    analysis_by = (row["analysis_by_user_id"] or "").strip() or "-"
 
     sample = row["sample_name"]
     tail = int(request.args.get("tail", "500"))
@@ -947,10 +1387,17 @@ def api_order_logs(order_id):
                     pass
                 break
 
-    if not raw:
-        return jsonify({"success": True, "logs": "No logs available yet."})
+    log_text = "No logs available yet."
+    if raw:
+        log_text = _clean_nf_log(raw)
 
-    return jsonify({"success": True, "logs": _clean_nf_log(raw)})
+    return jsonify({
+        "success": True,
+        "order_snapshot": order_snapshot,
+        "created_by_user_id": created_by,
+        "analysis_by_user_id": analysis_by,
+        "logs": log_text,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -997,8 +1444,8 @@ def api_qc_data(order_id):
     order = dict_from_row(row)
     sample = order["sample_name"]
 
-    qc_dir = os.path.join(RESULTS_DIR, sample, sample, "QC_report")
-    trim_dir = os.path.join(RESULTS_DIR, sample, sample, "trimming")
+    qc_dir = os.path.join(RESULTS_DIR, sample, "QC_report")
+    trim_dir = os.path.join(RESULTS_DIR, sample, "trimming")
 
     def _parse_picard(filepath):
         """Parse a Picard-style metrics file: return list of dicts (one per data row)."""
@@ -1251,6 +1698,396 @@ def api_vcf_data(order_id):
 
 
 # ---------------------------------------------------------------------------
+# Routes — IGV (BAM viewer)
+# ---------------------------------------------------------------------------
+def _igv_disabled_response():
+    return jsonify({"error": "IGV feature disabled"}), 404
+
+
+def _order_results_root(order):
+    """Return the absolute, real path of results/<sample>/ for this order (or None)."""
+    sample = (order or {}).get("sample_name", "")
+    if not sample:
+        return None
+    root = os.path.join(RESULTS_DIR, sample)
+    if not os.path.isdir(root):
+        return None
+    return os.path.realpath(root)
+
+
+def _safe_resolve_under(root_real, rel_path):
+    """Resolve rel_path against root_real, ensuring no traversal. Returns abs path or None."""
+    if not root_real or not rel_path:
+        return None
+    if rel_path.startswith("/") or ".." in rel_path.replace("\\", "/").split("/"):
+        return None
+    candidate = os.path.realpath(os.path.join(root_real, rel_path))
+    if not (candidate == root_real or candidate.startswith(root_real + os.sep)):
+        return None
+    return candidate
+
+
+# Heuristic: tokens that mark a BAM as "ancillary" (paraphase, SMN etc.).
+# Kept empty for Roche_nxt — every produced BAM is the main exome/panel track.
+_ANCILLARY_TOKENS = ()
+
+
+def _bam_label_sort_key(name):
+    """Prefer output/bam final BAM > QC_report rmdups BAM > others; newest mtime first."""
+    lower = name.lower()
+    if "/output/bam/" in lower or lower.endswith("_sorted.bam"):
+        rank = 0
+    elif "_sorted_rmdups.bam" in lower:
+        rank = 1
+    else:
+        rank = 2
+    return rank
+
+
+def _find_bai_for(bam_abs):
+    """Return absolute path of the BAI file for bam_abs, or None."""
+    for bai in (bam_abs + ".bai", bam_abs[:-4] + ".bai"):
+        if os.path.isfile(bai):
+            return bai
+    return None
+
+
+def _try_index_bam(bam_abs):
+    """Best-effort: run `samtools index` inside the analysis image to produce a BAI."""
+    try:
+        host_root = HOST_DIR
+        bam_real = os.path.realpath(bam_abs)
+        results_real = os.path.realpath(RESULTS_DIR)
+        if not bam_real.startswith(results_real + os.sep):
+            return None
+        # Translate container path (/roche_nxt/...) to host path for the sibling docker run.
+        rel_from_base = os.path.relpath(bam_real, os.path.realpath(BASE_DIR))
+        host_bam = os.path.join(host_root, rel_from_base)
+        uid = subprocess.run(["id", "-u"], capture_output=True, text=True).stdout.strip()
+        gid = subprocess.run(["id", "-g"], capture_output=True, text=True).stdout.strip()
+        subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "--user", f"{uid}:{gid}",
+                "-v", f"{host_root}:/work_nxt",
+                ANALYSIS_IMAGE,
+                "samtools", "index",
+                f"/work_nxt/{rel_from_base}",
+            ],
+            capture_output=True, text=True, timeout=180,
+        )
+    except Exception:
+        return None
+    return _find_bai_for(bam_abs)
+
+
+def _list_bam_tracks(order, auto_index=True):
+    """Return (tracks, results_root_real). tracks: list of dicts."""
+    root_real = _order_results_root(order)
+    if not root_real:
+        return [], None
+    sample = order["sample_name"]
+    bams = []
+    for bam_abs in glob.glob(os.path.join(root_real, "**", "*.bam"), recursive=True):
+        bam_real = os.path.realpath(bam_abs)
+        if not bam_real.startswith(root_real + os.sep):
+            continue
+        bams.append(bam_real)
+    bams = sorted(set(bams), key=lambda p: (_bam_label_sort_key(p), -os.path.getmtime(p)))
+
+    tracks = []
+    for bam_abs in bams:
+        bai_abs = _find_bai_for(bam_abs)
+        if not bai_abs and auto_index:
+            bai_abs = _try_index_bam(bam_abs)
+        rel_bam = os.path.relpath(bam_abs, root_real).replace(os.sep, "/")
+        rel_bai = os.path.relpath(bai_abs, root_real).replace(os.sep, "/") if bai_abs else None
+        name = os.path.basename(bam_abs)
+        ancillary = any(tok in name.lower() for tok in _ANCILLARY_TOKENS)
+        tracks.append({
+            "rel_path": rel_bam,
+            "label": name,
+            "has_index": bool(bai_abs),
+            "index_rel_path": rel_bai,
+            "size": os.path.getsize(bam_abs),
+            "mtime": os.path.getmtime(bam_abs),
+            "ancillary": ancillary,
+        })
+    return tracks, root_real
+
+
+@app.route("/api/orders/<order_id>/coverage-context")
+def api_coverage_context(order_id):
+    if not ENABLE_IGV:
+        return _igv_disabled_response()
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Order not found"}), 404
+    order = dict_from_row(row)
+    tracks, root_real = _list_bam_tracks(order, auto_index=True)
+    indexed = [t for t in tracks if t["has_index"] and not t["ancillary"]]
+    primary = indexed[0] if indexed else None
+    return jsonify({
+        "success": True,
+        "order_id": order_id,
+        "sample_name": order.get("sample_name", ""),
+        "order_name": order.get("order_name", ""),
+        "genome_id": order.get("reference", "hg38") or "hg38",
+        "bam_tracks": tracks,
+        "primary_track": primary,
+        "interpretation_genes": [],
+        "results_root_exists": bool(root_real),
+    })
+
+
+@app.route("/api/orders/<order_id>/index_bam", methods=["POST"])
+def api_index_bam(order_id):
+    if not ENABLE_IGV:
+        return _igv_disabled_response()
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "Order not found"}), 404
+    order = dict_from_row(row)
+    rel = (request.json or {}).get("rel_path", "") if request.is_json else request.form.get("rel_path", "")
+    root_real = _order_results_root(order)
+    abs_bam = _safe_resolve_under(root_real, rel)
+    if not abs_bam or not os.path.isfile(abs_bam) or not abs_bam.endswith(".bam"):
+        return jsonify({"success": False, "error": "BAM not found"}), 404
+    bai_abs = _try_index_bam(abs_bam)
+    if not bai_abs:
+        return jsonify({"success": False, "error": "samtools index failed"}), 500
+    return jsonify({
+        "success": True,
+        "index_rel_path": os.path.relpath(bai_abs, root_real).replace(os.sep, "/"),
+    })
+
+
+def _serve_range(abs_path, mimetype):
+    """Serve abs_path with HTTP Range support (IGV.js requires this for BAM)."""
+    try:
+        total = os.path.getsize(abs_path)
+    except OSError:
+        abort(404)
+
+    range_header = request.headers.get("Range", "").strip()
+    if not range_header:
+        resp = send_file(abs_path, mimetype=mimetype, conditional=True)
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Length"] = str(total)
+        return resp
+
+    # "bytes=<start>-<end>"
+    if not range_header.lower().startswith("bytes="):
+        abort(416)
+    try:
+        spec = range_header.split("=", 1)[1].split(",", 1)[0].strip()
+        start_str, end_str = spec.split("-", 1)
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else total - 1
+    except ValueError:
+        abort(416)
+    if start < 0 or end >= total or start > end:
+        abort(416)
+
+    length = end - start + 1
+    chunk_size = 1024 * 1024
+
+    def _gen():
+        with open(abs_path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                data = f.read(min(chunk_size, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    resp = Response(_gen(), status=206, mimetype=mimetype, direct_passthrough=True)
+    resp.headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Content-Length"] = str(length)
+    return resp
+
+
+def _guess_mimetype(path):
+    lower = path.lower()
+    if lower.endswith(".bam"):
+        return "application/octet-stream"
+    if lower.endswith(".bai") or lower.endswith(".bam.bai"):
+        return "application/octet-stream"
+    return "application/octet-stream"
+
+
+@app.route("/api/orders/<order_id>/file/<path:filename>", methods=["GET", "HEAD"])
+def api_order_file(order_id, filename):
+    """Serve result files for IGV.js. Only BAM/BAI are allowed by default."""
+    if not ENABLE_IGV:
+        return _igv_disabled_response()
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Order not found"}), 404
+    order = dict_from_row(row)
+    root_real = _order_results_root(order)
+    abs_path = _safe_resolve_under(root_real, filename)
+    if not abs_path or not os.path.isfile(abs_path):
+        return jsonify({"error": "File not found"}), 404
+    # Allowlist: only alignment tracks via this endpoint.
+    lower = abs_path.lower()
+    if not (lower.endswith(".bam") or lower.endswith(".bai") or lower.endswith(".bam.bai")):
+        return jsonify({"error": "File type not allowed"}), 403
+
+    mimetype = _guess_mimetype(abs_path)
+    try:
+        total = os.path.getsize(abs_path)
+    except OSError:
+        return jsonify({"error": "File not found"}), 404
+
+    if request.method == "HEAD":
+        resp = make_response("", 200)
+        resp.headers["Content-Type"] = mimetype
+        resp.headers["Content-Length"] = str(total)
+        resp.headers["Accept-Ranges"] = "bytes"
+        return resp
+
+    return _serve_range(abs_path, mimetype)
+
+
+# ---------------------------------------------------------------------------
+# Routes — Liftover (hg38 -> hg19, display-only)
+# ---------------------------------------------------------------------------
+# Lazy-loaded pyliftover instance. The chain file is large-ish (~1MB gzipped)
+# and parsing takes ~0.5s, so we cache the parsed LiftOver object.
+_LIFTOVER_LOCK_KEY = "_liftover_hg38_to_hg19"
+
+
+def _get_liftover_hg38_to_hg19():
+    """Return a cached pyliftover.LiftOver instance, or None if unavailable."""
+    cached = app.config.get(_LIFTOVER_LOCK_KEY)
+    if cached is not None:
+        # (loader_result, path_mtime) tuple — invalidate if file changed.
+        lo, loaded_mtime = cached
+        try:
+            current_mtime = os.path.getmtime(LIFTOVER_CHAIN_HG38_TO_HG19)
+        except OSError:
+            current_mtime = None
+        if current_mtime == loaded_mtime:
+            return lo
+
+    if not ENABLE_HG19_VIEW:
+        return None
+    if not os.path.isfile(LIFTOVER_CHAIN_HG38_TO_HG19):
+        app.config[_LIFTOVER_LOCK_KEY] = (None, None)
+        return None
+    try:
+        from pyliftover import LiftOver  # type: ignore
+    except ImportError:
+        app.logger.error("pyliftover not installed; hg19 view disabled.")
+        app.config[_LIFTOVER_LOCK_KEY] = (None, None)
+        return None
+    try:
+        lo = LiftOver(LIFTOVER_CHAIN_HG38_TO_HG19)
+        app.config[_LIFTOVER_LOCK_KEY] = (lo, os.path.getmtime(LIFTOVER_CHAIN_HG38_TO_HG19))
+        return lo
+    except Exception as exc:
+        app.logger.error("Failed to load liftover chain %s: %s", LIFTOVER_CHAIN_HG38_TO_HG19, exc)
+        app.config[_LIFTOVER_LOCK_KEY] = (None, None)
+        return None
+
+
+def _lift_one_hg38_to_hg19(lo, chrom, pos_1based):
+    """Lift a single 1-based hg38 coordinate to hg19. Returns (chrom19, pos19) or None."""
+    if lo is None or not chrom:
+        return None
+    try:
+        pos0 = int(pos_1based) - 1  # pyliftover is 0-based
+    except (TypeError, ValueError):
+        return None
+    if pos0 < 0:
+        return None
+    try:
+        hits = lo.convert_coordinate(chrom, pos0)
+    except Exception:
+        return None
+    if not hits:
+        return None
+    # Prefer matches on the forward strand of the mapped chrom; otherwise first hit.
+    forward = [h for h in hits if len(h) >= 3 and h[2] == "+"]
+    h = (forward or hits)[0]
+    chrom19, pos0_19 = h[0], h[1]
+    return (chrom19, pos0_19 + 1)
+
+
+@app.route("/api/liftover", methods=["POST"])
+def api_liftover():
+    """Batch lift hg38 coordinates to hg19 for display purposes.
+
+    Request JSON:  { "positions": [{"chrom": "chr1", "pos": 12345}, ...] }
+    Response JSON: {
+        "success": true,
+        "assembly_from": "hg38",
+        "assembly_to": "hg19",
+        "results": [
+            {"chrom": "chr1", "pos": 12345, "chrom19": "chr1", "pos19": 12300, "ok": true},
+            ...
+        ]
+    }
+    Coordinates for which liftover fails are returned with ok=false.
+    """
+    if not ENABLE_HG19_VIEW:
+        return jsonify({"error": "hg19 view disabled"}), 404
+
+    lo = _get_liftover_hg38_to_hg19()
+    if lo is None:
+        return jsonify({
+            "error": "Liftover chain not available. "
+                     "Check ENABLE_HG19_VIEW and LIFTOVER_CHAIN_HG38_TO_HG19."
+        }), 503
+
+    payload = request.get_json(silent=True) or {}
+    positions = payload.get("positions") or []
+    if not isinstance(positions, list):
+        return jsonify({"error": "'positions' must be a list"}), 400
+    # Guardrail: avoid accidental huge requests (a typical exome review has <10k rows).
+    if len(positions) > 200000:
+        return jsonify({"error": "Too many positions (>200k)"}), 400
+
+    out = []
+    for entry in positions:
+        if not isinstance(entry, dict):
+            out.append({"ok": False})
+            continue
+        chrom = str(entry.get("chrom") or "").strip()
+        pos_raw = entry.get("pos")
+        try:
+            pos = int(pos_raw)
+        except (TypeError, ValueError):
+            out.append({"chrom": chrom, "pos": pos_raw, "ok": False})
+            continue
+        mapped = _lift_one_hg38_to_hg19(lo, chrom, pos)
+        if mapped is None:
+            out.append({"chrom": chrom, "pos": pos, "ok": False})
+        else:
+            out.append({
+                "chrom": chrom,
+                "pos": pos,
+                "chrom19": mapped[0],
+                "pos19": mapped[1],
+                "ok": True,
+            })
+
+    return jsonify({
+        "success": True,
+        "assembly_from": "hg38",
+        "assembly_to": "hg19",
+        "results": out,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Routes — Longitudinal VAF comparison
 # ---------------------------------------------------------------------------
 @app.route("/api/orders/<order_id>/longitudinal_data")
@@ -1364,11 +2201,14 @@ def api_get_settings():
     settings["max_cpus"] = env.get("MAX_CPUS", "0")
     settings["max_memory"] = env.get("MAX_MEMORY", "0")
     settings["max_concurrent_samples"] = env.get("MAX_CONCURRENT_SAMPLES", "0")
+    settings["default_reference"] = "hg38"
     return jsonify(settings)
 
 
 @app.route("/api/settings", methods=["POST"])
 def api_save_settings():
+    if not is_admin_user(session.get("user_id")):
+        return jsonify({"success": False, "error": "관리자만 설정을 변경할 수 있습니다."}), 403
     data = request.json
     db = get_db()
 
@@ -1399,6 +2239,9 @@ def api_save_settings():
 
     if env is not None:
         write_env_file(env)
+
+    if "default_reference" in data:
+        data["default_reference"] = "hg38"
 
     for k, v in data.items():
         db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))

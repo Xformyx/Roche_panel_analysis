@@ -18,7 +18,7 @@ include { SORT_SAM_QUERYNAME as SORT_DEDUPED_QN       } from '../modules/sort_sa
 include { SORT_SAM_QUERYNAME as SORT_CONSENSUS_FLT_QN } from '../modules/sort_sam'
 include { SORT_SAM_QUERYNAME as SORT_CONSENSUS_MAP_QN } from '../modules/sort_sam'
 include { SORT_SAM_COORDINATE as SORT_ALIGNED_COORD   } from '../modules/sort_sam'
-include { SORT_SAM_COORDINATE as SORT_FINAL_COORD     } from '../modules/sort_sam'
+include { SORT_SAM_COORDINATE_FINAL as SORT_FINAL_COORD } from '../modules/sort_sam'
 include { MERGE_BAM_ALIGNMENT   } from '../modules/merge_bam'
 include { MERGE_CONSENSUS_BAM   } from '../modules/merge_bam'
 include { GROUP_READS_BY_UMI    } from '../modules/group_reads_umi'

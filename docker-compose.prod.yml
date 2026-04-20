@@ -1,0 +1,52 @@
+# Roche_nxt — production Docker Compose file.
+#
+# Differences vs. the dev `docker-compose.yml`:
+#   * NO bind-mount of ./web_ui or ./       (source code stays inside the image)
+#   * NO DEV_MODE override                  (signed license is mandatory)
+#   * license/ is mounted read-only         (customers cannot accidentally edit it)
+#   * ENABLE_* env fallbacks are removed    (feature flags come only from the license)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# The customer must have placed a valid signed license at
+# ./license/license.json (see LICENSE.md for details).
+
+services:
+  roche-nxt-web:
+    image: roche_nxt_web:latest
+    container_name: roche_nxt_web
+    user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:-113}"
+    ports:
+      - "${WEB_PORT:-8080}:5000"
+    volumes:
+      # Data directories the product needs to read/write at runtime. Source
+      # code is NOT mounted — it lives inside the image.
+      - ${RESULTS_HOST_DIR:-./results}:/roche_nxt/results
+      - ${WORK_HOST_DIR:-./work}:/roche_nxt/work
+      - ${LOG_HOST_DIR:-./log}:/roche_nxt/log
+      - ${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}:/fastq_source:ro
+      - ${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}:/bed_source:ro
+      - ${LIFTOVER_HOST_DIR:-./data/liftover}:/liftover:ro
+      - ${LICENSE_HOST_DIR:-./license}:/roche_nxt/license:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    read_only: false      # pipeline writes to log/work/results
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Asia/Seoul}
+      - ROCHE_NXT_DIR=/roche_nxt
+      - HOST_DIR=${HOST_DIR:-.}
+      - ANALYSIS_IMAGE=roche_nxt_analysis:latest
+      - FASTQ_HOST_DIR=${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}
+      - BED_HOST_DIR=${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}
+      - LIFTOVER_CHAIN_HG38_TO_HG19=${LIFTOVER_CHAIN_HG38_TO_HG19:-/liftover/hg38ToHg19.over.chain.gz}
+      - LICENSE_PATH=/roche_nxt/license/license.json
+      - MAX_CPUS=${MAX_CPUS:-0}
+      - MAX_MEMORY=${MAX_MEMORY:-0}
+      - MAX_CONCURRENT_SAMPLES=${MAX_CONCURRENT_SAMPLES:-0}
+      # NOTE: DEV_MODE and ENABLE_* are intentionally absent. Do not add them.

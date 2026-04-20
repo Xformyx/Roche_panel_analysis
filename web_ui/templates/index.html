@@ -186,15 +186,31 @@ tbody tr:hover{background:#F8FAFC}
 .dl-btn.disabled{color:var(--text-muted);opacity:.35;cursor:not-allowed;pointer-events:none}
 .result-cell{display:flex;gap:4px;align-items:center}
 
-/* ===== LOG PANEL ===== */
-.log-panel{background:#1E293B;border-radius:var(--radius-lg);padding:0;display:none;flex-direction:column;max-height:380px;margin-top:16px;box-shadow:var(--shadow);max-width:calc(100vw - 240px - 56px)}
+/* ===== LOG PANEL (오더 정보 + 실행 로그 분리) ===== */
+.log-panel{display:none;flex-direction:column;gap:12px;margin-top:16px;max-width:calc(100vw - 240px - 56px)}
 .log-panel.open{display:flex}
+.order-info-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow:visible}
+.order-info-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.order-info-title{font-size:.85rem;font-weight:700;color:var(--text)}
+.order-info-sub{font-size:.8rem;color:var(--text-light);font-weight:500}
+.order-info-body{padding:14px 16px 16px;font-family:var(--mono);font-size:.78rem;color:var(--text);line-height:1.65;white-space:pre-wrap;word-break:break-all;overflow:visible}
+.log-execution-panel{background:#1E293B;border-radius:var(--radius-lg);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;max-height:min(420px,55vh)}
 .log-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #334155;flex-shrink:0}
 .log-header span{color:#94A3B8;font-size:.8rem;font-weight:600}
 .log-header .log-actions{display:flex;gap:8px}
 .log-header button{background:#334155;color:#CBD5E1;border:none;padding:4px 10px;border-radius:4px;font-size:.75rem;cursor:pointer}
 .log-header button:hover{background:#475569}
-.log-body{flex:1;overflow:auto;padding:12px 16px;font-family:var(--mono);font-size:.78rem;color:#E2E8F0;line-height:1.7;white-space:pre-wrap;word-break:break-all}
+.log-body{flex:1;min-height:140px;overflow:auto;padding:12px 16px;font-family:var(--mono);font-size:.78rem;color:#E2E8F0;line-height:1.7;white-space:pre-wrap;word-break:break-all}
+
+/* ===== LOGIN ===== */
+.login-overlay{position:fixed;inset:0;z-index:4000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{background:var(--card);padding:36px 40px;border-radius:var(--radius-lg);box-shadow:var(--shadow-md);width:100%;max-width:440px}
+.login-brand{text-align:center;margin-bottom:28px}
+.login-brand img{max-width:300px;height:auto;display:block;margin:0 auto}
+.login-error{color:var(--red);font-size:.85rem;margin-top:14px;text-align:center}
+.login-submit-btn{width:100%;margin-top:20px;padding:10px;justify-content:center;text-align:center}
+.app-shell{display:flex;min-height:100vh;width:100%;overflow:hidden}
+.topbar-user{font-size:.85rem;color:var(--text-light);margin-right:8px}
 
 /* ===== MODAL ===== */
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
@@ -248,13 +264,14 @@ tbody tr:hover{background:#F8FAFC}
 /* ===== CONFIRM DIALOG ===== */
 .confirm-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:300;display:none;align-items:center;justify-content:center}
 .confirm-overlay.open{display:flex}
-.confirm-box{background:var(--card);border-radius:var(--radius-lg);padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:400px;width:100%;text-align:center}
+.confirm-box{background:var(--card);border-radius:var(--radius-lg);padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:480px;width:100%;text-align:center}
 .confirm-box .confirm-icon{width:48px;height:48px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .confirm-box .confirm-icon.warn{background:var(--yellow-bg);color:var(--yellow)}
 .confirm-box .confirm-icon.danger{background:var(--red-bg);color:var(--red)}
 .confirm-box .confirm-icon svg{width:24px;height:24px}
 .confirm-box h3{margin-bottom:8px;font-size:1rem}
 .confirm-box p{color:var(--text-light);font-size:.85rem;margin-bottom:20px;line-height:1.5}
+.confirm-box p#confirmMessage{white-space:pre-line;text-align:left;max-height:min(60vh,420px);overflow-y:auto}
 .confirm-box .confirm-actions{display:flex;gap:10px;justify-content:center}
 
 /* ===== SETUP PAGE ===== */
@@ -283,10 +300,87 @@ tbody tr:hover{background:#F8FAFC}
 /* ===== REVIEW MODAL ===== */
 .review-overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:20px}
 .review-overlay.open{display:flex}
-.review-panel{background:var(--card);border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.25);width:100%;max-width:1400px;height:calc(100vh - 40px);display:flex;flex-direction:column;animation:modal-in .2s ease}
+.review-panel{background:var(--card);border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.25);width:100%;max-width:1800px;height:calc(100vh - 40px);display:flex;flex-direction:column;animation:modal-in .2s ease}
+.review-main{flex:1;display:flex;min-height:0;min-width:0}
+.review-left{flex:0 0 55%;min-width:200px;display:flex;flex-direction:column}
+.review-splitter{flex:0 0 6px;background:var(--border);cursor:col-resize;position:relative;transition:background .15s}
+.review-splitter:hover,.review-splitter.dragging{background:var(--primary)}
+.review-splitter::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:36px;background:var(--text-muted);border-radius:2px;opacity:.55;pointer-events:none}
+.review-splitter:hover::before,.review-splitter.dragging::before{background:#fff;opacity:.9}
+.review-right{flex:1 1 auto;min-width:360px;display:flex;flex-direction:column;background:#0F172A;color:#E2E8F0}
+.review-right.hidden{display:none}
+.review-splitter.hidden{display:none}
+.review-left.full{flex:1 1 auto}
+.review-main.resizing{user-select:none;cursor:col-resize}
+.review-main.resizing *{user-select:none !important;pointer-events:none}
+.review-main.resizing .review-splitter{pointer-events:auto}
+.review-body{overflow:auto !important}
+.review-body table{width:max-content;min-width:100%}
+.review-body tr.variant-row{cursor:pointer}
+.review-body tr.variant-row.selected{background:#E0F2FE !important}
+.review-body tr.variant-row:hover{background:#F1F5F9}
+.igv-topbar{padding:10px 14px;border-bottom:1px solid #1E293B;display:flex;flex-direction:column;gap:8px;background:#111827}
+.igv-topbar-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.igv-topbar-row label{font-size:.75rem;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.igv-topbar input,.igv-topbar select{background:#0F172A;border:1px solid #334155;color:#E2E8F0;border-radius:6px;padding:5px 9px;font-size:.8rem}
+.igv-topbar input:focus,.igv-topbar select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 2px rgba(37,99,235,.25)}
+.igv-topbar input.igv-bam-label{flex:1;min-width:180px;font-family:var(--mono);color:#CBD5E1;background:transparent;border-color:transparent}
+.igv-btn{padding:5px 12px;border-radius:6px;font-size:.78rem;font-weight:600;border:1px solid #334155;background:#1E293B;color:#E2E8F0;cursor:pointer;transition:all .15s}
+.igv-btn:hover{background:#334155;border-color:#475569}
+.igv-btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.igv-btn.primary:hover{background:var(--primary-dark);border-color:var(--primary-dark)}
+.igv-hint{font-size:.72rem;color:#64748B;padding:6px 14px;background:#0B1220;border-bottom:1px solid #1E293B}
+.igv-host{flex:1;min-height:0;background:#fff;overflow:auto;position:relative}
+.igv-pos-marker{position:absolute;top:0;bottom:0;width:1px;background:#EF4444;pointer-events:none;z-index:50;box-shadow:0 0 0 0.5px rgba(239,68,68,.35)}
+.igv-pos-marker-label{position:absolute;top:2px;padding:2px 6px;background:#EF4444;color:#fff;font-size:11px;font-weight:700;border-radius:3px;pointer-events:none;z-index:51;transform:translateX(-50%);white-space:nowrap}
+.igv-empty{display:flex;align-items:center;justify-content:center;height:100%;color:#94A3B8;font-size:.82rem;padding:20px;text-align:center}
+#igvHost .igv-navbar{flex-wrap:wrap;row-gap:4px}
+#igvHost .igv-chromosome-select-widget-container{min-width:130px;display:flex;align-items:center}
+#igvHost .igv-chromosome-select-widget-container select,
+#igvHost select.igv-chromosome-select-widget{
+  min-width:130px;width:auto;height:28px;
+  padding:2px 26px 2px 8px;
+  font-size:12px;line-height:1.4;
+  color:#1E293B !important;background-color:#fff !important;
+  border:1px solid #CBD5E1;border-radius:4px;
+  box-sizing:border-box;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  appearance:auto;-webkit-appearance:menulist;
+}
+#igvHost .igv-chromosome-select-widget-container select option,
+#igvHost select.igv-chromosome-select-widget option{color:#1E293B;background:#fff}
+#igvHost .igv-search-container input{min-width:180px}
+/* Popover (variant/read/coverage 클릭 시 나오는 정보창) 텍스트 가독성 */
+[class*="igv-popover"],[class*="igv-ui-popover"],
+.igv-popover,.igv-ui-popover,.igv-trackgear-popover{background:#fff !important;border:1px solid #CBD5E1 !important;box-shadow:0 8px 24px rgba(0,0,0,.2) !important}
+[class*="igv-popover"] *,[class*="igv-ui-popover"] *,
+.igv-popover *,.igv-ui-popover *,.igv-trackgear-popover *{color:#111 !important}
+[class*="igv-popover"] div,[class*="igv-ui-popover"] div,
+.igv-popover div,.igv-ui-popover div{font-size:12px !important;line-height:1.4 !important}
+.igv-popover-header,.igv-ui-popover-header,[class*="popover-header"]{background:#1E293B !important}
+.igv-popover-header,.igv-popover-header *,
+.igv-ui-popover-header,.igv-ui-popover-header *,
+[class*="popover-header"],[class*="popover-header"] *{color:#fff !important}
+.igv-popover td,.igv-popover th,.igv-ui-popover td,.igv-ui-popover th{color:#111 !important;padding:2px 8px !important;font-size:12px !important}
+.igv-popover a,.igv-ui-popover a,
+.igv-popover a:visited,.igv-ui-popover a:visited{color:#2563EB !important}
+/* Track labels (BAM 파일명, Refseq Select 등 트랙 상단 라벨) — 완전히 숨김 */
+#igvHost .igv-track-label,#igvHost [class*="igv-track-label"]{display:none !important}
+/* Coverage / axis / scale 숫자 라벨 */
+#igvHost .igv-track-content text,#igvHost .igv-viewport text,
+#igvHost svg text,#igvHost canvas + div{color:#111 !important;fill:#111 !important}
+#igvHost [class*="igv-scale-label"],#igvHost [class*="igv-axis"],
+#igvHost [class*="coverage-label"]{color:#111 !important}
 .review-head{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .review-head h2{font-size:1.05rem;font-weight:700;display:flex;align-items:center;gap:8px}
 .review-head h2 .review-count{font-size:.8rem;font-weight:500;color:var(--text-light);background:var(--bg);padding:2px 10px;border-radius:99px}
+.assembly-toggle{display:inline-flex;align-items:center;gap:3px;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:2px;font-size:.78rem;font-weight:600}
+.assembly-toggle button{border:0;background:transparent;color:var(--text-light);padding:4px 10px;border-radius:5px;cursor:pointer;font-weight:600;transition:all .12s;line-height:1}
+.assembly-toggle button:hover{color:var(--text)}
+.assembly-toggle button.active{background:var(--primary);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.assembly-filter{display:none}
+.review-body tr.variant-row td.cell-pos19-na{color:#94A3B8;font-style:italic}
+.review-body tr.variant-row td.cell-pos19-na::after{content:' ⚠'}
 .review-filters{padding:12px 24px;border-bottom:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:center;flex-shrink:0}
 .review-filters input,.review-filters select{font-size:.82rem;padding:6px 10px;min-width:0}
 .review-filters input{width:130px}
@@ -301,6 +395,9 @@ tbody tr:hover{background:#F8FAFC}
 .review-body th .sort-arrow.asc::after{content:'\\25B2'}
 .review-body th .sort-arrow.desc::after{content:'\\25BC'}
 .review-body td{white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+/* Pin CHROM/POS column widths so toggling hg38↔hg19 doesn't shift other columns. */
+.review-body th[data-col="CHROM"],.review-body td[data-col="CHROM"]{width:90px;min-width:90px;max-width:90px}
+.review-body th[data-col="POS"],.review-body td[data-col="POS"]{width:110px;min-width:110px;max-width:110px}
 .review-body td.cell-gene{font-weight:600;color:var(--primary-dark)}
 .review-body td.cell-effect{font-size:.78rem;max-width:180px}
 .review-body td.cell-af{font-weight:600}
@@ -357,6 +454,55 @@ tbody tr:hover{background:#F8FAFC}
 </head>
 <body>
 
+<div id="loginOverlay" class="login-overlay" style="display: {{ 'none' if has_auth_session else 'flex' }}">
+  <div class="login-card">
+    <div class="login-brand">
+      <img src="/static/leaninbio-footer.png?v=3" alt="(주)린인바이오 LeaninBio">
+    </div>
+    <form id="loginForm" onsubmit="return submitLogin(event)">
+      <div class="form-group">
+        <label>사용자 ID</label>
+        <input type="text" id="loginUserId" autocomplete="username" required>
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>비밀번호</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary login-submit-btn">로그인</button>
+    </form>
+    <p id="loginError" class="login-error" style="display:none"></p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="passwordForceOverlay" style="z-index:4500">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-head">
+      <h2>비밀번호 변경</h2>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.85rem;color:var(--text-light);margin-bottom:16px;line-height:1.5">보안을 위해 최초 로그인 시 비밀번호를 변경해야 합니다.</p>
+      <div class="form-group">
+        <label>현재 비밀번호</label>
+        <input type="password" id="forcePwCurrent" autocomplete="current-password">
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>새 비밀번호</label>
+        <input type="password" id="forcePwNew" autocomplete="new-password">
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>새 비밀번호 확인</label>
+        <input type="password" id="forcePwNew2" autocomplete="new-password">
+      </div>
+      <p id="forcePwError" class="login-error" style="display:none;margin-top:12px"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" onclick="submitForcedPasswordChange()">비밀번호 변경</button>
+    </div>
+  </div>
+</div>
+
+<div id="appShell" class="app-shell" style="display: {{ 'flex' if has_auth_session else 'none' }}">
+
 <!-- ===== SIDEBAR ===== -->
 <aside class="sidebar">
   <div class="sidebar-logo">
@@ -373,6 +519,10 @@ tbody tr:hover{background:#F8FAFC}
     <div class="nav-item" data-page="orders" onclick="navigateTo('orders')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       <span>오더 관리</span>
+    </div>
+    <div class="nav-item" id="navUsers" style="display:none" data-page="users" onclick="navigateTo('users')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>사용자 관리</span>
     </div>
     <div class="nav-item" data-page="setup" onclick="navigateTo('setup')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -397,6 +547,8 @@ tbody tr:hover{background:#F8FAFC}
       <span class="crumb-active" id="breadcrumbTitle">대시보드</span>
     </div>
     <div class="topbar-right">
+      <span class="topbar-user" id="topbarUserDisplay"></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="logoutBtn" onclick="logout()" style="display: {{ 'inline-flex' if has_auth_session else 'none' }}">로그아웃</button>
       <span class="topbar-time" id="topbarTime"></span>
     </div>
   </div>
@@ -541,16 +693,85 @@ tbody tr:hover{background:#F8FAFC}
         </div>
       </div>
 
-      <!-- Log Panel (outside the table section) -->
+      <!-- Log Panel: 오더 정보(흰 카드) + 실행 로그(다크) -->
       <div class="log-panel" id="logPanel">
-        <div class="log-header">
-          <span id="logPanelTitle">로그</span>
-          <div class="log-actions">
-            <button onclick="downloadLog()">다운로드</button>
-            <button onclick="closeLogPanel()">닫기</button>
+        <div class="order-info-panel">
+          <div class="order-info-header">
+            <div>
+              <span class="order-info-title">오더 정보</span>
+              <span class="order-info-sub" id="orderInfoSampleLabel"></span>
+            </div>
           </div>
+          <div class="order-info-body" id="logSnapshot"></div>
         </div>
-        <div class="log-body" id="logBody"></div>
+        <div class="log-execution-panel">
+          <div class="log-header">
+            <span id="logPanelTitle">실행 로그</span>
+            <div class="log-actions">
+              <button onclick="downloadLog()">다운로드</button>
+              <button onclick="closeLogPanel()">닫기</button>
+            </div>
+          </div>
+          <div class="log-body" id="logBody"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== USERS PAGE (admin) ==================== -->
+    <div class="page" id="page-users">
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">일반 사용자 추가</div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid" style="max-width:720px">
+            <div class="form-group">
+              <label>사용자 ID <span style="color:var(--red)">*</span></label>
+              <input type="text" id="newUserId" placeholder="로그인 ID">
+            </div>
+            <div class="form-group">
+              <label>이름 <span style="color:var(--red)">*</span></label>
+              <input type="text" id="newUserName" placeholder="이름">
+            </div>
+            <div class="form-group">
+              <label>소속</label>
+              <input type="text" id="newUserAffiliation" placeholder="선택">
+            </div>
+            <div class="form-group">
+              <label>전화번호</label>
+              <input type="text" id="newUserPhone" placeholder="선택">
+            </div>
+            <div class="form-group full">
+              <label>Email</label>
+              <input type="email" id="newUserEmail" placeholder="선택">
+            </div>
+          </div>
+          <p style="font-size:.8rem;color:var(--text-light);margin:12px 0 16px">초기 비밀번호는 <strong>user1234</strong>이며, 해당 사용자는 최초 로그인 시 비밀번호 변경이 필요합니다.</p>
+          <button type="button" class="btn btn-primary" onclick="createGeneralUser()">사용자 생성</button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">사용자 목록</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>이름</th>
+                <th>소속</th>
+                <th>전화</th>
+                <th>Email</th>
+                <th>역할</th>
+                <th>최초 비번 변경</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="7" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -617,67 +838,22 @@ tbody tr:hover{background:#F8FAFC}
                   <label>기본 레퍼런스</label>
                   <select id="set-default_reference">
                     <option value="hg38">hg38</option>
-                    <option value="hg19">hg19</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>기본 Nextflow 프로파일</label>
-                  <select id="set-default_profile">
-                    <option value="docker">Docker (기본)</option>
-                    <option value="offline">Offline (폐쇄망)</option>
                   </select>
                 </div>
               </div>
             </div>
 
-            <!-- Nextflow Settings -->
-            <div class="form-section">
-              <div class="form-section-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                Nextflow 설정
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-info">
-                  <div class="toggle-label">Resume 활성화</div>
-                  <div class="toggle-desc">Nextflow 캐시를 활용하여 이전 실행 결과를 재사용합니다. (-resume)</div>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="set-nf_resume" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-info">
-                  <div class="toggle-label">Work 디렉토리 자동 정리</div>
-                  <div class="toggle-desc">분석 완료 후 Nextflow work 디렉토리를 자동으로 삭제합니다.</div>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="set-clean_work_dir">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-
-            <!-- File Management -->
+            <!-- File paths & work cleanup (single toggle: delete_intermediate drives Nextflow cleanup) -->
             <div class="form-section">
               <div class="form-section-title">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                파일 관리
+                파일 정리 및 데이터 경로
               </div>
+              <p style="font-size:.72rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.45">아래 항목을 묶어 보여 주는 구역 제목입니다(버튼이 아닙니다). work 디렉터리 정리와 FASTQ·BED 경로를 한곳에서 설정합니다.</p>
               <div class="toggle-row">
                 <div class="toggle-info">
-                  <div class="toggle-label">BAM 파일 삭제</div>
-                  <div class="toggle-desc">분석 완료 후 BAM 파일을 자동으로 삭제합니다.</div>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="set-remove_bams" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              <div class="toggle-row">
-                <div class="toggle-info">
-                  <div class="toggle-label">중간 파일 삭제</div>
-                  <div class="toggle-desc">분석 중간 파일을 자동으로 삭제하여 디스크를 절약합니다.</div>
+                  <div class="toggle-label">분석 완료 후 work 디렉터리 정리</div>
+                  <div class="toggle-desc">켜면 분석이 끝난 뒤 Nextflow가 작업 폴더(work)를 정리합니다. VarDict용 최종 BAM·BAI는 먼저 results/샘플명/output/bam/에 복사·유지됩니다.</div>
                 </div>
                 <label class="toggle-switch">
                   <input type="checkbox" id="set-delete_intermediate" checked>
@@ -699,10 +875,11 @@ tbody tr:hover{background:#F8FAFC}
             </div>
 
             <div style="padding-top:8px">
-              <button class="btn btn-primary" onclick="saveSettings()">
+              <button class="btn btn-primary" id="settingsSaveBtn" onclick="saveSettings()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                 설정 저장
               </button>
+              <p id="settingsAdminNote" style="display:none;font-size:.82rem;color:var(--text-light);margin-top:10px">설정 변경은 관리자만 가능합니다.</p>
             </div>
           </div>
         </div>
@@ -711,6 +888,8 @@ tbody tr:hover{background:#F8FAFC}
 
   </div><!-- /content -->
 </div><!-- /main -->
+
+</div><!-- /appShell -->
 
 <!-- ===== CREATE ORDER MODAL ===== -->
 <div class="modal-overlay" id="createModal">
@@ -737,6 +916,23 @@ tbody tr:hover{background:#F8FAFC}
           <div class="form-section-title">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
             Longitudinal 참조 오더
+          </div>
+          <div class="longit-ref-section" id="longitReuseModeSection">
+            <div class="longit-ref-label">Followup 분석 입력 방식</div>
+            <label style="display:block;margin:6px 0;font-size:.85rem;cursor:pointer">
+              <input type="radio" name="longitInputMode" value="fresh" checked onchange="onLongitInputModeChange()">
+              새 FASTQ로 등록·분석 (전체 파이프라인)
+            </label>
+            <label style="display:block;margin:6px 0;font-size:.85rem;cursor:pointer">
+              <input type="radio" name="longitInputMode" value="reuse" onchange="onLongitInputModeChange()">
+              이미 완료된 Followup 오더 work 재사용 (Longitudinal 단계만 추가)
+            </label>
+            <select class="longit-ref-select" id="ord-reuse_work_order_id" style="display:none;margin-top:8px" onchange="onReuseWorkOrderSelected()">
+              <option value="">-- 완료된 오더 선택 --</option>
+            </select>
+            <p id="longitReuseHint" style="display:none;font-size:.78rem;color:var(--text-light);margin-top:8px;line-height:1.45">
+              동일 샘플의 기존 work를 이어 쓰며 Select Reporter·Longitudinal만 실행됩니다. 중간·결과 파일은 <code>results/샘플명</code> 아래에 쌓입니다.
+            </p>
           </div>
           <div class="longit-ref-section">
             <div class="longit-ref-label">Baseline 오더 (필수) — 최초 조직 샘플</div>
@@ -807,6 +1003,7 @@ tbody tr:hover{background:#F8FAFC}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
           샘플 선택
         </div>
+        <div id="fastqBrowserWrap">
         <div class="file-browser" id="fastqBrowser">
           <div class="file-browser-header">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -816,6 +1013,7 @@ tbody tr:hover{background:#F8FAFC}
           <div class="file-browser-list" id="fastqFileList">
             <div style="padding:20px;text-align:center;color:var(--text-muted)">불러오는 중...</div>
           </div>
+        </div>
         </div>
         <div style="margin-top:12px">
           <div class="form-group">
@@ -836,14 +1034,6 @@ tbody tr:hover{background:#F8FAFC}
             <label>레퍼런스</label>
             <select id="ord-reference">
               <option value="hg38">hg38</option>
-              <option value="hg19">hg19</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Nextflow 프로파일</label>
-            <select id="ord-profile">
-              <option value="docker">Docker (기본)</option>
-              <option value="offline">Offline (폐쇄망)</option>
             </select>
           </div>
           <div class="form-group">
@@ -880,8 +1070,7 @@ tbody tr:hover{background:#F8FAFC}
           옵션
         </div>
         <div class="checkbox-group">
-          <label class="checkbox-item"><input type="checkbox" id="ord-remove_bams" checked> BAM 파일 삭제</label>
-          <label class="checkbox-item"><input type="checkbox" id="ord-delete_intermediate" checked> 중간 파일 삭제</label>
+          <label class="checkbox-item"><input type="checkbox" id="ord-delete_intermediate" checked> 중간 파일 삭제 (work 정리, 최종 BAM은 output/bam에 보관)</label>
         </div>
       </div>
     </div>
@@ -910,6 +1099,14 @@ tbody tr:hover{background:#F8FAFC}
       </button>
     </div>
     <div class="review-filters">
+      <div class="filter-group assembly-filter" id="assemblyToggleGroup">
+        <span class="filter-label">Assembly</span>
+        <div class="assembly-toggle" id="assemblyToggle" title="좌표 표시 기준 — BAM/IGV는 항상 hg38">
+          <button type="button" id="asmBtnHg38" class="active" onclick="setReviewAssembly('hg38')">hg38</button>
+          <button type="button" id="asmBtnHg19" onclick="setReviewAssembly('hg19')">hg19</button>
+        </div>
+      </div>
+      <div class="filter-sep" id="assemblyToggleSep"></div>
       <div class="filter-group">
         <span class="filter-label">Gene</span>
         <input type="text" id="rv-gene" placeholder="유전자명" oninput="applyReviewFilters()">
@@ -948,20 +1145,44 @@ tbody tr:hover{background:#F8FAFC}
         <select id="rv-type" onchange="applyReviewFilters()"><option value="">전체</option></select>
       </div>
     </div>
-    <div class="review-body">
-      <table>
-        <thead><tr id="reviewTableHead"></tr></thead>
-        <tbody id="reviewTableBody">
-          <tr><td colspan="14" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="review-foot">
-      <span id="reviewFilteredCount">0 / 0 variants</span>
-      <button class="review-dl-btn" id="reviewDlBtn" onclick="downloadReviewVcf()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        VCF 다운로드
-      </button>
+    <div class="review-main" id="reviewMain">
+      <div class="review-left" id="reviewLeft">
+        <div class="review-body">
+          <table>
+            <thead><tr id="reviewTableHead"></tr></thead>
+            <tbody id="reviewTableBody">
+              <tr><td colspan="14" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="review-foot">
+          <span id="reviewFilteredCount">0 / 0 variants</span>
+          <button class="review-dl-btn" id="reviewDlBtn" onclick="downloadReviewVcf()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            VCF 다운로드
+          </button>
+        </div>
+      </div>
+      <div class="review-splitter hidden" id="reviewSplitter" title="드래그하여 크기 조절"></div>
+      <div class="review-right hidden" id="reviewRight">
+        <div class="igv-topbar">
+          <div class="igv-topbar-row">
+            <label>IGV BAM</label>
+            <input type="text" class="igv-bam-label" id="igvBamLabel" readonly placeholder="(BAM 없음)">
+            <button class="igv-btn" onclick="reloadIgvBrowser()">Load / refresh IGV</button>
+          </div>
+          <div class="igv-topbar-row">
+            <label>Locus</label>
+            <input type="text" id="igvLocusInput" placeholder="chr1:21577593-21577683 또는 BRCA1" style="flex:1;min-width:180px">
+            <button class="igv-btn primary" onclick="igvGoto()">Go</button>
+            <button class="igv-btn" onclick="clearIgvPosMarker()" title="빨간 position 마커 제거">Clear marker</button>
+          </div>
+        </div>
+        <div class="igv-hint">IGV는 수십 kb 이하로 줌인해야 리드가 보입니다. Variant 행을 클릭하면 자동으로 이동하며, 트랙을 클릭하면 해당 position에 빨간 마커가 표시됩니다.</div>
+        <div class="igv-host" id="igvHost">
+          <div class="igv-empty" id="igvEmpty">BAM 트랙을 준비 중입니다…</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1024,9 +1245,17 @@ tbody tr:hover{background:#F8FAFC}
    STATE
    ================================================================ */
 var currentPage = 'dashboard';
+var currentUser = null;
 var currentOrderFilter = '';
 var currentOrderType = 'baseline';
 var longitudinalEnabled = false;
+var igvEnabled = false;
+var hg19ViewEnabled = false;
+var hg19ChainMissing = false;
+var igvScriptPromise = null;
+var igvBrowser = null;
+var igvContext = null;
+var igvCurrentOrderId = null;
 var completedOrdersCache = [];
 var editingOrderId = null;
 var selectedLogOrderId = null;
@@ -1051,9 +1280,10 @@ function navigateTo(page, skipLoad) {
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
   document.getElementById('page-' + page).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
-  document.querySelector('.nav-item[data-page="' + page + '"]').classList.add('active');
+  var navEl = document.querySelector('.nav-item[data-page="' + page + '"]');
+  if (navEl) navEl.classList.add('active');
 
-  var titles = { dashboard: '대시보드', orders: '오더 관리', setup: '설정' };
+  var titles = { dashboard: '대시보드', orders: '오더 관리', setup: '설정', users: '사용자 관리' };
   document.getElementById('breadcrumbTitle').textContent = titles[page] || page;
 
   stopAllTimers();
@@ -1062,6 +1292,7 @@ function navigateTo(page, skipLoad) {
     if (page === 'dashboard') loadDashboard();
     if (page === 'orders') loadOrders();
     if (page === 'setup') loadSettings();
+    if (page === 'users') loadUsersList();
   }
 
   if (page === 'dashboard') {
@@ -1205,9 +1436,250 @@ function closeConfirm() {
    ================================================================ */
 function apiFetch(url, opts) {
   opts = opts || {};
+  if (!opts.credentials) opts.credentials = 'same-origin';
   return fetch(url, opts).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
+    var ct = r.headers.get('content-type') || '';
+    var isJson = ct.indexOf('application/json') !== -1;
+    var parse = isJson ? r.json() : r.text().then(function(t) { return { _raw: t }; });
+    return parse.then(function(body) {
+      if (r.status === 401) {
+        if (body && body.code === 'auth_required' && document.getElementById('appShell').style.display !== 'none') {
+          showLoginScreen();
+        }
+        var e = new Error((body && body.error) || 'Unauthorized');
+        e.status = 401;
+        e.code = body && body.code;
+        throw e;
+      }
+      if (r.status === 403 && body && body.code === 'must_change_password') {
+        document.getElementById('passwordForceOverlay').classList.add('open');
+        var e2 = new Error(body.error || 'Password change required');
+        e2.status = 403;
+        e2.code = 'must_change_password';
+        throw e2;
+      }
+      if (!r.ok) {
+        var err = new Error((body && body.error) || ('HTTP ' + r.status));
+        err.status = r.status;
+        err.code = body && body.code;
+        throw err;
+      }
+      return body;
+    });
+  });
+}
+
+function showLoginScreen() {
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('loginOverlay').style.display = 'flex';
+  var lb = document.getElementById('logoutBtn');
+  if (lb) lb.style.display = 'none';
+  document.getElementById('passwordForceOverlay').classList.remove('open');
+  currentUser = null;
+  var tu = document.getElementById('topbarUserDisplay');
+  if (tu) tu.textContent = '';
+  var nu = document.getElementById('navUsers');
+  if (nu) nu.style.display = 'none';
+  stopAllTimers();
+}
+
+function applyUserNav() {
+  var nu = document.getElementById('navUsers');
+  if (nu) nu.style.display = (currentUser && currentUser.role === 'admin') ? '' : 'none';
+}
+
+function updateTopbarUser() {
+  var el = document.getElementById('topbarUserDisplay');
+  if (!el || !currentUser) return;
+  el.textContent = (currentUser.name ? currentUser.name + ' · ' : '') + (currentUser.user_id || '');
+}
+
+function submitLogin(ev) {
+  if (ev) ev.preventDefault();
+  var errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  var uid = (document.getElementById('loginUserId').value || '').trim();
+  var pw = document.getElementById('loginPassword').value || '';
+  fetch('/api/auth/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, password: pw })
+  }).then(function(r) { return r.json().then(function(b) { return { ok: r.ok, b: b }; }); })
+    .then(function(x) {
+      if (!x.b.success) {
+        errEl.textContent = x.b.error || '로그인에 실패했습니다.';
+        errEl.style.display = 'block';
+        return;
+      }
+      currentUser = {
+        user_id: x.b.user_id,
+        role: x.b.role,
+        name: '',
+        must_change_password: x.b.must_change_password
+      };
+      document.getElementById('loginOverlay').style.display = 'none';
+      document.getElementById('appShell').style.display = 'flex';
+      document.getElementById('logoutBtn').style.display = 'inline-flex';
+      if (x.b.must_change_password) {
+        document.getElementById('passwordForceOverlay').classList.add('open');
+        ['forcePwCurrent','forcePwNew','forcePwNew2'].forEach(function(id) {
+          var z = document.getElementById(id);
+          if (z) z.value = '';
+        });
+        var fe = document.getElementById('forcePwError');
+        if (fe) { fe.style.display = 'none'; fe.textContent = ''; }
+        fetch('/api/auth/me', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(me) {
+          if (me.authenticated) {
+            currentUser = me;
+            updateTopbarUser();
+            applyUserNav();
+          }
+        }).catch(function() {});
+        return;
+      }
+      fetch('/api/auth/me', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(me) {
+        if (me.authenticated) {
+          currentUser = me;
+          updateTopbarUser();
+          applyUserNav();
+        }
+        afterAuthBootstrap();
+      }).catch(function() { afterAuthBootstrap(); });
+    }).catch(function() {
+      errEl.textContent = '로그인 요청에 실패했습니다.';
+      errEl.style.display = 'block';
+    });
+  return false;
+}
+
+function afterAuthBootstrap() {
+  checkFeatures();
+  navigateTo('dashboard');
+}
+
+function submitForcedPasswordChange() {
+  var cur = document.getElementById('forcePwCurrent').value;
+  var n1 = document.getElementById('forcePwNew').value;
+  var n2 = document.getElementById('forcePwNew2').value;
+  var fe = document.getElementById('forcePwError');
+  fe.style.display = 'none';
+  if (n1.length < 4) {
+    fe.textContent = '새 비밀번호는 4자 이상이어야 합니다.';
+    fe.style.display = 'block';
+    return;
+  }
+  if (n1 !== n2) {
+    fe.textContent = '새 비밀번호가 일치하지 않습니다.';
+    fe.style.display = 'block';
+    return;
+  }
+  fetch('/api/auth/change-password', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: cur, new_password: n1 })
+  }).then(function(r) { return r.json(); }).then(function(b) {
+    if (!b.success) {
+      fe.textContent = b.error || '변경에 실패했습니다.';
+      fe.style.display = 'block';
+      return;
+    }
+    document.getElementById('passwordForceOverlay').classList.remove('open');
+    if (currentUser) currentUser.must_change_password = false;
+    showToast('비밀번호가 변경되었습니다.', 'success');
+    afterAuthBootstrap();
+  }).catch(function() {
+    fe.textContent = '요청에 실패했습니다.';
+    fe.style.display = 'block';
+  });
+}
+
+function logout() {
+  fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).then(function() {
+    showLoginScreen();
+    document.getElementById('loginPassword').value = '';
+  }).catch(function() { showLoginScreen(); });
+}
+
+function loadUsersList() {
+  apiFetch('/api/admin/users').then(function(r) {
+    if (!r.success) return;
+    var tbody = document.getElementById('usersTableBody');
+    if (!r.users || r.users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><p>등록된 사용자가 없습니다.</p></td></tr>';
+      return;
+    }
+    var html = '';
+    r.users.forEach(function(u) {
+      html += '<tr>'
+        + '<td>' + escapeHtml(u.id) + '</td>'
+        + '<td>' + escapeHtml(u.name || '-') + '</td>'
+        + '<td>' + escapeHtml(u.affiliation || '-') + '</td>'
+        + '<td>' + escapeHtml(u.phone || '-') + '</td>'
+        + '<td>' + escapeHtml(u.email || '-') + '</td>'
+        + '<td>' + escapeHtml(u.role === 'admin' ? '관리자' : '일반') + '</td>'
+        + '<td>' + (u.must_change_password ? '필요' : '완료') + '</td>'
+        + '</tr>';
+    });
+    tbody.innerHTML = html;
+  }).catch(function() {
+    document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="7" class="empty-state"><p>목록을 불러올 수 없습니다.</p></td></tr>';
+  });
+}
+
+function createGeneralUser() {
+  var payload = {
+    user_id: (document.getElementById('newUserId').value || '').trim(),
+    name: (document.getElementById('newUserName').value || '').trim(),
+    affiliation: (document.getElementById('newUserAffiliation').value || '').trim(),
+    phone: (document.getElementById('newUserPhone').value || '').trim(),
+    email: (document.getElementById('newUserEmail').value || '').trim()
+  };
+  if (!payload.user_id || !payload.name) {
+    showToast('사용자 ID와 이름은 필수입니다.', 'error');
+    return;
+  }
+  apiFetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(res) {
+    if (res.success) {
+      showToast('사용자가 생성되었습니다. (초기 비밀번호: user1234)', 'success');
+      document.getElementById('newUserId').value = '';
+      document.getElementById('newUserName').value = '';
+      document.getElementById('newUserAffiliation').value = '';
+      document.getElementById('newUserPhone').value = '';
+      document.getElementById('newUserEmail').value = '';
+      loadUsersList();
+    }
+  }).catch(function(e) {
+    showToast(e.message || '생성에 실패했습니다.', 'error');
+  });
+}
+
+function bootstrapSession() {
+  fetch('/api/auth/me', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(me) {
+    if (!me.authenticated) {
+      document.getElementById('loginOverlay').style.display = 'flex';
+      document.getElementById('appShell').style.display = 'none';
+      return;
+    }
+    currentUser = me;
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('appShell').style.display = 'flex';
+    document.getElementById('logoutBtn').style.display = 'inline-flex';
+    updateTopbarUser();
+    applyUserNav();
+    if (me.must_change_password) {
+      document.getElementById('passwordForceOverlay').classList.add('open');
+      return;
+    }
+    afterAuthBootstrap();
+  }).catch(function() {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('appShell').style.display = 'none';
   });
 }
 
@@ -1517,7 +1989,7 @@ function stopOrder(id) {
 }
 
 function rerunOrder(id) {
-  showConfirm('이어서 실행 (Resume)', 'Nextflow 캐시를 활용하여 이전 결과부터 이어서 실행합니다. 계속하시겠습니까?', function() {
+  showConfirm('이어서 실행 (Resume)', '기능: 중단된 분석을 같은 work 디렉터리에서 이어서 돌립니다.\n\n• 실행 중인 컨테이너가 있으면 제거한 뒤 Nextflow -resume으로 재시작합니다.\n• 이미 완료된 단계는 캐시를 사용해 건너뜁니다.\n• work/ 및 results/는 삭제하지 않습니다.\n\n계속하시겠습니까?', function() {
     setOrderStatusLocally(id, 'starting');
     showToast('Resume 실행 요청 중...', 'info');
     apiFetch('/api/orders/' + id + '/rerun', { method: 'POST' }).then(function(r) {
@@ -1529,7 +2001,7 @@ function rerunOrder(id) {
 }
 
 function forceOrder(id) {
-  showConfirm('처음부터 실행', 'Work 디렉토리와 결과를 모두 삭제하고 처음부터 다시 실행합니다. 계속하시겠습니까?', function() {
+  showConfirm('처음부터 실행', '기능: 저장된 작업·결과를 지우고 처음부터 새로 분석합니다.\n\n• 기존 Docker 컨테이너가 있으면 제거합니다.\n• DB에 기록된 work 디렉터리(및 해당 오더의 Nextflow work)를 삭제합니다.\n• results/샘플명 폴더 전체를 삭제합니다.\n• 그 다음 동일 오더로 파이프라인을 처음부터 다시 시작합니다.\n\n계속하시겠습니까?', function() {
     setOrderStatusLocally(id, 'starting');
     showToast('처음부터 실행 요청 중...', 'info');
     apiFetch('/api/orders/' + id + '/force', { method: 'POST' }).then(function(r) {
@@ -1541,7 +2013,7 @@ function forceOrder(id) {
 }
 
 function deleteOrder(id) {
-  showConfirm('오더 삭제', '이 오더를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.', function() {
+  showConfirm('오더 삭제', '기능: 이 오더를 DB에서 제거하고, 디스크에 남은 분석 산출물도 함께 지웁니다.\n\n• work/오더ID (Nextflow 작업 디렉터리)\n• work/.nxf_home/오더ID (Nextflow 세션)\n• results/샘플명 (해당 샘플 결과 전체)\n• fastq/오더ID (FASTQ 심볼릭 링크 폴더)\n• 로그·샘플시트 파일\n\n되돌릴 수 없습니다. 계속하시겠습니까?', function() {
     apiFetch('/api/orders/' + id + '/delete', { method: 'DELETE' }).then(function(r) {
       if (r.success) {
         showToast('오더를 삭제했습니다.', 'success');
@@ -1559,6 +2031,10 @@ var reviewAllData = [];
 var reviewFilteredData = [];
 var reviewSortCol = '';
 var reviewSortAsc = true;
+// hg19 view state
+var reviewAssembly = 'hg38';              // 'hg38' | 'hg19' (display-only)
+var reviewLiftoverByKey = {};             // "chr:pos" (hg38) -> {chrom19, pos19, ok}
+var reviewLiftoverPending = null;         // in-flight fetch promise
 var reviewColumns = [];
 var reviewSampleName = '';
 
@@ -1572,6 +2048,10 @@ function openReview(orderId) {
   document.getElementById('reviewOverlay').classList.add('open');
   document.getElementById('reviewTableBody').innerHTML = '<tr><td colspan="14" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>';
   clearReviewFilters();
+  setupReviewIgvPane(orderId);
+  reviewLiftoverByKey = {};
+  reviewLiftoverPending = null;
+  initReviewAssemblyToggle();
 
   apiFetch('/api/orders/' + orderId + '/vcf_data').then(function(r) {
     if (!r.success) { showToast(r.error || '데이터를 불러올 수 없습니다.', 'error'); return; }
@@ -1586,6 +2066,10 @@ function openReview(orderId) {
     buildReviewHeader();
     populateReviewDropdowns();
     applyReviewFilters();
+
+    if (reviewAssembly === 'hg19' && hg19ViewEnabled) {
+      ensureLiftoverLoaded().then(renderReviewTable);
+    }
   }).catch(function() { showToast('Variant 데이터를 불러올 수 없습니다.', 'error'); });
 }
 
@@ -1593,6 +2077,7 @@ function closeReview() {
   document.getElementById('reviewOverlay').classList.remove('open');
   reviewAllData = [];
   reviewFilteredData = [];
+  teardownIgvBrowser();
 }
 
 function clearReviewFilters() {
@@ -1608,12 +2093,87 @@ function clearReviewFilters() {
   document.getElementById('rv-filter').value = '';
 }
 
+function initReviewAssemblyToggle() {
+  var stored = '';
+  try { stored = localStorage.getItem(REVIEW_ASSEMBLY_KEY) || ''; } catch (e) {}
+  reviewAssembly = (hg19ViewEnabled && stored === 'hg19') ? 'hg19' : 'hg38';
+  updateAssemblyButtons();
+}
+
+function updateAssemblyButtons() {
+  var b38 = document.getElementById('asmBtnHg38');
+  var b19 = document.getElementById('asmBtnHg19');
+  if (!b38 || !b19) return;
+  b38.classList.toggle('active', reviewAssembly === 'hg38');
+  b19.classList.toggle('active', reviewAssembly === 'hg19');
+}
+
+function setReviewAssembly(asm) {
+  if (asm !== 'hg38' && asm !== 'hg19') return;
+  if (asm === 'hg19' && !hg19ViewEnabled) {
+    showToast('hg19 보기 기능이 활성화되어 있지 않습니다. ENABLE_HG19_VIEW 및 chain 파일을 확인하세요.', 'error');
+    return;
+  }
+  reviewAssembly = asm;
+  try { localStorage.setItem(REVIEW_ASSEMBLY_KEY, asm); } catch (e) {}
+  updateAssemblyButtons();
+  buildReviewHeader();
+  var doRefresh = function() {
+    populateReviewDropdowns();
+    applyReviewFilters();
+  };
+  if (asm === 'hg19') {
+    ensureLiftoverLoaded().then(doRefresh);
+  } else {
+    doRefresh();
+  }
+}
+
+function ensureLiftoverLoaded() {
+  if (!hg19ViewEnabled) return Promise.resolve();
+  if (reviewLiftoverPending) return reviewLiftoverPending;
+  var missing = [];
+  var seen = {};
+  reviewAllData.forEach(function(r) {
+    var k = (r.CHROM || '') + ':' + (r.POS || '');
+    if (!r.CHROM || !r.POS || seen[k] || reviewLiftoverByKey[k]) return;
+    seen[k] = 1;
+    missing.push({ chrom: r.CHROM, pos: parseInt(r.POS, 10) });
+  });
+  if (missing.length === 0) return Promise.resolve();
+
+  reviewLiftoverPending = apiFetch('/api/liftover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ positions: missing }),
+  }).then(function(resp) {
+    if (resp && resp.success && Array.isArray(resp.results)) {
+      resp.results.forEach(function(h) {
+        var k = (h.chrom || '') + ':' + (h.pos || '');
+        reviewLiftoverByKey[k] = h;
+      });
+    } else if (resp && resp.error) {
+      showToast('hg19 변환 실패: ' + resp.error, 'error');
+    }
+  }).catch(function() {
+    showToast('hg19 변환 요청 실패', 'error');
+  }).finally(function() {
+    reviewLiftoverPending = null;
+  });
+  return reviewLiftoverPending;
+}
+
+function liftoverFor(row) {
+  if (!row || !row.CHROM || !row.POS) return null;
+  return reviewLiftoverByKey[row.CHROM + ':' + row.POS] || null;
+}
+
 function buildReviewHeader() {
   var headRow = document.getElementById('reviewTableHead');
   var html = '';
   reviewColumns.forEach(function(c) {
     var label = colLabels[c] || c;
-    html += '<th onclick="sortReview(\'' + c + '\')">' + label + '<span class="sort-arrow" id="rv-sort-' + c + '"></span></th>';
+    html += '<th data-col="' + c + '" onclick="sortReview(\'' + c + '\')">' + label + '<span class="sort-arrow" id="rv-sort-' + c + '"></span></th>';
   });
   headRow.innerHTML = html;
 }
@@ -1621,8 +2181,16 @@ function buildReviewHeader() {
 function populateReviewDropdowns() {
   var chroms = {};
   var types = {};
+  var useHg19 = (reviewAssembly === 'hg19' && hg19ViewEnabled);
   reviewAllData.forEach(function(r) {
-    if (r.CHROM) chroms[r.CHROM] = 1;
+    if (r.CHROM) {
+      if (useHg19) {
+        var lf = liftoverFor(r);
+        if (lf && lf.ok) chroms[lf.chrom19] = 1;
+      } else {
+        chroms[r.CHROM] = 1;
+      }
+    }
     if (r.TYPE) types[r.TYPE] = 1;
   });
 
@@ -1649,10 +2217,24 @@ function applyReviewFilters() {
   var filterVal = document.getElementById('rv-filter').value;
   var typeVal = document.getElementById('rv-type').value;
 
+  var useHg19Filter = (reviewAssembly === 'hg19' && hg19ViewEnabled);
   reviewFilteredData = reviewAllData.filter(function(r) {
     if (gene && (!r.GENE || r.GENE.toUpperCase().indexOf(gene) === -1)) return false;
-    if (chrom && r.CHROM !== chrom) return false;
-    var pos = parseInt(r.POS);
+    // chromosome / position filters operate on the currently displayed assembly
+    var rowChrom = r.CHROM;
+    var rowPos = parseInt(r.POS);
+    if (useHg19Filter) {
+      var lf = liftoverFor(r);
+      if (lf && lf.ok) {
+        rowChrom = lf.chrom19;
+        rowPos = lf.pos19;
+      } else {
+        // liftover failed — exclude when a chrom/pos filter is active in hg19 mode
+        if (chrom || posFrom !== null || posTo !== null) return false;
+      }
+    }
+    if (chrom && rowChrom !== chrom) return false;
+    var pos = rowPos;
     if (posFrom !== null && pos < posFrom) return false;
     if (posTo !== null && pos > posTo) return false;
     var af = parseFloat(r.AF);
@@ -1722,12 +2304,36 @@ function renderReviewTable() {
   }
 
   var html = '';
-  reviewFilteredData.forEach(function(r) {
-    html += '<tr>';
+  var useHg19 = (reviewAssembly === 'hg19' && hg19ViewEnabled);
+  reviewFilteredData.forEach(function(r, idx) {
+    // IGV/BAM must always use hg38; data-chrom/data-pos are kept as hg38.
+    var chromHg38 = escapeHtml(r.CHROM || '');
+    var posHg38 = escapeHtml(r.POS || '');
+    var lift = useHg19 ? liftoverFor(r) : null;
+    html += '<tr class="variant-row" data-idx="' + idx + '" data-chrom="' + chromHg38 + '" data-pos="' + posHg38 + '" onclick="onVariantRowClick(this)">';
     reviewColumns.forEach(function(c) {
       var val = escapeHtml(r[c] || '');
       var cls = '';
-      if (c === 'GENE') cls = ' class="cell-gene"';
+      var titleVal = r[c] || '';
+      if (c === 'CHROM' && useHg19) {
+        if (lift && lift.ok) {
+          val = escapeHtml(lift.chrom19 || r.CHROM || '');
+          titleVal = 'hg38: ' + (r.CHROM || '') + ' → hg19: ' + (lift.chrom19 || '');
+        } else {
+          cls = ' class="cell-pos19-na"';
+          val = escapeHtml(r.CHROM || '');
+          titleVal = 'hg19로 변환할 수 없는 chromosome입니다 (hg38: ' + (r.CHROM || '') + ')';
+        }
+      } else if (c === 'POS' && useHg19) {
+        if (lift && lift.ok) {
+          val = escapeHtml(String(lift.pos19));
+          titleVal = 'hg38: ' + (r.POS || '') + ' → hg19: ' + lift.pos19;
+        } else {
+          cls = ' class="cell-pos19-na"';
+          val = 'n/a';
+          titleVal = 'hg19로 liftover 실패 (hg38: ' + (r.POS || '') + ')';
+        }
+      } else if (c === 'GENE') cls = ' class="cell-gene"';
       else if (c === 'EFFECT') { cls = ' class="cell-effect"'; val = val.replace(/_/g, ' '); }
       else if (c === 'AF') {
         cls = ' class="cell-af"';
@@ -1741,7 +2347,7 @@ function renderReviewTable() {
       } else if (c === 'FILTER') {
         cls = r[c] === 'PASS' ? ' class="cell-filter-pass"' : ' class="cell-filter-fail"';
       }
-      html += '<td' + cls + ' title="' + escapeHtml(r[c] || '') + '">' + val + '</td>';
+      html += '<td data-col="' + c + '"' + cls + ' title="' + escapeHtml(String(titleVal)) + '">' + val + '</td>';
     });
     html += '</tr>';
   });
@@ -2075,6 +2681,7 @@ function buildMismatchTab(d) {
    ================================================================ */
 function resetLogForOrder(orderId) {
   if (selectedLogOrderId === orderId) {
+    document.getElementById('logSnapshot').textContent = '';
     document.getElementById('logBody').textContent = '새 분석이 시작되었습니다. 로그를 기다리는 중...';
     if (logRefreshTimer) clearInterval(logRefreshTimer);
     logRefreshTimer = setInterval(function() { loadLog(orderId); }, 3000);
@@ -2088,8 +2695,11 @@ function toggleLog(orderId, sampleName, status) {
   }
   selectedLogOrderId = orderId;
   selectedLogSample = sampleName;
-  document.getElementById('logPanelTitle').textContent = sampleName + ' 로그';
-  document.getElementById('logBody').textContent = '로그를 불러오는 중...';
+  var subEl = document.getElementById('orderInfoSampleLabel');
+  if (subEl) subEl.textContent = sampleName ? (' — ' + sampleName) : '';
+  document.getElementById('logPanelTitle').textContent = '실행 로그';
+  document.getElementById('logSnapshot').textContent = '로그를 불러오는 중...';
+  document.getElementById('logBody').textContent = '';
   document.getElementById('logPanel').classList.add('open');
 
   document.querySelectorAll('.order-row').forEach(function(r) { r.classList.remove('selected'); });
@@ -2109,9 +2719,13 @@ function loadLog(orderId) {
   if (logRefreshPaused) return;
   apiFetch('/api/orders/' + orderId + '/logs').then(function(r) {
     if (!r.success) return;
+    var snap = document.getElementById('logSnapshot');
     var body = document.getElementById('logBody');
+    var reg = r.order_snapshot || '';
+    var meta = '\n\n오더 생성자 (ID): ' + (r.created_by_user_id || '-') + '\n분석 수행자 (ID): ' + (r.analysis_by_user_id || '-') + '\n';
+    snap.textContent = reg + meta;
     var wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 50;
-    body.textContent = r.logs;
+    body.textContent = r.logs || '';
     if (wasAtBottom) body.scrollTop = body.scrollHeight;
   }).catch(function() {});
 }
@@ -2138,29 +2752,45 @@ function copyToClipboard(text) {
   }
 }
 
-document.getElementById('logBody').addEventListener('mousedown', function() {
+function _logPanelPauseRefresh() {
   logRefreshPaused = true;
-});
-
-document.getElementById('logBody').addEventListener('mouseup', function() {
+}
+function _logPanelResumeRefresh() {
   var text = (window.getSelection() || '').toString();
   if (text.length > 0) {
     copyToClipboard(text);
   }
   setTimeout(function() { logRefreshPaused = false; }, 2000);
-});
+}
+document.getElementById('logBody').addEventListener('mousedown', _logPanelPauseRefresh);
+document.getElementById('logSnapshot').addEventListener('mousedown', _logPanelPauseRefresh);
+document.getElementById('logBody').addEventListener('mouseup', _logPanelResumeRefresh);
+document.getElementById('logSnapshot').addEventListener('mouseup', _logPanelResumeRefresh);
 
 function closeLogPanel() {
   selectedLogOrderId = null;
   selectedLogSample = null;
   document.getElementById('logPanel').classList.remove('open');
+  var ls = document.getElementById('logSnapshot');
+  if (ls) ls.textContent = '';
+  var sub = document.getElementById('orderInfoSampleLabel');
+  if (sub) sub.textContent = '';
+  document.getElementById('logBody').textContent = '';
   document.querySelectorAll('.order-row').forEach(function(r) { r.classList.remove('selected'); });
   if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
 }
 
 function downloadLog() {
-  if (!selectedLogSample) return;
-  window.open('/api/download/' + encodeURIComponent(selectedLogSample) + '/log', '_blank');
+  var snap = document.getElementById('logSnapshot');
+  var body = document.getElementById('logBody');
+  if (!snap || !body) return;
+  var text = (snap.textContent || '') + '\n\n--- 실행 로그 ---\n\n' + (body.textContent || '');
+  var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (selectedLogSample || 'order') + '_log.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 /* ================================================================
@@ -2196,11 +2826,9 @@ function openEditModal(orderId) {
     document.getElementById('ord-diagnosis').value = o.diagnosis || '';
     document.getElementById('ord-doctor_comment').value = o.doctor_comment || '';
     document.getElementById('ord-sample_name').value = o.sample_name || '';
-    document.getElementById('ord-reference').value = o.reference || 'hg38';
-    document.getElementById('ord-profile').value = o.profile || 'docker';
+    document.getElementById('ord-reference').value = 'hg38';
     document.getElementById('ord-af_threshold').value = o.af_threshold || 0.005;
     document.getElementById('ord-bed_file').value = o.bed_file || '';
-    document.getElementById('ord-remove_bams').checked = o.remove_bams === 'Y';
     document.getElementById('ord-delete_intermediate').checked = o.delete_intermediate === 'Y';
 
     selectedFastq = { name: o.sample_name, r1: o.r1_fastq, r2: o.r2_fastq };
@@ -2219,11 +2847,19 @@ function openEditModal(orderId) {
         b.classList.toggle('active', b.dataset.type === 'longitudinal');
       });
       document.getElementById('longitRefSection').style.display = 'block';
-      loadCompletedOrders().then ? loadCompletedOrders() : apiFetch('/api/orders/completed_list').then(function(orders) {
-        completedOrdersCache = orders || [];
-        populateRefSelects();
+      loadCompletedOrders().then(function() {
         if (o.baseline_order_id) document.getElementById('ord-baseline_order_id').value = o.baseline_order_id;
         if (o.germline_order_id) document.getElementById('ord-germline_order_id').value = o.germline_order_id;
+        if (o.reuse_work_order_id) {
+          var rr = document.querySelector('input[name="longitInputMode"][value="reuse"]');
+          if (rr) rr.checked = true;
+          var rsel = document.getElementById('ord-reuse_work_order_id');
+          if (rsel) rsel.value = o.reuse_work_order_id;
+        } else {
+          var fr = document.querySelector('input[name="longitInputMode"][value="fresh"]');
+          if (fr) fr.checked = true;
+        }
+        onLongitInputModeChange();
         if (o.baseline_order_id) onBaselineSelected();
         if (o.followup_order_ids) {
           var fuIds = o.followup_order_ids.split(',');
@@ -2250,7 +2886,7 @@ function resetOrderForm() {
   var fields = ['order_name','patient_name','patient_dob','chart_number','department','doctor_name','diagnosis','doctor_comment','sample_name'];
   fields.forEach(function(f) { document.getElementById('ord-' + f).value = ''; });
   document.getElementById('ord-bed_file').value = '';
-  document.getElementById('ord-remove_bams').checked = true;
+  document.getElementById('ord-reference').value = 'hg38';
   document.getElementById('ord-delete_intermediate').checked = true;
   document.getElementById('bedBrowserSection').style.display = 'none';
   currentOrderType = 'baseline';
@@ -2260,14 +2896,17 @@ function resetOrderForm() {
   document.getElementById('longitRefSection').style.display = 'none';
   document.getElementById('ord-baseline_order_id').value = '';
   document.getElementById('ord-germline_order_id').value = '';
+  var fr = document.querySelector('input[name="longitInputMode"][value="fresh"]');
+  if (fr) fr.checked = true;
+  var rsel = document.getElementById('ord-reuse_work_order_id');
+  if (rsel) rsel.value = '';
+  onLongitInputModeChange();
 }
 
 function loadDefaultSettings() {
   apiFetch('/api/settings').then(function(s) {
-    if (s.default_reference) document.getElementById('ord-reference').value = s.default_reference;
-    if (s.default_profile) document.getElementById('ord-profile').value = s.default_profile;
+    document.getElementById('ord-reference').value = 'hg38';
     if (s.default_af_threshold) document.getElementById('ord-af_threshold').value = s.default_af_threshold;
-    if (s.remove_bams) document.getElementById('ord-remove_bams').checked = s.remove_bams === 'Y';
     if (s.delete_intermediate) document.getElementById('ord-delete_intermediate').checked = s.delete_intermediate === 'Y';
   }).catch(function() {});
 }
@@ -2275,9 +2914,18 @@ function loadDefaultSettings() {
 function submitOrder() {
   var orderName = document.getElementById('ord-order_name').value.trim();
   var sampleName = document.getElementById('ord-sample_name').value.trim();
+  var longitReuseMode = longitudinalEnabled && currentOrderType === 'longitudinal'
+    && document.querySelector('input[name="longitInputMode"]:checked')
+    && document.querySelector('input[name="longitInputMode"]:checked').value === 'reuse';
 
   if (!sampleName) { showToast('샘플명을 입력해주세요.', 'error'); return; }
-  if (!selectedFastq && !editingOrderId) { showToast('FASTQ 파일을 선택해주세요.', 'error'); return; }
+  if (longitReuseMode) {
+    var rw = document.getElementById('ord-reuse_work_order_id').value;
+    if (!rw) { showToast('완료된 Followup 오더를 선택해주세요.', 'error'); return; }
+  } else if (!selectedFastq && !editingOrderId) {
+    showToast('FASTQ 파일을 선택해주세요.', 'error');
+    return;
+  }
   if (!orderName) orderName = sampleName;
 
   if (currentOrderType === 'longitudinal' && longitudinalEnabled) {
@@ -2299,11 +2947,9 @@ function submitOrder() {
     sample_name: sampleName,
     r1_fastq: selectedFastq ? selectedFastq.r1 : '',
     r2_fastq: selectedFastq ? selectedFastq.r2 : '',
-    reference: document.getElementById('ord-reference').value,
-    profile: document.getElementById('ord-profile').value,
+    reference: 'hg38',
     af_threshold: parseFloat(document.getElementById('ord-af_threshold').value) || 0.005,
     bed_file: document.getElementById('ord-bed_file').value,
-    remove_bams: document.getElementById('ord-remove_bams').checked ? 'Y' : 'N',
     delete_intermediate: document.getElementById('ord-delete_intermediate').checked ? 'Y' : 'N',
     order_type: currentOrderType
   };
@@ -2315,6 +2961,11 @@ function submitOrder() {
     var fuIds = [];
     fuChecks.forEach(function(cb) { fuIds.push(cb.value); });
     data.followup_order_ids = fuIds;
+    if (longitReuseMode) {
+      data.reuse_work_order_id = document.getElementById('ord-reuse_work_order_id').value;
+    } else {
+      data.reuse_work_order_id = '';
+    }
   }
 
   var url = editingOrderId ? '/api/orders/' + editingOrderId : '/api/orders';
@@ -2467,17 +3118,20 @@ function selectBedFile(path) {
    SETTINGS
    ================================================================ */
 function loadSettings() {
+  var isAdm = currentUser && currentUser.role === 'admin';
+  var saveBtn = document.getElementById('settingsSaveBtn');
+  var note = document.getElementById('settingsAdminNote');
+  if (saveBtn) {
+    saveBtn.style.display = isAdm ? 'inline-flex' : 'none';
+  }
+  if (note) note.style.display = isAdm ? 'none' : 'block';
   apiFetch('/api/settings').then(function(s) {
     if (s.max_concurrent_samples !== undefined) document.getElementById('set-max_concurrent_samples').value = s.max_concurrent_samples;
     if (s.max_cpus !== undefined) document.getElementById('set-max_cpus').value = s.max_cpus;
     if (s.max_memory !== undefined) document.getElementById('set-max_memory').value = s.max_memory;
-    if (s.default_reference) document.getElementById('set-default_reference').value = s.default_reference;
-    if (s.default_profile) document.getElementById('set-default_profile').value = s.default_profile;
+    document.getElementById('set-default_reference').value = 'hg38';
     if (s.default_af_threshold !== undefined) document.getElementById('set-default_af_threshold').value = s.default_af_threshold;
-    document.getElementById('set-remove_bams').checked = s.remove_bams === 'Y';
     document.getElementById('set-delete_intermediate').checked = s.delete_intermediate === 'Y';
-    document.getElementById('set-nf_resume').checked = (s.nf_resume || 'Y') === 'Y';
-    document.getElementById('set-clean_work_dir').checked = s.clean_work_dir === 'Y';
     if (s.fastq_host_dir) document.getElementById('set-fastq_host_dir').value = s.fastq_host_dir;
     if (s.bed_host_dir) document.getElementById('set-bed_host_dir').value = s.bed_host_dir;
   }).catch(function() { showToast('설정을 불러올 수 없습니다.', 'error'); });
@@ -2519,17 +3173,17 @@ function loadResourceInfo() {
 }
 
 function saveSettings() {
+  if (!currentUser || currentUser.role !== 'admin') {
+    showToast('관리자만 설정을 변경할 수 있습니다.', 'error');
+    return;
+  }
   var data = {
     max_cpus: document.getElementById('set-max_cpus').value,
     max_memory: document.getElementById('set-max_memory').value,
     max_concurrent_samples: document.getElementById('set-max_concurrent_samples').value,
-    default_reference: document.getElementById('set-default_reference').value,
-    default_profile: document.getElementById('set-default_profile').value,
+    default_reference: 'hg38',
     default_af_threshold: document.getElementById('set-default_af_threshold').value,
-    remove_bams: document.getElementById('set-remove_bams').checked ? 'Y' : 'N',
     delete_intermediate: document.getElementById('set-delete_intermediate').checked ? 'Y' : 'N',
-    nf_resume: document.getElementById('set-nf_resume').checked ? 'Y' : 'N',
-    clean_work_dir: document.getElementById('set-clean_work_dir').checked ? 'Y' : 'N',
     fastq_host_dir: document.getElementById('set-fastq_host_dir').value.trim(),
     bed_host_dir: document.getElementById('set-bed_host_dir').value.trim()
   };
@@ -2555,8 +3209,19 @@ function saveSettings() {
 function checkFeatures() {
   apiFetch('/api/features').then(function(f) {
     longitudinalEnabled = !!f.longitudinal;
+    igvEnabled = !!f.igv;
+    hg19ViewEnabled = !!f.hg19_view;
+    hg19ChainMissing = !!f.hg19_chain_missing;
     var sec = document.getElementById('orderTypeSection');
     if (sec) sec.style.display = longitudinalEnabled ? 'block' : 'none';
+    var tg = document.getElementById('assemblyToggleGroup');
+    var tgSep = document.getElementById('assemblyToggleSep');
+    if (tg) tg.style.display = hg19ViewEnabled ? 'flex' : 'none';
+    if (tgSep) tgSep.style.display = hg19ViewEnabled ? 'block' : 'none';
+    if (hg19ChainMissing) {
+      console.warn('ENABLE_HG19_VIEW is on but the chain file is missing: ' +
+                   '/roche_nxt/data/liftover/hg38ToHg19.over.chain.gz');
+    }
   }).catch(function() {});
 }
 
@@ -2567,14 +3232,17 @@ function setOrderType(type, btn) {
   var longitSec = document.getElementById('longitRefSection');
   if (type === 'longitudinal') {
     longitSec.style.display = 'block';
-    loadCompletedOrders();
+    loadCompletedOrders().then(function() { onLongitInputModeChange(); });
   } else {
     longitSec.style.display = 'none';
+    var fr = document.querySelector('input[name="longitInputMode"][value="fresh"]');
+    if (fr) fr.checked = true;
+    onLongitInputModeChange();
   }
 }
 
 function loadCompletedOrders() {
-  apiFetch('/api/orders/completed_list').then(function(orders) {
+  return apiFetch('/api/orders/completed_list').then(function(orders) {
     completedOrdersCache = orders || [];
     populateRefSelects();
   }).catch(function() { completedOrdersCache = []; });
@@ -2583,17 +3251,50 @@ function loadCompletedOrders() {
 function populateRefSelects() {
   var blSel = document.getElementById('ord-baseline_order_id');
   var glSel = document.getElementById('ord-germline_order_id');
+  var reuseSel = document.getElementById('ord-reuse_work_order_id');
   var html = '<option value="">-- 오더 선택 --</option>';
+  var reuseOpts = '<option value="">-- 완료된 오더 선택 --</option>';
   completedOrdersCache.forEach(function(o) {
     var label = escapeHtml(o.order_name || o.sample_name) + ' (' + escapeHtml(o.sample_name) + ')';
     if (o.patient_name) label += ' - ' + escapeHtml(o.patient_name);
     if (o.chart_number) label += ' [' + escapeHtml(o.chart_number) + ']';
     html += '<option value="' + o.id + '">' + label + '</option>';
+    reuseOpts += '<option value="' + o.id + '">' + label + '</option>';
   });
   blSel.innerHTML = html;
   glSel.innerHTML = html;
+  if (reuseSel) reuseSel.innerHTML = reuseOpts;
   document.getElementById('longitFollowupList').innerHTML =
     '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">Baseline 오더를 먼저 선택하세요.</div>';
+}
+
+function onLongitInputModeChange() {
+  var reuse = false;
+  var r = document.querySelector('input[name="longitInputMode"]:checked');
+  if (r && r.value === 'reuse') reuse = true;
+  var wrap = document.getElementById('fastqBrowserWrap');
+  var sel = document.getElementById('ord-reuse_work_order_id');
+  var hint = document.getElementById('longitReuseHint');
+  if (!wrap) return;
+  if (!longitudinalEnabled || currentOrderType !== 'longitudinal') {
+    wrap.style.display = 'block';
+    if (sel) sel.style.display = 'none';
+    if (hint) hint.style.display = 'none';
+    return;
+  }
+  wrap.style.display = reuse ? 'none' : 'block';
+  if (sel) sel.style.display = reuse ? 'block' : 'none';
+  if (hint) hint.style.display = reuse ? 'block' : 'none';
+  if (!reuse && sel) sel.value = '';
+}
+
+function onReuseWorkOrderSelected() {
+  var id = document.getElementById('ord-reuse_work_order_id').value;
+  if (!id) return;
+  apiFetch('/api/orders/' + id).then(function(o) {
+    document.getElementById('ord-sample_name').value = o.sample_name || '';
+    selectedFastq = { name: o.sample_name, r1: o.r1_fastq, r2: o.r2_fastq };
+  }).catch(function() {});
 }
 
 function onBaselineSelected() {
@@ -2742,14 +3443,330 @@ document.addEventListener('keydown', function(e) {
 });
 
 /* ================================================================
+   IGV — BAM VIEWER (Variant Review)
+   ================================================================ */
+var IGV_CDN_URL = 'https://cdn.jsdelivr.net/npm/igv@2.15.11/dist/igv.min.js';
+var REVIEW_SPLIT_KEY = 'roche_nxt_review_left_pct';
+var REVIEW_ASSEMBLY_KEY = 'roche_nxt_review_assembly';
+var _reviewSplitterBound = false;
+var _igvPosMarker = null; // {chr, pos}
+var _igvMarkerRedrawBound = false;
+
+function applyStoredReviewSplit() {
+  var left = document.getElementById('reviewLeft');
+  if (!left) return;
+  var pct = parseFloat(localStorage.getItem(REVIEW_SPLIT_KEY));
+  if (!pct || pct < 15 || pct > 85) pct = 55;
+  left.style.flex = '0 0 ' + pct + '%';
+}
+
+function ensureReviewSplitterBound() {
+  if (_reviewSplitterBound) return;
+  var splitter = document.getElementById('reviewSplitter');
+  var main = document.getElementById('reviewMain');
+  var left = document.getElementById('reviewLeft');
+  if (!splitter || !main || !left) return;
+  _reviewSplitterBound = true;
+
+  var dragging = false;
+  function onMove(e) {
+    if (!dragging) return;
+    var rect = main.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var pct = (x / rect.width) * 100;
+    if (pct < 15) pct = 15;
+    if (pct > 85) pct = 85;
+    left.style.flex = '0 0 ' + pct + '%';
+    localStorage.setItem(REVIEW_SPLIT_KEY, pct.toFixed(2));
+    if (igvBrowser && typeof igvBrowser.resize === 'function') {
+      try { igvBrowser.resize(); } catch (e2) {}
+    }
+  }
+  function onUp() {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove('dragging');
+    main.classList.remove('resizing');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (igvBrowser && typeof igvBrowser.resize === 'function') {
+      try { igvBrowser.resize(); } catch (e2) {}
+    }
+  }
+  splitter.addEventListener('mousedown', function(e) {
+    dragging = true;
+    splitter.classList.add('dragging');
+    main.classList.add('resizing');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+  splitter.addEventListener('dblclick', function() {
+    localStorage.removeItem(REVIEW_SPLIT_KEY);
+    left.style.flex = '0 0 55%';
+    if (igvBrowser && typeof igvBrowser.resize === 'function') {
+      try { igvBrowser.resize(); } catch (e2) {}
+    }
+  });
+}
+
+function ensureIgvScriptLoaded() {
+  if (window.igv && typeof window.igv.createBrowser === 'function') {
+    return Promise.resolve();
+  }
+  if (igvScriptPromise) return igvScriptPromise;
+  igvScriptPromise = new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = IGV_CDN_URL;
+    s.async = true;
+    s.onload = function() { resolve(); };
+    s.onerror = function() { igvScriptPromise = null; reject(new Error('Failed to load igv.js')); };
+    document.head.appendChild(s);
+  });
+  return igvScriptPromise;
+}
+
+function teardownIgvBrowser() {
+  try {
+    if (igvBrowser && typeof igvBrowser.dispose === 'function') {
+      igvBrowser.dispose();
+    }
+  } catch (e) {}
+  igvBrowser = null;
+  igvContext = null;
+  igvCurrentOrderId = null;
+  _igvPosMarker = null;
+  var host = document.getElementById('igvHost');
+  if (host) host.innerHTML = '<div class="igv-empty" id="igvEmpty">BAM 트랙을 준비 중입니다…</div>';
+  var labelEl = document.getElementById('igvBamLabel');
+  if (labelEl) labelEl.value = '';
+  var locusEl = document.getElementById('igvLocusInput');
+  if (locusEl) locusEl.value = '';
+}
+
+function setupReviewIgvPane(orderId) {
+  var right = document.getElementById('reviewRight');
+  var left = document.getElementById('reviewLeft');
+  var splitter = document.getElementById('reviewSplitter');
+  if (!right || !left) return;
+  if (!igvEnabled) {
+    right.classList.add('hidden');
+    if (splitter) splitter.classList.add('hidden');
+    left.classList.add('full');
+    left.style.flex = '';
+    return;
+  }
+  right.classList.remove('hidden');
+  if (splitter) splitter.classList.remove('hidden');
+  left.classList.remove('full');
+  applyStoredReviewSplit();
+  ensureReviewSplitterBound();
+  teardownIgvBrowser();
+  igvCurrentOrderId = orderId;
+  var empty = document.getElementById('igvEmpty');
+  if (empty) empty.textContent = 'Coverage context 불러오는 중…';
+
+  apiFetch('/api/orders/' + orderId + '/coverage-context').then(function(ctx) {
+    if (!ctx || !ctx.success) {
+      setIgvEmpty('Coverage context를 불러올 수 없습니다.');
+      return;
+    }
+    igvContext = ctx;
+    var primary = ctx.primary_track;
+    var labelEl = document.getElementById('igvBamLabel');
+    if (labelEl) labelEl.value = primary ? primary.label : '(BAM 없음)';
+    if (!primary) {
+      setIgvEmpty('IGV에 로드 가능한 BAM+BAI가 없습니다. (분석 완료 후 결과물에 .bai 인덱스가 있어야 합니다.)');
+      return;
+    }
+    initIgvBrowser();
+  }).catch(function() { setIgvEmpty('Coverage context 요청 실패.'); });
+}
+
+function setIgvEmpty(msg) {
+  var host = document.getElementById('igvHost');
+  if (!host) return;
+  host.innerHTML = '<div class="igv-empty">' + escapeHtml(msg) + '</div>';
+}
+
+function buildOrderFileUrl(orderId, relPath) {
+  var parts = (relPath || '').split('/').map(encodeURIComponent).join('/');
+  return '/api/orders/' + encodeURIComponent(orderId) + '/file/' + parts;
+}
+
+function initIgvBrowser() {
+  if (!igvContext || !igvContext.primary_track) return;
+  var host = document.getElementById('igvHost');
+  host.innerHTML = '';
+  ensureIgvScriptLoaded().then(function() {
+    var track = igvContext.primary_track;
+    var orderId = igvContext.order_id;
+    var bamUrl = buildOrderFileUrl(orderId, track.rel_path);
+    var baiUrl = track.index_rel_path ? buildOrderFileUrl(orderId, track.index_rel_path) : null;
+    var options = {
+      genome: igvContext.genome_id || 'hg38',
+      showTrackLabels: false,
+      showTrackLabelButton: false,
+      tracks: [{
+        type: 'alignment',
+        format: 'bam',
+        url: bamUrl,
+        indexURL: baiUrl,
+        name: track.label,
+        height: 320,
+      }],
+    };
+    return window.igv.createBrowser(host, options).then(function(browser) {
+      igvBrowser = browser;
+      bindIgvPositionMarker(browser);
+    });
+  }).catch(function(e) {
+    setIgvEmpty('IGV 초기화 실패: ' + (e && e.message ? e.message : ''));
+  });
+}
+
+function reloadIgvBrowser() {
+  if (!igvEnabled || !igvCurrentOrderId) return;
+  setupReviewIgvPane(igvCurrentOrderId);
+}
+
+function igvGoto() {
+  if (!igvBrowser) return;
+  var loc = (document.getElementById('igvLocusInput').value || '').trim();
+  if (!loc) return;
+  try { igvBrowser.search(loc); } catch (e) {}
+}
+
+function bindIgvPositionMarker(browser) {
+  var host = document.getElementById('igvHost');
+  if (!host || !browser) return;
+  host.addEventListener('click', onIgvHostClick, true);
+  try { browser.on('locuschange', redrawIgvPosMarker); } catch (e) {}
+  if (!_igvMarkerRedrawBound) {
+    window.addEventListener('resize', redrawIgvPosMarker);
+    _igvMarkerRedrawBound = true;
+  }
+  // IGV re-renders tracks asynchronously; keep redrawing on scroll/panning.
+  host.addEventListener('scroll', redrawIgvPosMarker, true);
+}
+
+function _currentRefFrame() {
+  if (!igvBrowser) return null;
+  var rfs = igvBrowser.referenceFrameList || [];
+  return rfs[0] || null;
+}
+
+function _primaryViewportRect() {
+  var host = document.getElementById('igvHost');
+  if (!host) return null;
+  // Use the ruler viewport (always present) to get the tracks' horizontal extent.
+  var vp = host.querySelector('.igv-ruler-track .igv-viewport') ||
+           host.querySelector('.igv-track-container .igv-viewport') ||
+           host.querySelector('.igv-viewport');
+  if (!vp) return null;
+  var hostRect = host.getBoundingClientRect();
+  var vpRect = vp.getBoundingClientRect();
+  return {
+    host: host,
+    hostRect: hostRect,
+    vpLeft: vpRect.left - hostRect.left + host.scrollLeft,
+    vpTop: vpRect.top - hostRect.top + host.scrollTop,
+    vpWidth: vpRect.width,
+    vpHeight: host.scrollHeight,
+  };
+}
+
+function onIgvHostClick(ev) {
+  if (!igvBrowser) return;
+  // Ignore clicks on IGV controls (navbar, scrollbars, popovers).
+  if (ev.target.closest('.igv-navbar') || ev.target.closest('[class*="igv-popover"]') ||
+      ev.target.closest('[class*="igv-ui-popover"]')) {
+    return;
+  }
+  var ref = _currentRefFrame();
+  if (!ref) return;
+  var info = _primaryViewportRect();
+  if (!info) return;
+  var hostRect = info.hostRect;
+  var mouseXInHost = ev.clientX - hostRect.left + info.host.scrollLeft;
+  var x = mouseXInHost - info.vpLeft;
+  if (x < 0 || x > info.vpWidth) return;
+  var pos = Math.round(ref.start + x * ref.bpPerPixel) + 1; // 1-based
+  _igvPosMarker = { chr: ref.chr, pos: pos };
+  redrawIgvPosMarker();
+
+  var locInput = document.getElementById('igvLocusInput');
+  if (locInput) locInput.value = ref.chr + ':' + pos;
+}
+
+function redrawIgvPosMarker() {
+  var host = document.getElementById('igvHost');
+  if (!host) return;
+  host.querySelectorAll('.igv-pos-marker,.igv-pos-marker-label').forEach(function(el) { el.remove(); });
+  if (!_igvPosMarker || !igvBrowser) return;
+  var ref = _currentRefFrame();
+  if (!ref || ref.chr !== _igvPosMarker.chr) return;
+  var info = _primaryViewportRect();
+  if (!info) return;
+  var xStart = (_igvPosMarker.pos - 1 - ref.start) / ref.bpPerPixel;   // left edge of base
+  var xEnd = xStart + (1 / ref.bpPerPixel);                             // right edge of base
+  if (xEnd < 0 || xStart > info.vpWidth) return;
+  var leftPx = Math.round(info.vpLeft + xStart);
+  var rightPx = Math.max(leftPx + 1, Math.round(info.vpLeft + xEnd));
+
+  var h = Math.max(info.vpHeight, host.clientHeight);
+  var lineL = document.createElement('div');
+  lineL.className = 'igv-pos-marker';
+  lineL.style.left = leftPx + 'px';
+  lineL.style.height = h + 'px';
+  host.appendChild(lineL);
+
+  var lineR = document.createElement('div');
+  lineR.className = 'igv-pos-marker';
+  lineR.style.left = rightPx + 'px';
+  lineR.style.height = h + 'px';
+  host.appendChild(lineR);
+
+  var label = document.createElement('div');
+  label.className = 'igv-pos-marker-label';
+  label.textContent = _igvPosMarker.chr + ':' + _igvPosMarker.pos.toLocaleString();
+  label.style.left = ((leftPx + rightPx) / 2) + 'px';
+  host.appendChild(label);
+}
+
+function clearIgvPosMarker() {
+  _igvPosMarker = null;
+  redrawIgvPosMarker();
+}
+
+function onVariantRowClick(tr) {
+  document.querySelectorAll('#reviewTableBody tr.variant-row.selected').forEach(function(el) {
+    el.classList.remove('selected');
+  });
+  tr.classList.add('selected');
+  if (!igvEnabled || !igvBrowser) return;
+  var chrom = tr.getAttribute('data-chrom');
+  var pos = parseInt(tr.getAttribute('data-pos'), 10);
+  if (!chrom || isNaN(pos)) return;
+  var pad = 45;
+  var locus = chrom + ':' + Math.max(1, pos - pad) + '-' + (pos + pad);
+  var inp = document.getElementById('igvLocusInput');
+  if (inp) inp.value = locus;
+  _igvPosMarker = { chr: chrom, pos: pos };
+  try {
+    igvBrowser.search(locus);
+    setTimeout(redrawIgvPosMarker, 120);
+    setTimeout(redrawIgvPosMarker, 500);
+  } catch (e) {}
+}
+
+/* ================================================================
    INIT
    ================================================================ */
 (function init() {
   updateClock();
   setInterval(updateClock, 1000);
-  checkFeatures();
-  loadDashboard();
-  startDashboardTimers();
+  bootstrapSession();
 })();
 </script>
 
