@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """Issue a signed Roche_nxt license.json for a customer.
 
+longitudinal and igv are now built-in base features (always on).
+Only hg19_view is license-gated.
+
 EXAMPLES
 --------
-    # Full-feature license valid for 1 year
+    # Standard license (hg19 view included), valid for 1 year
     python tools/issue_license.py \\
         --customer "ABC Hospital" \\
         --expires  2027-04-20 \\
-        --features longitudinal,igv,hg19_view \\
+        --features hg19_view \\
         --out      deploy/licenses/abc_hospital.json
 
-    # Baseline-only license (no longitudinal), 6 months
+    # Standard license without hg19, perpetual
     python tools/issue_license.py \\
-        --customer "XYZ Lab" \\
-        --expires  2026-10-20 \\
-        --features igv \\
-        --out      deploy/licenses/xyz_lab.json
+        --customer "BSCH" \\
+        --no-expiry \\
+        --features "" \\
+        --out      deploy/licenses/bsch.json
 
 The generated file must be delivered to the customer and placed at
 /roche_nxt/license/license.json in their deployment (see LICENSE.md).
@@ -31,7 +34,7 @@ import sys
 from datetime import date
 
 # Keep in sync with web_ui/license.py
-ALL_FEATURES = ("longitudinal", "igv", "hg19_view")
+ALL_FEATURES = ("hg19_view",)
 
 
 def _canonical_payload(data):
@@ -47,8 +50,9 @@ def main() -> int:
     g_exp.add_argument("--expires", help="Expiry date YYYY-MM-DD (inclusive)")
     g_exp.add_argument("--no-expiry", action="store_true",
                        help="Issue a perpetual license (no expiry). Use with care.")
-    ap.add_argument("--features", required=True,
-                    help="Comma-separated feature list. Valid keys: " + ",".join(ALL_FEATURES))
+    ap.add_argument("--features", required=False, default="",
+                    help="Comma-separated feature list. Valid keys: " + ",".join(ALL_FEATURES)
+                         + " (leave empty for base-only license)")
     ap.add_argument("--private-key",
                     default=os.path.expanduser("~/.roche_nxt_keys/license_signing_key.b64"),
                     help="Path to the base64 Ed25519 signing key created by tools/keygen.py")
@@ -62,7 +66,7 @@ def main() -> int:
         return 2
 
     # Validate features
-    requested = [f.strip() for f in args.features.split(",") if f.strip()]
+    requested = [f.strip() for f in (args.features or "").split(",") if f.strip()]
     unknown = [f for f in requested if f not in ALL_FEATURES]
     if unknown:
         print(f"ERROR: unknown feature(s): {unknown}. Valid: {list(ALL_FEATURES)}", file=sys.stderr)
@@ -108,11 +112,12 @@ def main() -> int:
         json.dump(payload_signed, f, indent=2, ensure_ascii=False, sort_keys=True)
         f.write("\n")
 
+    enabled = [k for k, v in features.items() if v]
     print(f"Wrote license: {args.out}")
     print(f"  Customer : {args.customer}")
     print(f"  Issued   : {d_issued}")
     print(f"  Expires  : {d_expires if d_expires is not None else '(never — perpetual license)'}")
-    print(f"  Features : {', '.join(k for k, v in features.items() if v) or '(none)'}")
+    print(f"  Features : {', '.join(enabled) if enabled else '(base only — longitudinal & igv included by default)'}")
     return 0
 
 

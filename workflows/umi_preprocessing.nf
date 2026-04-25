@@ -1,9 +1,13 @@
 /*
  * UMI Preprocessing Sub-workflow
  *
- * FASTQ -> unmapped BAM -> UMI extract -> trim -> subsample -> align ->
- * merge UMI tags -> group by UMI -> consensus -> filter -> 2nd align ->
- * merge -> clip -> final sorted BAM
+ * [SEQTK_SUBSAMPLE if subsample=true] -> FASTQ_TO_SAM -> EXTRACT_UMIS ->
+ * SAM_TO_FASTQ -> FASTP -> BWA_ALIGN -> merge UMI tags ->
+ * group by UMI -> consensus -> filter -> 2nd align -> merge -> clip -> final sorted BAM
+ *
+ * Subsampling is done on the raw FASTQ R1/R2 FIRST (before any heavy step)
+ * so the entire pipeline runs on a smaller dataset. Paired-end sampling with the
+ * same seed preserves read-pair integrity and therefore UMI structure.
  */
 
 include { FASTQ_TO_SAM         } from '../modules/fastq_to_sam'
@@ -37,8 +41,19 @@ workflow UMI_PREPROCESSING {
 
     main:
 
+    // 0. [Optional] Subsample raw FASTQ R1+R2 BEFORE any heavy processing.
+    //    seqtk samples R1 and R2 with the same seed → read pairs stay intact →
+    //    UMI structure (encoded in first 3+3 bp) is preserved.
+    def pipeline_input_ch
+    if (params.subsample.toString() == 'true') {
+        SEQTK_SUBSAMPLE(samples_ch)
+        pipeline_input_ch = SEQTK_SUBSAMPLE.out.subsampled
+    } else {
+        pipeline_input_ch = samples_ch
+    }
+
     // 1. FASTQ -> unmapped BAM
-    FASTQ_TO_SAM(samples_ch)
+    FASTQ_TO_SAM(pipeline_input_ch)
 
     // 2. Extract UMIs
     EXTRACT_UMIS(FASTQ_TO_SAM.out.unmapped_bam)
@@ -49,63 +64,59 @@ workflow UMI_PREPROCESSING {
     // 4. Adapter + quality trimming
     FASTP(SAM_TO_FASTQ.out.fastq)
 
-    // 5. Subsample reads
-    SEQTK_SUBSAMPLE(FASTP.out.trimmed)
-
-    // 6. First BWA alignment (trimmed reads, not subsampled - subsample is a cap)
+    // 5. First BWA alignment
     BWA_ALIGN(FASTP.out.trimmed, genome_fasta, genome_idx)
 
-    // 7. Sort aligned BAM by queryname
+    // 6. Sort aligned BAM by queryname
     SORT_ALIGNED_QN(BWA_ALIGN.out.aligned_bam)
 
-    // 8. Merge UMI info back into aligned reads
+    // 7. Merge UMI info back into aligned reads
     //    Combine sorted aligned with UMI-extracted unmapped
     merge_input = SORT_ALIGNED_QN.out.sorted_bam
         .join(EXTRACT_UMIS.out.umi_bam)
 
     MERGE_BAM_ALIGNMENT(merge_input, genome_fasta, genome_dict, genome_fai)
 
-    // 9. Group reads by UMI
+    // 8. Group reads by UMI
     GROUP_READS_BY_UMI(MERGE_BAM_ALIGNMENT.out.merged_bam)
 
-    // 10. Call molecular consensus reads
+    // 9. Call molecular consensus reads
     CALL_CONSENSUS(GROUP_READS_BY_UMI.out.grouped_bam)
 
-    // 11. Filter consensus reads
+    // 10. Filter consensus reads
     FILTER_CONSENSUS(CALL_CONSENSUS.out.consensus_bam, genome_fasta, genome_dict, genome_fai)
 
-    // 12. Sort filtered consensus by queryname, then back to FASTQ
+    // 11. Sort filtered consensus by queryname, then back to FASTQ
     SORT_CONSENSUS_FLT_QN(FILTER_CONSENSUS.out.filtered_bam)
 
     // Re-use SAM_TO_FASTQ for consensus
-    // Need a separate include or alias - use the same process with different name
     consensus_fastq = SORT_CONSENSUS_FLT_QN.out.sorted_bam
         .map { sample_id, bam -> tuple(sample_id, bam) }
 
     SAM_TO_FASTQ_CONSENSUS(consensus_fastq)
 
-    // 13. Second BWA alignment on consensus reads
+    // 12. Second BWA alignment on consensus reads
     BWA_CONSENSUS_ALIGN(SAM_TO_FASTQ_CONSENSUS.out.fastq, genome_fasta, genome_idx)
 
-    // 14. Sort consensus-mapped BAM by queryname
+    // 13. Sort consensus-mapped BAM by queryname
     SORT_CONSENSUS_MAP_QN(BWA_CONSENSUS_ALIGN.out.consensus_bam)
 
-    // 15. Final merge: consensus-mapped + filtered-unmapped
+    // 14. Final merge: consensus-mapped + filtered-unmapped
     final_merge_input = SORT_CONSENSUS_MAP_QN.out.sorted_bam
         .join(SORT_CONSENSUS_FLT_QN.out.sorted_bam)
 
     MERGE_CONSENSUS_BAM(final_merge_input, genome_fasta, genome_dict, genome_fai)
 
-    // 16. Sort deduped BAM by queryname (for clipping)
+    // 15. Sort deduped BAM by queryname (for clipping)
     SORT_DEDUPED_QN(MERGE_CONSENSUS_BAM.out.deduped_bam)
 
-    // 17. Clip overlapping reads
+    // 16. Clip overlapping reads
     CLIP_BAM(SORT_DEDUPED_QN.out.sorted_bam, genome_fasta, genome_dict, genome_fai)
 
-    // 18. Final coordinate sort + index
+    // 17. Final coordinate sort + index
     SORT_FINAL_COORD(CLIP_BAM.out.clipped_bam)
 
-    // 19. Also sort the first-pass aligned BAM for QC
+    // 18. Also sort the first-pass aligned BAM for QC
     SORT_ALIGNED_COORD(BWA_ALIGN.out.aligned_bam)
 
     emit:

@@ -1,13 +1,12 @@
 """License verification for Roche_nxt web UI.
 
-Features are gated by a signed license file verified against an Ed25519 public
-key that is baked into the image at build time.
+Only hg19_view is feature-gated by license. longitudinal and igv are
+built-in base features available to all customers.
 
 Deployment modes
 ----------------
-- **DEV_MODE** (env `DEV_MODE=1`): signature verification is skipped entirely
-  and feature flags fall back to the old `ENABLE_*` env vars (or all-on when
-  unset). Intended for internal development and self-hosted debugging.
+- **DEV_MODE** (env `DEV_MODE=1`): signature verification is skipped entirely.
+  Intended for internal development and self-hosted debugging.
 - **Production**: a signed `license.json` must be present at `LICENSE_PATH`
   (default `/roche_nxt/license/license.json`). Any tampering or expiry causes
   the server to fail startup.
@@ -18,13 +17,9 @@ A license file looks like:
       "customer": "ABC Hospital",
       "issued":   "2026-04-20",
       "expires":  "2027-04-20",
-      "features": { "longitudinal": true, "igv": true, "hg19_view": false },
+      "features": { "hg19_view": false },
       "signature": "<base64 Ed25519 over the canonical JSON payload>"
     }
-
-The "canonical payload" is `json.dumps(payload_without_signature, sort_keys=True,
-separators=(",",":"))`. Both `tools/issue_license.py` and this verifier use the
-exact same canonicalisation — keep them in sync.
 """
 
 from __future__ import annotations
@@ -34,22 +29,16 @@ import json
 import logging
 import os
 from datetime import date
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 log = logging.getLogger("roche_nxt.license")
 
-# Feature keys the application understands. Adding a new feature:
-#   1. add it here and to FEATURE_DEFAULTS,
-#   2. reference FEATURES["name"] from app.py,
-#   3. (optional) include a default in tools/issue_license.py.
-ALL_FEATURES = ("longitudinal", "igv", "hg19_view")
+# Only hg19_view is license-gated. longitudinal & igv are always on.
+ALL_FEATURES = ("hg19_view",)
 FEATURE_DEFAULTS = {k: False for k in ALL_FEATURES}
 
-# Where the signed license file lives inside the container.
 LICENSE_PATH = os.environ.get("LICENSE_PATH", "/roche_nxt/license/license.json")
 
-# Public key location. Default is the file baked in at build time; override with
-# LICENSE_PUBKEY_FILE or LICENSE_PUBKEY_B64 to swap without rebuilding.
 _DEFAULT_PUBKEY_FILE = os.path.join(os.path.dirname(__file__), "_vendor_keys", "license_pubkey.b64")
 PUBKEY_FILE = os.environ.get("LICENSE_PUBKEY_FILE", _DEFAULT_PUBKEY_FILE)
 PUBKEY_B64_OVERRIDE = os.environ.get("LICENSE_PUBKEY_B64", "").strip()
@@ -72,9 +61,7 @@ def _env_feature_fallback() -> Dict[str, bool]:
         return raw.lower() in ("true", "1", "yes")
 
     return {
-        "longitudinal": env_bool("ENABLE_LONGITUDINAL", True),
-        "igv":          env_bool("ENABLE_IGV", True),
-        "hg19_view":    env_bool("ENABLE_HG19_VIEW", True),
+        "hg19_view": env_bool("ENABLE_HG19_VIEW", True),
     }
 
 
@@ -155,7 +142,7 @@ def load() -> Dict[str, Any]:
     """Return license info suitable for the Flask app.
 
     Keys:
-      features:  {longitudinal: bool, igv: bool, hg19_view: bool}
+      features:  {hg19_view: bool}
       customer:  str (empty in dev mode)
       issued:    ISO date or ""
       expires:   ISO date or ""

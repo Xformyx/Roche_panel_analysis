@@ -1,5 +1,5 @@
 .PHONY: build build-analysis build-web up down restart logs status clean rebuild help save test \
-        keygen license prod-up prod-down prod-logs prod-save
+        keygen license prod-up prod-down prod-logs prod-save usb-bundle
 
 help:
 	@echo "Roche_nxt - Nextflow ctDNA Analysis Pipeline"
@@ -19,14 +19,18 @@ help:
 	@echo ""
 	@echo "---- Licensing ----"
 	@echo "make keygen         - Generate new Ed25519 signing keypair (run ONCE)"
-	@echo "make license CUSTOMER=Name EXPIRES=YYYY-MM-DD FEATURES=longitudinal,igv,hg19_view"
-	@echo "                    - Issue a signed license.json (writes to deploy/licenses/)"
+	@echo "make license CUSTOMER=Name EXPIRES=YYYY-MM-DD [FEATURES=...]"
+	@echo "                    - Issue license (omit FEATURES for baseline-only: no longitudinal/igv/hg19_view)"
 	@echo ""
 	@echo "---- Production (customer) deployment ----"
 	@echo "make prod-up        - Start using docker-compose.prod.yml (license required)"
 	@echo "make prod-down      - Stop the production stack"
 	@echo "make prod-logs      - Tail logs of the production container"
 	@echo "make prod-save      - Package image + prod compose into deploy/ for air-gap delivery"
+	@echo "make usb-bundle CUSTOMER=\"Name\" LICENSE=path [DATA=1] [DOCKER_FOR=<list|all> | DEBS=/path/to/debs]"
+	@echo "                    - Build USB bundle. DOCKER_FOR auto-downloads Docker pkgs."
+	@echo "                      Single, comma-list, or 'all' (ubuntu-22.04|ubuntu-24.04|debian-12|rhel-8|rhel-9)."
+	@echo "                      Example: DOCKER_FOR=ubuntu-22.04,ubuntu-24.04,rhel-9"
 	@echo ""
 	@echo "Web UI: http://localhost:$${WEB_PORT:-8080}"
 
@@ -113,11 +117,10 @@ keygen:
 	@echo "    make build-web"
 
 # make license CUSTOMER="ABC Hospital" EXPIRES=2027-04-20 FEATURES=longitudinal,igv,hg19_view
-#   - Set EXPIRES=never (or leave unset together with NO_EXPIRY=1) for a
-#     perpetual license with no expiry date.
+#   - Omit FEATURES (or FEATURES=) for baseline-only: all add-on flags false.
+#   - Set EXPIRES=never (or NO_EXPIRY=1) for a perpetual license.
 license:
 	@test -n "$(CUSTOMER)"  || (echo "ERROR: CUSTOMER is required";  exit 1)
-	@test -n "$(FEATURES)"  || (echo "ERROR: FEATURES is required";  exit 1)
 	@if [ -z "$(EXPIRES)" ] && [ -z "$(NO_EXPIRY)" ]; then \
 	    echo "ERROR: either EXPIRES=YYYY-MM-DD or NO_EXPIRY=1 is required"; exit 1; \
 	fi
@@ -168,3 +171,40 @@ prod-save: build-web
 	@echo ""
 	@echo "Customer bundle ready in deploy/images + deploy/package/"
 	@echo "Ship these files along with a customer-specific license.json."
+
+# ---------------------------------------------------------------------------
+# USB bundle (turnkey offline installer — Docker .deb/.rpm + images + data + license)
+#   make usb-bundle CUSTOMER="ABC Hospital" LICENSE=deploy/licenses/abc_hospital.json DATA=1
+#   make usb-bundle CUSTOMER="ABC"          LICENSE=...           DEBS=~/docker-debs/ubuntu-22.04
+#   make usb-bundle CUSTOMER="ABC"          LICENSE=...           DOCKER_FOR=ubuntu-22.04
+#
+# DOCKER_FOR     : auto-download Docker offline packages from the internet.
+#                  Single distro, comma-separated list, or "all".
+#                  Valid distros: ubuntu-22.04 ubuntu-24.04 debian-12 rhel-8 rhel-9
+#                  Examples:
+#                    DOCKER_FOR=ubuntu-22.04
+#                    DOCKER_FOR=ubuntu-22.04,ubuntu-24.04,rhel-9
+#                    DOCKER_FOR=all
+# DEBS           : use pre-downloaded Docker .deb/.rpm directory instead.
+#                  Mutually exclusive with DOCKER_FOR.
+# REFRESH_DATA=1 : force re-pack of data/roche_data.tar.gz (default: skip if cached)
+# REFRESH_DOCKER=1: force re-download of Docker packages (default: skip if cached)
+# ---------------------------------------------------------------------------
+usb-bundle:
+	@test -n "$(CUSTOMER)" || (echo "ERROR: CUSTOMER is required"; exit 1)
+	@test -n "$(LICENSE)"  || (echo "ERROR: LICENSE=<path to license.json> is required"; exit 1)
+	@test -f "$(LICENSE)"  || (echo "ERROR: license file not found: $(LICENSE)"; exit 1)
+	@if [ -n "$(DEBS)" ] && [ -n "$(DOCKER_FOR)" ]; then \
+	    echo "ERROR: DEBS and DOCKER_FOR are mutually exclusive"; exit 1; \
+	fi
+	@extra=""; \
+	if [ -n "$(DATA)" ];           then extra="$$extra --with-data"; fi; \
+	if [ -n "$(DEBS)" ];           then extra="$$extra --docker-debs-dir $(DEBS)"; fi; \
+	if [ -n "$(DOCKER_FOR)" ];     then extra="$$extra --fetch-docker $(DOCKER_FOR)"; fi; \
+	if [ -n "$(OUT)" ];            then extra="$$extra --out $(OUT)"; fi; \
+	if [ -n "$(REFRESH_DATA)" ];   then extra="$$extra --refresh-data"; fi; \
+	if [ -n "$(REFRESH_DOCKER)" ]; then extra="$$extra --refresh-docker"; fi; \
+	bash deploy/build_usb_bundle.sh \
+	    --customer "$(CUSTOMER)" \
+	    --license  "$(LICENSE)" \
+	    $$extra

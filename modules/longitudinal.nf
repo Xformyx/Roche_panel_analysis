@@ -14,18 +14,19 @@ process LONGITUDINAL_ANALYSIS {
     script:
     """
     Rscript \${KAPA_NHL_R}/longitudinal_analysis.R \
-        --followup_bam ${followup_bam} \
-        --reporters ${reporters_txt} \
-        --target_bed ${target_bed} \
-        --blocklist ${blocklist} \
-        --blist_type variant \
-        --output ${sample_id}_longitudinal_analysis.csv \
-        --reads_threshold ${params.la_reads_threshold} \
+        --reporters        ${reporters_txt} \
+        --sample_bam       ${followup_bam} \
+        --target_bed       ${target_bed} \
+        --blocklist        ${blocklist} \
+        --blist_type       variant \
+        --output           ${sample_id}_longitudinal_analysis.csv \
+        --reference        BSgenome.Hsapiens.UCSC.hg38 \
+        --reads_threshold  ${params.la_reads_threshold} \
         --pvalue_threshold ${params.la_pvalue_threshold} \
-        --vaf_threshold ${params.la_vaf_threshold} \
-        --n_sim ${params.la_n_sim} \
-        --read_min_bq 30 \
-        --read_min_mq 30 \
-        --read_max_dp 20000
+        --vaf_threshold    ${params.la_vaf_threshold} \
+        --n_sim            ${params.la_n_sim} \
+        --read_min_bq      30 \
+        --read_min_mq      30 \
+        --read_max_dp      20000
     """
 }

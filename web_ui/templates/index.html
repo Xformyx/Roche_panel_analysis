@@ -26,6 +26,9 @@
   --mono:'SF Mono','Cascadia Code','Fira Code','Consolas',monospace;
 }
 html{font-size:14px}
+html[data-fs="sm"]{font-size:14px}
+html[data-fs="md"]{font-size:16px}
+html[data-fs="lg"]{font-size:18px}
 body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow:hidden}
 a{color:var(--primary);text-decoration:none}
 button{font-family:var(--font);cursor:pointer;border:none;outline:none}
@@ -155,6 +158,45 @@ tbody tr:hover{background:#F8FAFC}
 .badge-type{display:inline-block;font-size:.65rem;font-weight:600;padding:2px 6px;border-radius:4px;vertical-align:middle;margin-left:6px}
 .badge-type-baseline{background:var(--blue-bg);color:var(--blue)}
 .badge-type-longitudinal{background:#F3E8FF;color:#7C3AED}
+/* ── Variant List badges ─────────────────────────────────── */
+.vl-badge{display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;border-radius:3px;padding:1px 5px;line-height:1.3;white-space:nowrap;vertical-align:middle;margin-right:4px}
+.vl-badge-whitelist{background:#DCFCE7;color:#15803D;border:1px solid #86EFAC}
+.vl-badge-onhold{background:#FEF9C3;color:#92400E;border:1px solid #FCD34D}
+.vl-badge-blacklist{background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5}
+/* ── Variant List management in Settings ────────────────── */
+.vl-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:14px}
+.vl-tab-btn{padding:6px 18px;font-size:.82rem;font-weight:600;border:none;background:none;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.vl-tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
+.vl-tab-btn.active-blacklist{color:#991B1B;border-bottom-color:#991B1B}
+.vl-tab-btn.active-whitelist{color:#15803D;border-bottom-color:#15803D}
+.vl-tab-btn.active-onhold{color:#92400E;border-bottom-color:#92400E}
+.vl-upload-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+/* Variant List table — split header/body for reliable fixed header */
+.vl-table-outer{width:fit-content;max-width:100%;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.vl-thead-wrap{overflow:hidden;background:var(--bg-alt)}
+.vl-tbody-wrap{max-height:380px;overflow-y:auto;overflow-x:hidden}
+.vl-table{border-collapse:separate;border-spacing:0;font-size:.8rem;table-layout:fixed;width:1010px}
+.vl-table th{background:var(--bg-alt);font-weight:600;padding:7px 8px;text-align:left;border-bottom:2px solid var(--border);white-space:nowrap}
+.vl-table td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle;overflow:hidden}
+.vl-table tr:last-child td{border-bottom:none}
+.vl-table tr:hover td{background:var(--hover)}
+.vl-table input,.vl-table select{font-size:.78rem;padding:2px 4px;border:1px solid var(--border);border-radius:3px;width:100%;min-width:0;background:var(--bg);color:var(--text)}
+.vl-del-btn{background:none;border:none;cursor:pointer;color:var(--red);padding:2px 4px;border-radius:3px}
+.vl-del-btn:hover{background:#FEE2E2}
+.vl-add-row{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;padding:10px;background:var(--bg-alt);border-radius:6px;border:1px dashed var(--border)}
+.vl-add-row .form-group{margin:0;flex:1;min-width:90px}
+.vl-add-row .form-group label{font-size:.72rem;color:var(--text-muted);margin-bottom:3px;display:block}
+.vl-add-row input,.vl-add-row select{font-size:.8rem;padding:4px 6px;border:1px solid var(--border);border-radius:4px;width:100%;background:var(--bg);color:var(--text)}
+/* ── Review list-filter quick-buttons ───────────────────── */
+.rv-list-filter-row{display:flex;align-items:center;gap:6px;padding:6px 16px 0;flex-wrap:wrap}
+.rv-list-filter-label{font-size:.75rem;color:var(--text-muted);font-weight:600;margin-right:4px}
+.rv-list-btn{padding:3px 10px;font-size:.75rem;font-weight:600;border-radius:12px;border:1px solid var(--border);background:var(--bg-alt);cursor:pointer;color:var(--text-muted);transition:all .15s}
+.rv-list-btn:hover{border-color:var(--primary);color:var(--primary)}
+.rv-list-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.rv-list-btn.wl-active{background:#15803D;color:#fff;border-color:#15803D}
+.rv-list-btn.oh-active{background:#92400E;color:#fff;border-color:#92400E}
+.rv-list-btn.lg-active{background:#5B21B6;color:#fff;border-color:#5B21B6}
+.rv-blacklist-info{font-size:.72rem;color:#991B1B;margin-left:auto;display:none}
 .longit-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:700;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
 .longit-overlay.open{opacity:1;pointer-events:auto}
 .longit-panel{background:var(--card);border-radius:var(--radius-lg);width:95vw;max-width:1200px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)}
@@ -168,9 +210,13 @@ tbody tr:hover{background:#F8FAFC}
 .longit-meta-item strong{color:var(--text)}
 
 /* ===== ACTION ICONS ===== */
-.action-btn{width:30px;height:30px;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;transition:all .15s;background:transparent;color:var(--text-light)}
+.action-btn{width:30px;height:30px;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;transition:all .15s;background:transparent;color:var(--text-light);position:relative}
 .action-btn:hover{background:var(--bg)}
 .action-btn svg{width:16px;height:16px}
+/* Instant CSS tooltip via data-tip */
+[data-tip]{position:relative}
+[data-tip]::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:rgba(30,30,30,.92);color:#fff;font-size:.7rem;font-weight:400;padding:3px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .08s;z-index:9999;line-height:1.4}
+[data-tip]:hover::after{opacity:1}
 .action-btn.act-start:hover{color:var(--green);background:var(--green-bg)}
 .action-btn.act-stop:hover{color:var(--red);background:var(--red-bg)}
 .action-btn.act-rerun:hover{color:var(--primary);background:var(--primary-light)}
@@ -179,7 +225,7 @@ tbody tr:hover{background:#F8FAFC}
 .actions-cell{display:flex;gap:2px;align-items:center}
 
 /* ===== DOWNLOAD ICONS ===== */
-.dl-btn{width:28px;height:28px;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;transition:all .15s;background:transparent;cursor:pointer;border:none;padding:0}
+.dl-btn{width:28px;height:28px;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;transition:all .15s;background:transparent;cursor:pointer;border:none;padding:0;position:relative}
 .dl-btn svg{width:18px;height:18px}
 .dl-btn.dl-vcf{color:var(--green)}.dl-btn.dl-vcf:hover{background:var(--green-bg)}
 .dl-btn.dl-log{color:var(--primary)}.dl-btn.dl-log:hover{background:var(--primary-light)}
@@ -211,6 +257,14 @@ tbody tr:hover{background:#F8FAFC}
 .login-submit-btn{width:100%;margin-top:20px;padding:10px;justify-content:center;text-align:center}
 .app-shell{display:flex;min-height:100vh;width:100%;overflow:hidden}
 .topbar-user{font-size:.85rem;color:var(--text-light);margin-right:8px}
+/* Sticky settings bar — pad bottom of settings page content */
+#page-setup{padding-bottom:0}
+/* Font-size picker */
+.fs-picker{display:flex;align-items:center;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:2px 3px}
+.fs-btn{padding:2px 7px;border-radius:5px;font-size:.72rem;font-weight:600;color:var(--text-light);background:transparent;transition:all .15s;cursor:pointer;border:none}
+.fs-btn.active,.fs-btn:hover{background:var(--primary);color:#fff}
+/* Sticky settings save bar */
+#settingsStickyBar{display:none;position:fixed;bottom:0;left:240px;right:0;z-index:200;background:var(--card);border-top:1px solid var(--border);padding:10px 28px;box-shadow:0 -2px 8px rgba(0,0,0,.08);align-items:center;justify-content:flex-end;gap:12px}
 
 /* ===== MODAL ===== */
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
@@ -275,7 +329,15 @@ tbody tr:hover{background:#F8FAFC}
 .confirm-box .confirm-actions{display:flex;gap:10px;justify-content:center}
 
 /* ===== SETUP PAGE ===== */
-.settings-form{max-width:640px}
+.settings-form{max-width:none}
+.setup-tab-panel.tab-narrow{max-width:880px}
+.setup-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;flex-wrap:wrap;padding:0 20px}
+.setup-tab-btn{padding:10px 18px;font-size:.83rem;font-weight:600;border:none;background:none;cursor:pointer;color:var(--text-muted);border-bottom:3px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.setup-tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
+.setup-tab-btn.tab-disabled{opacity:.38;cursor:not-allowed;pointer-events:none}
+.setup-tab-panel{display:none;padding:20px 0}
+.setup-tab-panel.active{display:block}
+.tab-save-row{margin-top:28px;padding-top:16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px}
 .toggle-switch{position:relative;display:inline-block;width:44px;height:24px}
 .toggle-switch input{opacity:0;width:0;height:0}
 .toggle-slider{position:absolute;cursor:pointer;inset:0;background:var(--border);border-radius:24px;transition:.2s}
@@ -319,6 +381,13 @@ tbody tr:hover{background:#F8FAFC}
 .review-body tr.variant-row{cursor:pointer}
 .review-body tr.variant-row.selected{background:#E0F2FE !important}
 .review-body tr.variant-row:hover{background:#F1F5F9}
+.review-body tr.variant-row.vl-row-whitelist{background:#F0FDF4}
+.review-body tr.variant-row.vl-row-whitelist:hover{background:#DCFCE7}
+.review-body tr.variant-row.vl-row-onhold{background:#FEFCE8}
+.review-body tr.variant-row.vl-row-onhold:hover{background:#FEF9C3}
+.review-body tr.variant-row.vl-row-blacklist{background:#FEF2F2;opacity:.75}
+.review-body tr.variant-row.vl-row-blacklist:hover{background:#FEE2E2;opacity:1}
+.review-body tr.variant-row.vl-row-blacklist td{text-decoration:line-through;color:var(--text-muted)}
 .igv-topbar{padding:10px 14px;border-bottom:1px solid #1E293B;display:flex;flex-direction:column;gap:8px;background:#111827}
 .igv-topbar-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .igv-topbar-row label{font-size:.75rem;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
@@ -398,6 +467,10 @@ tbody tr:hover{background:#F8FAFC}
 /* Pin CHROM/POS column widths so toggling hg38↔hg19 doesn't shift other columns. */
 .review-body th[data-col="CHROM"],.review-body td[data-col="CHROM"]{width:90px;min-width:90px;max-width:90px}
 .review-body th[data-col="POS"],.review-body td[data-col="POS"]{width:110px;min-width:110px;max-width:110px}
+.review-body th[data-col="TRANSCRIPT"],.review-body td[data-col="TRANSCRIPT"]{min-width:130px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.review-body th[data-col="HGVS_C"],.review-body td[data-col="HGVS_C"]{min-width:140px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.review-body th[data-col="HGVS_P"],.review-body td[data-col="HGVS_P"]{min-width:130px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.review-body th[data-col="HGVS_G"],.review-body td[data-col="HGVS_G"]{min-width:220px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .review-body td.cell-gene{font-weight:600;color:var(--primary-dark)}
 .review-body td.cell-effect{font-size:.78rem;max-width:180px}
 .review-body td.cell-af{font-weight:600}
@@ -547,10 +620,25 @@ tbody tr:hover{background:#F8FAFC}
       <span class="crumb-active" id="breadcrumbTitle">대시보드</span>
     </div>
     <div class="topbar-right">
+      <!-- Font size picker -->
+      <div class="fs-picker" title="폰트 크기">
+        <button class="fs-btn" id="fsBtn-sm" onclick="setFontSize('sm')">가</button>
+        <button class="fs-btn active" id="fsBtn-md" onclick="setFontSize('md')" style="font-size:.82rem">가</button>
+        <button class="fs-btn" id="fsBtn-lg" onclick="setFontSize('lg')" style="font-size:.95rem">가</button>
+      </div>
       <span class="topbar-user" id="topbarUserDisplay"></span>
       <button type="button" class="btn btn-ghost btn-sm" id="logoutBtn" onclick="logout()" style="display: {{ 'inline-flex' if has_auth_session else 'none' }}">로그아웃</button>
       <span class="topbar-time" id="topbarTime"></span>
     </div>
+  </div>
+
+  <!-- Sticky settings save bar (disabled — per-tab save buttons used instead) -->
+  <div id="settingsStickyBar" style="display:none!important">
+    <span style="font-size:.82rem;color:var(--text-muted)">변경사항이 있으면 저장하세요.</span>
+    <button id="settingsStickyBarBtn" class="btn btn-primary btn-sm" onclick="saveSettings()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      설정 저장
+    </button>
   </div>
 
   <!-- Content area -->
@@ -765,10 +853,11 @@ tbody tr:hover{background:#F8FAFC}
                 <th>Email</th>
                 <th>역할</th>
                 <th>최초 비번 변경</th>
+                <th style="width:140px">액션</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="7" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
+              <tr><td colspan="8" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
             </tbody>
           </table>
         </div>
@@ -784,11 +873,30 @@ tbody tr:hover{background:#F8FAFC}
             파이프라인 설정
           </div>
         </div>
-        <div class="section-body">
+        <!-- Settings Tab Nav -->
+        <div class="setup-tabs" id="setupTabs">
+          <button class="setup-tab-btn active" data-stab="resources" onclick="switchSetupTab('resources',this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="2"/></svg>리소스 설정
+          </button>
+          <button class="setup-tab-btn" data-stab="general" onclick="switchSetupTab('general',this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="12" y1="17" x2="12" y2="21"/></svg>일반 설정
+          </button>
+          <button class="setup-tab-btn" data-stab="baseline" onclick="switchSetupTab('baseline',this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>Baseline 파라미터
+          </button>
+          <button id="setupTabLongitudinal" class="setup-tab-btn" data-stab="longitudinal" onclick="switchSetupTab('longitudinal',this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 14 21 6"/><polyline points="14 6 21 6 21 13"/></svg>Longitudinal 파라미터
+          </button>
+          <button class="setup-tab-btn" data-stab="variantlists" onclick="switchSetupTab('variantlists',this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Variant 리스트
+          </button>
+        </div>
+        <div class="section-body" style="padding-top:0">
           <div class="settings-form">
 
-            <!-- Resource Settings -->
-            <div class="form-section">
+            <!-- ===================== TAB: 리소스 설정 ===================== -->
+            <div class="setup-tab-panel active tab-narrow" id="stab-resources">
+            <div class="form-section" id="section-resources">
               <div class="form-section-title">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="2"/><path d="M6 9h4v6H6z"/><line x1="14" y1="9" x2="18" y2="9"/><line x1="14" y1="12" x2="18" y2="12"/><line x1="14" y1="15" x2="16" y2="15"/></svg>
                 리소스 설정
@@ -816,35 +924,48 @@ tbody tr:hover{background:#F8FAFC}
                   <label>최대 동시 실행 수 <span style="font-size:.72rem;color:var(--text-muted)">(0 = 자동계산)</span></label>
                   <input type="number" id="set-max_concurrent_samples" min="0" max="20" value="0">
                 </div>
-                <div class="form-group">
-                  <label>기본 AF Threshold</label>
-                  <input type="number" id="set-default_af_threshold" step="0.001" min="0" value="0.005">
-                </div>
               </div>
               <span style="font-size:.72rem;color:var(--text-muted);display:block;margin-top:4px;">
                 0으로 설정하면 서버 리소스를 자동 감지합니다. 샘플 1개 기준 약 20 CPU, 30 GB 메모리를 사용합니다.
                 동시 실행 수는 (CPU / 20)과 (메모리 / 30) 중 작은 값으로 자동 계산됩니다.
               </span>
             </div>
+            <div class="tab-save-row">
+              <button class="btn btn-primary settings-save-btn" onclick="saveSettings()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                설정 저장
+              </button>
+            </div>
+            </div><!-- /stab-resources -->
 
+            <!-- ===================== TAB: 일반 설정 ===================== -->
+            <div class="setup-tab-panel tab-narrow" id="stab-general">
             <!-- General Settings -->
-            <div class="form-section">
+            <div class="form-section" id="section-general">
               <div class="form-section-title">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                 일반 설정
               </div>
-              <div class="form-grid">
+              <div class="form-grid" style="align-items:start">
                 <div class="form-group">
                   <label>기본 레퍼런스</label>
                   <select id="set-default_reference">
                     <option value="hg38">hg38</option>
                   </select>
                 </div>
+                <div class="form-group">
+                  <label>Longitudinal 분석 사용</label>
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:6px">
+                    <input type="checkbox" id="set-longitudinal_enabled" checked onchange="onLongitudinalSettingToggle()" style="width:16px;height:16px">
+                    <span style="font-size:.85rem;font-weight:500">사용</span>
+                  </label>
+                  <span style="font-size:.7rem;color:var(--text-muted);display:block;margin-top:4px;line-height:1.4">끄면 Longitudinal 전용 UI가 숨겨집니다. 기존 완료 오더 결과는 그대로 유지됩니다.</span>
+                </div>
               </div>
             </div>
 
             <!-- File paths & work cleanup (single toggle: delete_intermediate drives Nextflow cleanup) -->
-            <div class="form-section">
+            <div class="form-section" id="section-files" style="margin-top:24px">
               <div class="form-section-title">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                 파일 정리 및 데이터 경로
@@ -853,7 +974,7 @@ tbody tr:hover{background:#F8FAFC}
               <div class="toggle-row">
                 <div class="toggle-info">
                   <div class="toggle-label">분석 완료 후 work 디렉터리 정리</div>
-                  <div class="toggle-desc">켜면 분석이 끝난 뒤 Nextflow가 작업 폴더(work)를 정리합니다. VarDict용 최종 BAM·BAI는 먼저 results/샘플명/output/bam/에 복사·유지됩니다.</div>
+                  <div class="toggle-desc">켜면 분석이 끝난 뒤 Nextflow가 작업 폴더(work)를 정리합니다. VarDict용 최종 BAM·BAI는 먼저 results/샘플명/output/bam/에 복사·유지됩니다.<br><span style="color:#B45309;font-weight:600">⚠ 주의:</span> 이 기능을 켜면 나중에 동일 샘플로 Longitudinal 분석 시 처음부터 전체 재실행됩니다. Longitudinal 분석 가능성이 있는 샘플은 끄고 등록하세요.</div>
                 </div>
                 <label class="toggle-switch">
                   <input type="checkbox" id="set-delete_intermediate" checked>
@@ -874,17 +995,430 @@ tbody tr:hover{background:#F8FAFC}
               </div>
             </div>
 
-            <div style="padding-top:8px">
-              <button class="btn btn-primary" id="settingsSaveBtn" onclick="saveSettings()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <p id="settingsAdminNote" style="display:none;font-size:.82rem;color:var(--text-light);margin-top:4px">설정 변경은 관리자만 가능합니다.</p>
+            <div class="tab-save-row">
+              <button class="btn btn-primary settings-save-btn" onclick="saveSettings()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                 설정 저장
               </button>
-              <p id="settingsAdminNote" style="display:none;font-size:.82rem;color:var(--text-light);margin-top:10px">설정 변경은 관리자만 가능합니다.</p>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            </div><!-- /stab-general -->
+
+            <!-- ===================== TAB: Baseline 파라미터 ===================== -->
+            <div class="setup-tab-panel tab-narrow" id="stab-baseline">
+            <!-- ===== Baseline Analysis Parameters ===== -->
+            <div class="form-section" id="section-baseline">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
+                Baseline 분석 파라미터
+              </div>
+              <p style="font-size:.78rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5">
+                모든 오더(Baseline / Germline / Followup / Longitudinal)의 표준 FASTQ → BAM → VCF 분석에 적용됩니다.
+              </p>
+
+              <!-- ── A. UMI 모드 ── -->
+              <div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                  <span style="font-size:.82rem;font-weight:600;color:var(--text-primary)">A. UMI 모드</span>
+                  <span style="font-size:.72rem;color:var(--text-muted)">&nbsp;(fgbio)</span>
+                </div>
+                <div class="form-group" style="margin-bottom:10px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500">
+                    <input type="checkbox" id="set-enable_umi" onchange="toggleUmiOptions()" style="width:16px;height:16px;cursor:pointer">
+                    UMI 사용 (KAPA UMI adapter 등)
+                  </label>
+                  <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">
+                    체크 시 UMI consensus 파이프라인 수행. 미체크 시 표준 BWA + Picard MarkDuplicates 사용.
+                    <br><span style="color:var(--orange)">오더 등록 시 개별 지정으로 오버라이드할 수 있습니다.</span>
+                  </span>
+                </div>
+                <div id="umi-options" style="display:none">
+                  <div class="form-grid" style="grid-template-columns:repeat(2,1fr)">
+                    <div class="form-group">
+                      <label>UMI Read Structure <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">fgbio ExtractUmisFromBam -r</span></label>
+                      <input type="text" id="set-umi_read_structure" value="3M3S+T 3M3S+T" style="font-family:monospace;font-size:.82rem">
+                      <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">기본값 <code>3M3S+T 3M3S+T</code> = KAPA UMI adapter (R1/R2 각각 3 bp UMI + 3 bp skip + 나머지 template)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── B. Variant Calling ── -->
+              <div style="margin-top:18px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                  <span style="font-size:.82rem;font-weight:600;color:var(--text-primary)">B. Variant Calling</span>
+                  <span style="font-size:.72rem;color:var(--text-muted)">&nbsp;(VarDict)</span>
+                </div>
+                <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
+                  <div class="form-group">
+                    <label>AF Threshold <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">-f</span></label>
+                    <input type="number" id="set-default_af_threshold" step="0.001" min="0" max="1" value="0.005">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최소 변이 Allele Fraction (기본 0.5%)<br><span style="color:var(--orange)">오더 등록 시 개별 지정도 가능합니다.</span></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── C. 서브샘플링 ── -->
+              <div style="margin-top:18px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                  <span style="font-size:.82rem;font-weight:600;color:var(--text-primary)">C. 서브샘플링</span>
+                  <span style="font-size:.72rem;color:var(--text-muted)">&nbsp;(seqtk)</span>
+                </div>
+                <!-- Enable checkbox -->
+                <div class="form-group" style="margin-bottom:10px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500">
+                    <input type="checkbox" id="set-enable_subsampling" onchange="toggleSubsampleOptions()" style="width:16px;height:16px;cursor:pointer">
+                    서브샘플링 활성화
+                  </label>
+                  <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">FASTQ 파일 크기가 임계값 초과 시에만 서브샘플링 수행 (원본 파일 보존)</span>
+                </div>
+                <!-- Options — shown only when checkbox is checked -->
+                <div id="subsample-options" style="display:none">
+                  <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
+                    <div class="form-group">
+                      <label>파일 크기 임계값 <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">GB (R1+R2 합계)</span></label>
+                      <input type="number" id="set-subsample_threshold_gb" step="1" min="1" value="20">
+                      <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">이 크기 이상이면 서브샘플링 수행</span>
+                    </div>
+                    <div class="form-group">
+                      <label>목표 Read 수 <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">seqtk sample</span></label>
+                      <input type="number" id="set-seqtk_sample_size" step="1000000" min="1000000" value="40000000">
+                      <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">UMI 추출 후 raw read pair 수 기준 (UMI 디듀플 전)</span>
+                    </div>
+                    <div class="form-group">
+                      <label>Random Seed <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">-s</span></label>
+                      <input type="number" id="set-seqtk_seed" step="1" min="0" value="12345">
+                      <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">동일 Seed = 재현 가능한 서브샘플링</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── C. Adapter Trimming ── -->
+              <div style="margin-top:18px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><path d="M6 3v18M18 3v18M3 6h18M3 18h18"/></svg>
+                  <span style="font-size:.82rem;font-weight:600;color:var(--text-primary)">D. Adapter Trimming</span>
+                  <span style="font-size:.72rem;color:var(--text-muted)">&nbsp;(fastp)</span>
+                </div>
+                <div class="form-group">
+                  <label>fastp 옵션 <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">fastp [options]</span></label>
+                  <input type="text" id="set-fastp_options" value="-g -W 5 -q 20 -u 40 -x -3 -l 75 -c" style="font-family:monospace;font-size:.82rem">
+                  <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">
+                    <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-g</code> poly-G &nbsp;
+                    <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-W 5</code> 슬라이딩 윈도우 &nbsp;
+                    <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-q 20</code> 최소 품질 &nbsp;
+                    <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-u 40</code> 최대 불량 % &nbsp;
+                    <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-l 75</code> 최소 길이 &nbsp;
+                    <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-c</code> 염기쌍 보정
+                  </span>
+                </div>
+              </div>
+
+              <!-- ── E. Consensus Filtering — UMI-only ── -->
+              <div id="consensus-filter-section" style="margin-top:18px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                  <span style="font-size:.82rem;font-weight:600;color:var(--text-primary)">E. Consensus Read Filtering</span>
+                  <span style="font-size:.72rem;color:var(--text-muted)">&nbsp;(fgbio FilterConsensusReads — UMI 모드 전용)</span>
+                </div>
+                <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
+                  <div class="form-group">
+                    <label>Min Reads <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min-reads</span></label>
+                    <input type="number" id="set-min_reads" step="1" min="1" value="1">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">UMI 패밀리 최소 Read 수 (1 = Singleton 허용)</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Min Base Quality <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min-base-quality</span></label>
+                    <input type="number" id="set-min_base_quality" step="1" min="0" max="40" value="20">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">Consensus 염기 최소 Quality</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Max Read Error Rate <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--max-read-error-rate</span></label>
+                    <input type="number" id="set-max_read_error_rate" step="0.005" min="0" max="1" value="0.025">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">Read 전체 최대 오류율 (기본 2.5%)</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Max Base Error Rate <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--max-base-error-rate</span></label>
+                    <input type="number" id="set-max_base_error_rate" step="0.01" min="0" max="1" value="0.1">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">단일 염기 최대 오류율 (기본 10%)</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Max No-call Fraction <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--max-no-call-fraction</span></label>
+                    <input type="number" id="set-max_no_call_fraction" step="0.01" min="0" max="1" value="0.1">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최대 No-call 비율 (기본 10%)</span>
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /Baseline params section -->
+            <div class="tab-save-row">
+              <button class="btn btn-primary settings-save-btn" onclick="saveSettings()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                설정 저장
+              </button>
+            </div>
+            </div><!-- /stab-baseline -->
+
+            <!-- ===================== TAB: Longitudinal 파라미터 ===================== -->
+            <div class="setup-tab-panel tab-narrow" id="stab-longitudinal">
+            <!-- ===== Longitudinal Analysis Parameters (Select Reporter + Longitudinal) ===== -->
+            <div class="form-section" id="longitudinal-settings-section">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Longitudinal 분석 파라미터
+              </div>
+              <p style="font-size:.78rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5">
+                Longitudinal 오더 실행 시 자동으로 적용되는 파라미터입니다. 기본값은 KAPA White Paper (MC-12095) 권장값입니다.
+              </p>
+
+              <!-- ── A. Select Reporter ── -->
+              <div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+                  <span style="font-size:.82rem;font-weight:600;color:var(--text-primary)">A. Select Reporter 파라미터</span>
+                  <span style="font-size:.72rem;color:var(--text-muted)">&nbsp;(select_reporters.R)</span>
+                </div>
+                <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
+                  <div class="form-group">
+                    <label>Germline Cutoff <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--germline_cutoff</span></label>
+                    <input type="number" id="set-sr_germline_cutoff" step="0.0005" min="0" max="1" value="0.005">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최대 Germline AF (기본 0.5%)</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Min AF <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min_af</span></label>
+                    <input type="number" id="set-sr_min_af" step="0.0005" min="0" max="1" value="0.005">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최소 Reporter AF (기본 0.5%)</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Max AF <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--max_af</span></label>
+                    <input type="number" id="set-sr_max_af" step="0.01" min="0" max="1" value="0.35">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최대 Reporter AF (기본 35%)</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Min Depth <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min_dp</span></label>
+                    <input type="number" id="set-sr_min_dp" step="100" min="0" value="1000">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최소 총 Depth</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Min Variant Depth <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min_vd</span></label>
+                    <input type="number" id="set-sr_min_vd" step="1" min="0" value="15">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최소 Variant Read 수</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Min Mapping Quality <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min_mq</span></label>
+                    <input type="number" id="set-sr_min_mq" step="1" min="0" max="60" value="55">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최소 Mapping Quality</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Min Base Quality <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min_qual</span></label>
+                    <input type="number" id="set-sr_min_qual" step="1" min="0" max="60" value="45">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">최소 Base Quality</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Strand Bias p-value <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--min_sbf</span></label>
+                    <input type="text" id="set-sr_min_sbf" value="1e-05">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">Strand Bias Fisher p 임계값</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Max Mismatches <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--max_nm</span></label>
+                    <input type="number" id="set-sr_max_nm" step="1" min="0" value="4">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">Read당 최대 평균 Mismatch</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── B. Longitudinal Analysis ── -->
+              <div style="margin-top:20px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  <span style="font-size:.82rem;font-weight:600;color:var(--text-primary)">B. Longitudinal Analysis 파라미터</span>
+                  <span style="font-size:.72rem;color:var(--text-muted)">&nbsp;(longitudinal_analysis.R)</span>
+                </div>
+                <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
+                  <div class="form-group">
+                    <label>Reads Threshold <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--reads_threshold</span></label>
+                    <input type="number" id="set-la_reads_threshold" step="100" min="0" value="1000">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">미결정 판정 기준 최소 Read 수</span>
+                  </div>
+                  <div class="form-group">
+                    <label>P-value Threshold <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--pvalue_threshold</span></label>
+                    <input type="number" id="set-la_pvalue_threshold" step="0.0001" min="0" max="1" value="0.001">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">양성 판정 p-value 컷오프</span>
+                  </div>
+                  <div class="form-group">
+                    <label>VAF Threshold <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--vaf_threshold</span></label>
+                    <input type="number" id="set-la_vaf_threshold" step="0.01" min="0" max="1" value="0.1">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">배경 오류율 계산 시 제외 VAF</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Monte Carlo Sim <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--n_sim</span></label>
+                    <input type="number" id="set-la_n_sim" step="1000" min="1000" value="10000">
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">Monte Carlo 시뮬레이션 횟수</span>
+                  </div>
+                  <div class="form-group">
+                    <label>Blocklist Type <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">--blist_type</span></label>
+                    <select id="set-la_blist_type">
+                      <option value="variant">variant (substitution-specific)</option>
+                      <option value="loci">loci (position only)</option>
+                    </select>
+                    <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">Blocklist 적용 방식</span>
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /Longitudinal params section -->
+            <div class="tab-save-row">
+              <button class="btn btn-primary settings-save-btn" onclick="saveSettings()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                설정 저장
+              </button>
+            </div>
+            </div><!-- /stab-longitudinal -->
+
+            <!-- ===================== TAB: Variant 리스트 ===================== -->
+            <div class="setup-tab-panel" id="stab-variantlists">
+            <div class="form-section" id="section-variantlists">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Variant 필터 리스트
+              </div>
+              <p style="font-size:.78rem;color:var(--text-muted);margin:-4px 0 12px;line-height:1.5">
+                <span class="vl-badge vl-badge-blacklist">BL</span> Blacklist — Variant Table &amp; 최종 결과에서 자동 제외<br>
+                <span class="vl-badge vl-badge-whitelist">WL</span> Whitelist — Variant Table에서 녹색 표시<br>
+                <span class="vl-badge vl-badge-onhold">OH</span> On-hold — Variant Table에서 노란 표시<br>
+                xlsx / txt / bed 파일 업로드 또는 개별 항목을 직접 추가할 수 있습니다.<br>
+                cNumber(VCF ID 필드 매칭)와 Chromosome-Position 두 가지 방식을 지원합니다.
+              </p>
+
+              <!-- Tab buttons -->
+              <div class="vl-tabs">
+                <button class="vl-tab-btn active active-blacklist" onclick="vlSwitchTab('blacklist',this)">
+                  Blacklist <span id="vl-count-blacklist" style="font-weight:400;font-size:.72rem"></span>
+                </button>
+                <button class="vl-tab-btn" onclick="vlSwitchTab('whitelist',this)">
+                  Whitelist <span id="vl-count-whitelist" style="font-weight:400;font-size:.72rem"></span>
+                </button>
+                <button class="vl-tab-btn" onclick="vlSwitchTab('onhold',this)">
+                  On-hold <span id="vl-count-onhold" style="font-weight:400;font-size:.72rem"></span>
+                </button>
+              </div>
+
+              <!-- Upload row -->
+              <div class="vl-upload-row" style="flex-wrap:wrap;gap:8px">
+                <label class="btn btn-outline" style="cursor:pointer;font-size:.8rem">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+                  파일 업로드 (xlsx/txt/bed)
+                  <input type="file" id="vlFileInput" accept=".xlsx,.xls,.txt,.bed,.tsv,.csv" style="display:none" onchange="vlUploadFile()">
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer;color:var(--text-muted);user-select:none" title="체크하면 첫 번째 행을 헤더(컬럼명)로 처리하고 두 번째 행부터 데이터로 읽습니다.">
+                  <input type="checkbox" id="vlSkipHeader" style="width:14px;height:14px">
+                  첫 행 = 헤더
+                </label>
+                <span id="vlUploadMsg" style="font-size:.78rem;color:var(--text-muted)"></span>
+              </div>
+
+              <!-- List table: fixed header + scrollable body -->
+              <div class="vl-table-outer">
+                <div class="vl-thead-wrap">
+                  <table class="vl-table">
+                    <colgroup>
+                      <col style="width:70px"><col style="width:190px"><col style="width:65px">
+                      <col style="width:90px"><col style="width:52px"><col style="width:52px">
+                      <col style="width:78px"><col style="width:95px"><col style="width:82px">
+                      <col style="width:202px"><col style="width:34px">
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>입력 방식</th>
+                        <th>cNumber / ID</th>
+                        <th>Chr</th>
+                        <th>Position</th>
+                        <th>REF</th>
+                        <th>ALT</th>
+                        <th>Gene</th>
+                        <th>분류</th>
+                        <th>비율</th>
+                        <th>비고</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                  </table>
+                </div>
+                <div class="vl-tbody-wrap">
+                  <table class="vl-table" id="vlTable">
+                    <colgroup>
+                      <col style="width:70px"><col style="width:190px"><col style="width:65px">
+                      <col style="width:90px"><col style="width:52px"><col style="width:52px">
+                      <col style="width:78px"><col style="width:95px"><col style="width:82px">
+                      <col style="width:202px"><col style="width:34px">
+                    </colgroup>
+                    <tbody id="vlTableBody">
+                      <tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text-muted)">불러오는 중...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Add new row -->
+              <div class="vl-add-row" id="vlAddRow" style="width:1010px;max-width:100%;box-sizing:border-box">
+                <div class="form-group" style="min-width:110px;max-width:130px">
+                  <label>입력 방식</label>
+                  <select id="vl-new-entry_type" onchange="vlToggleNewForm()">
+                    <option value="cnumber">cNumber</option>
+                    <option value="position">Chr-Pos</option>
+                  </select>
+                </div>
+                <div class="form-group" id="vlNewCnumGroup" style="min-width:120px">
+                  <label>cNumber / ID</label>
+                  <input type="text" id="vl-new-cnumber" placeholder="예: rs123 또는 c.123A>T">
+                </div>
+                <div class="form-group" id="vlNewPosGroup" style="display:none;min-width:80px">
+                  <label>Chr</label>
+                  <input type="text" id="vl-new-chrom" placeholder="chr1">
+                </div>
+                <div class="form-group" id="vlNewPosGroup2" style="display:none;min-width:90px">
+                  <label>Position</label>
+                  <input type="number" id="vl-new-pos" placeholder="12345678">
+                </div>
+                <div class="form-group" id="vlNewRefGroup" style="display:none;min-width:60px">
+                  <label>REF</label>
+                  <input type="text" id="vl-new-ref" placeholder="A">
+                </div>
+                <div class="form-group" id="vlNewAltGroup" style="display:none;min-width:60px">
+                  <label>ALT</label>
+                  <input type="text" id="vl-new-alt" placeholder="T">
+                </div>
+                <div class="form-group" style="min-width:70px">
+                  <label>Gene</label>
+                  <input type="text" id="vl-new-gene" placeholder="TP53">
+                </div>
+                <div class="form-group" style="min-width:80px">
+                  <label>분류</label>
+                  <input type="text" id="vl-new-category" placeholder="예: 분류A">
+                </div>
+                <div class="form-group" style="min-width:70px">
+                  <label>비율</label>
+                  <input type="text" id="vl-new-ratio" placeholder="예: 0.82%">
+                </div>
+                <div class="form-group" style="flex:2;min-width:90px">
+                  <label>비고</label>
+                  <input type="text" id="vl-new-note" placeholder="설명">
+                </div>
+                <div style="padding-top:18px">
+                  <button class="btn btn-primary" style="font-size:.8rem;padding:5px 12px" onclick="vlAddEntry()">추가</button>
+                </div>
+              </div>
+            </div>
+            </div><!-- /stab-variantlists -->
+
+          </div><!-- /settings-form -->
+        </div><!-- /section-body -->
+      </div><!-- /section -->
+    </div><!-- /page-setup -->
 
   </div><!-- /content -->
 </div><!-- /main -->
@@ -906,7 +1440,7 @@ tbody tr:hover{background:#F8FAFC}
       <div id="orderTypeSection" style="display:none">
         <div class="order-type-selector">
           <button type="button" class="order-type-btn active" data-type="baseline" onclick="setOrderType('baseline',this)">Baseline 분석</button>
-          <button type="button" class="order-type-btn" data-type="longitudinal" onclick="setOrderType('longitudinal',this)">Longitudinal 분석</button>
+          <button type="button" class="order-type-btn" id="ordBtnTypeLongit" data-type="longitudinal" onclick="setOrderType('longitudinal',this)">Longitudinal 분석</button>
         </div>
       </div>
 
@@ -917,6 +1451,11 @@ tbody tr:hover{background:#F8FAFC}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
             Longitudinal 참조 오더
           </div>
+          <p style="font-size:.78rem;color:var(--text-light);margin:4px 0 10px;line-height:1.45">
+            <strong>Case 1</strong> — Baseline·Germline이 이미 완료된 상태에서 새 Followup 샘플을 등록·분석할 때 사용합니다.<br>
+            이미 분석이 끝난 Followup 오더를 변환하려면 (<strong>Case 2</strong>) 오더 목록에서 해당 오더의
+            <em>Longitudinal로 변환</em> 액션을 사용하세요.
+          </p>
           <div class="longit-ref-section" id="longitReuseModeSection">
             <div class="longit-ref-label">Followup 분석 입력 방식</div>
             <label style="display:block;margin:6px 0;font-size:.85rem;cursor:pointer">
@@ -1040,6 +1579,14 @@ tbody tr:hover{background:#F8FAFC}
             <label>AF Threshold</label>
             <input type="number" id="ord-af_threshold" step="0.001" min="0" value="0.005">
           </div>
+          <div class="form-group">
+            <label>UMI 사용 <span style="font-size:.7rem;color:var(--text-muted);font-weight:400">(전역 설정 오버라이드)</span></label>
+            <select id="ord-use_umi">
+              <option value="">전역 설정 따름</option>
+              <option value="Y">UMI 있음 (consensus 파이프라인)</option>
+              <option value="N">UMI 없음 (BWA + Picard MarkDuplicates)</option>
+            </select>
+          </div>
           <div class="form-group full">
             <label>BED 파일</label>
             <div style="display:flex;gap:8px;align-items:center">
@@ -1070,7 +1617,7 @@ tbody tr:hover{background:#F8FAFC}
           옵션
         </div>
         <div class="checkbox-group">
-          <label class="checkbox-item"><input type="checkbox" id="ord-delete_intermediate" checked> 중간 파일 삭제 (work 정리, 최종 BAM은 output/bam에 보관)</label>
+          <label class="checkbox-item"><input type="checkbox" id="ord-delete_intermediate" checked> 중간 파일 삭제 (work 정리, 최종 BAM은 output/bam에 보관) — <span style="color:#B45309">Longitudinal 분석 예정 샘플은 해제 권장</span></label>
         </div>
       </div>
     </div>
@@ -1097,6 +1644,21 @@ tbody tr:hover{background:#F8FAFC}
       <button class="modal-close" onclick="closeReview()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
+    </div>
+    <!-- List quick-filter buttons -->
+    <div class="rv-list-filter-row" id="rvListFilterRow">
+      <span class="rv-list-filter-label">LIST</span>
+      <button class="rv-list-btn active" id="rvListBtn-all"      onclick="setRvListFilter('')">전체</button>
+      <button class="rv-list-btn"        id="rvListBtn-whitelist" onclick="setRvListFilter('whitelist')">
+        <span class="vl-badge vl-badge-whitelist" style="margin:0 4px 0 0">WL</span>Whitelist
+      </button>
+      <button class="rv-list-btn"        id="rvListBtn-onhold"    onclick="setRvListFilter('onhold')">
+        <span class="vl-badge vl-badge-onhold" style="margin:0 4px 0 0">OH</span>On-hold
+      </button>
+      <button class="rv-list-btn"        id="rvListBtn-blacklist" onclick="setRvListFilter('blacklist')">
+        <span class="vl-badge vl-badge-blacklist" style="margin:0 4px 0 0">BL</span>Blacklist
+      </button>
+      <span class="rv-blacklist-info" id="rvBlacklistInfo"></span>
     </div>
     <div class="review-filters">
       <div class="filter-group assembly-filter" id="assemblyToggleGroup">
@@ -1151,7 +1713,7 @@ tbody tr:hover{background:#F8FAFC}
           <table>
             <thead><tr id="reviewTableHead"></tr></thead>
             <tbody id="reviewTableBody">
-              <tr><td colspan="14" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
+              <tr><td colspan="24" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>
             </tbody>
           </table>
         </div>
@@ -1223,6 +1785,62 @@ tbody tr:hover{background:#F8FAFC}
   </div>
 </div>
 
+<!-- ===== PROMOTE TO LONGITUDINAL MODAL ===== -->
+<div class="longit-overlay" id="promoteLongitOverlay">
+  <div class="longit-panel" style="max-width:560px">
+    <div class="longit-head">
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><polyline points="14 7 21 7 21 14"/></svg>
+        Longitudinal 분석으로 변환
+      </h2>
+      <button class="modal-close" onclick="closePromoteLongitModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="longit-body" style="padding:20px;">
+      <p style="font-size:.88rem;color:var(--text-muted);margin-bottom:16px;line-height:1.55">
+        이미 분석이 완료된 이 오더(Followup)에 <strong>Baseline / Germline 비교</strong>를
+        추가하여 Longitudinal 분석을 수행합니다.<br>
+        기존 분석 결과는 그대로 활용되며 (Nextflow <code>-resume</code>),
+        Select Reporter · Longitudinal 단계만 새로 실행됩니다.
+      </p>
+
+      <div style="margin-bottom:14px">
+        <div class="longit-ref-label" style="font-weight:600;margin-bottom:6px">변환 대상 오더</div>
+        <div id="promoteLongitTargetInfo"
+             style="padding:8px 12px;background:var(--blue-bg);border-radius:6px;
+                    font-size:.85rem;color:var(--text)"></div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div class="longit-ref-label" style="font-weight:600;margin-bottom:6px">Baseline 오더 (필수)</div>
+        <select class="longit-ref-select" id="promote-baseline-select" style="width:100%">
+          <option value="">-- Baseline 오더 선택 --</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div class="longit-ref-label" style="font-weight:600;margin-bottom:6px">Germline 오더 (필수)</div>
+        <select class="longit-ref-select" id="promote-germline-select" style="width:100%">
+          <option value="">-- Germline 오더 선택 --</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div class="longit-ref-label" style="font-weight:600;margin-bottom:6px">이전 Followup 오더 (선택, VAF 비교용)</div>
+        <div class="longit-followup-list" id="promote-followup-list" style="max-height:160px">
+          <div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">완료된 오더 목록을 불러오는 중...</div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+        <button class="btn btn-outline" onclick="closePromoteLongitModal()">취소</button>
+        <button class="btn btn-primary" id="promoteLongitConfirmBtn" onclick="submitPromoteToLongitudinal()">변환 후 분석 시작</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ===== CONFIRM DIALOG ===== -->
 <div class="confirm-overlay" id="confirmDialog">
   <div class="confirm-box">
@@ -1248,8 +1866,9 @@ var currentPage = 'dashboard';
 var currentUser = null;
 var currentOrderFilter = '';
 var currentOrderType = 'baseline';
-var longitudinalEnabled = false;
-var igvEnabled = false;
+var longitudinalEnabled = true;
+var editingOrderLongitudinal = false;
+var igvEnabled = true;
 var hg19ViewEnabled = false;
 var hg19ChainMissing = false;
 var igvScriptPromise = null;
@@ -1275,6 +1894,33 @@ var currentBedPath = 'hg38';
 /* ================================================================
    NAVIGATION
    ================================================================ */
+/* ================================================================
+   SETTINGS TABS
+   ================================================================ */
+var _currentSetupTab = 'resources';
+
+function switchSetupTab(tabId, btn) {
+  _currentSetupTab = tabId;
+  // Deactivate all tab buttons
+  document.querySelectorAll('.setup-tab-btn').forEach(function(b) {
+    b.classList.remove('active');
+  });
+  // Hide all tab panels
+  document.querySelectorAll('.setup-tab-panel').forEach(function(p) {
+    p.classList.remove('active');
+  });
+  // Activate clicked button
+  if (btn) {
+    btn.classList.add('active');
+  } else {
+    var matchBtn = document.querySelector('.setup-tab-btn[data-stab="' + tabId + '"]');
+    if (matchBtn) matchBtn.classList.add('active');
+  }
+  // Show target panel
+  var panel = document.getElementById('stab-' + tabId);
+  if (panel) panel.classList.add('active');
+}
+
 function navigateTo(page, skipLoad) {
   currentPage = page;
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
@@ -1286,12 +1932,16 @@ function navigateTo(page, skipLoad) {
   var titles = { dashboard: '대시보드', orders: '오더 관리', setup: '설정', users: '사용자 관리' };
   document.getElementById('breadcrumbTitle').textContent = titles[page] || page;
 
+  // Sticky bar hidden — per-tab save buttons used instead
+  var stickyBar = document.getElementById('settingsStickyBar');
+  if (stickyBar) stickyBar.style.display = 'none';
+
   stopAllTimers();
 
   if (!skipLoad) {
     if (page === 'dashboard') loadDashboard();
     if (page === 'orders') loadOrders();
-    if (page === 'setup') loadSettings();
+    if (page === 'setup') { loadSettings(); loadVariantLists(); }
     if (page === 'users') loadUsersList();
   }
 
@@ -1607,11 +2257,22 @@ function loadUsersList() {
     if (!r.success) return;
     var tbody = document.getElementById('usersTableBody');
     if (!r.users || r.users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><p>등록된 사용자가 없습니다.</p></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><p>등록된 사용자가 없습니다.</p></td></tr>';
       return;
     }
+    var myId = (currentUser && currentUser.user_id) || '';
     var html = '';
     r.users.forEach(function(u) {
+      var canReset = (u.role !== 'admin') && (u.id !== myId);
+      var actionCell;
+      if (canReset) {
+        actionCell = '<button class="btn btn-outline btn-sm" onclick="resetUserPassword(\''
+          + escapeHtml(u.id).replace(/'/g, "\\'") + '\')">비밀번호 초기화</button>';
+      } else if (u.role === 'admin') {
+        actionCell = '<span style="color:var(--text-muted);font-size:.8rem">-</span>';
+      } else {
+        actionCell = '<span style="color:var(--text-muted);font-size:.8rem">본인</span>';
+      }
       html += '<tr>'
         + '<td>' + escapeHtml(u.id) + '</td>'
         + '<td>' + escapeHtml(u.name || '-') + '</td>'
@@ -1620,11 +2281,34 @@ function loadUsersList() {
         + '<td>' + escapeHtml(u.email || '-') + '</td>'
         + '<td>' + escapeHtml(u.role === 'admin' ? '관리자' : '일반') + '</td>'
         + '<td>' + (u.must_change_password ? '필요' : '완료') + '</td>'
+        + '<td>' + actionCell + '</td>'
         + '</tr>';
     });
     tbody.innerHTML = html;
   }).catch(function() {
-    document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="7" class="empty-state"><p>목록을 불러올 수 없습니다.</p></td></tr>';
+    document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="8" class="empty-state"><p>목록을 불러올 수 없습니다.</p></td></tr>';
+  });
+}
+
+function resetUserPassword(userId) {
+  if (!userId) return;
+  var msg = '사용자 "' + userId + '" 의 비밀번호를 초기화하시겠습니까?\n\n'
+    + '- 임시 비밀번호는 기본값(user1234)으로 설정됩니다.\n'
+    + '- 해당 사용자는 다음 로그인 시 반드시 비밀번호를 변경해야 합니다.';
+  if (!confirm(msg)) return;
+  apiFetch('/api/admin/users/' + encodeURIComponent(userId) + '/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).then(function(res) {
+    if (res.success) {
+      showToast('비밀번호를 "' + res.temporary_password + '" 로 초기화했습니다. 사용자에게 안전한 경로로 전달하세요.', 'success');
+      loadUsersList();
+    } else {
+      showToast(res.error || '초기화에 실패했습니다.', 'error');
+    }
+  }).catch(function(e) {
+    showToast(e.message || '초기화에 실패했습니다.', 'error');
   });
 }
 
@@ -1888,43 +2572,53 @@ function buildActionButtons(order) {
   }
 
   if (s === 'registered' || s === 'failed' || s === 'cancelled') {
-    btns += '<button class="action-btn" title="수정" style="color:var(--blue)" onclick="event.stopPropagation();openEditModal(\'' + id + '\')">'
+    btns += '<button class="action-btn" data-tip="수정" style="color:var(--blue)" onclick="event.stopPropagation();openEditModal(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>';
-    btns += '<button class="action-btn act-start" title="실행" onclick="event.stopPropagation();startOrder(\'' + id + '\')">'
+    btns += '<button class="action-btn act-start" data-tip="실행" onclick="event.stopPropagation();startOrder(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>';
   }
 
   if (s === 'running') {
-    btns += '<button class="action-btn act-stop" title="중지" onclick="event.stopPropagation();stopOrder(\'' + id + '\')">'
+    btns += '<button class="action-btn act-stop" data-tip="중지" onclick="event.stopPropagation();stopOrder(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>';
   }
 
   if (s === 'failed' || s === 'cancelled' || s === 'completed') {
-    btns += '<button class="action-btn act-rerun" title="이어서 실행 (Resume)" onclick="event.stopPropagation();rerunOrder(\'' + id + '\')">'
+    btns += '<button class="action-btn act-rerun" data-tip="이어서 실행 (Resume)" onclick="event.stopPropagation();rerunOrder(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>';
   }
 
   if (s !== 'running') {
-    btns += '<button class="action-btn act-force" title="처음부터 실행" onclick="event.stopPropagation();forceOrder(\'' + id + '\')">'
+    btns += '<button class="action-btn act-force" data-tip="처음부터 실행" onclick="event.stopPropagation();forceOrder(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></button>';
   }
 
   if (order.has_vcf) {
-    btns += '<button class="action-btn act-review" title="결과 Review" onclick="event.stopPropagation();openReview(\'' + id + '\')">'
+    btns += '<button class="action-btn act-review" data-tip="결과 Review" onclick="event.stopPropagation();openReview(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>';
+    if (s !== 'running') {
+      btns += '<button class="action-btn" data-tip="Reannotation" style="color:var(--blue)" onclick="event.stopPropagation();reannotateOrder(\'' + id + '\')">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></button>';
+    }
   }
 
   if (order.has_qc) {
-    btns += '<button class="action-btn act-qc" title="QC 결과" onclick="event.stopPropagation();openQC(\'' + id + '\')">'
+    btns += '<button class="action-btn act-qc" data-tip="QC 결과" onclick="event.stopPropagation();openQC(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></button>';
   }
 
   if (order.order_type === 'longitudinal' && (s === 'completed')) {
-    btns += '<button class="action-btn" title="Longitudinal 결과" style="color:#7C3AED" onclick="event.stopPropagation();openLongit(\'' + id + '\')">'
-      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></button>';
+    btns += '<button class="action-btn" data-tip="Longitudinal 결과" style="color:#7C3AED" onclick="event.stopPropagation();openLongit(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 14 21 6"/><polyline points="14 6 21 6 21 13"/></svg></button>';
   }
 
-  btns += '<button class="action-btn act-delete" title="삭제" onclick="event.stopPropagation();deleteOrder(\'' + id + '\')">'
+  // Promote a completed baseline-type order to longitudinal in-place.
+  if (longitudinalEnabled && s === 'completed' && (order.order_type || 'baseline') !== 'longitudinal') {
+    btns += '<button class="action-btn" data-tip="Longitudinal로 변환" style="color:#7C3AED" onclick="event.stopPropagation();openPromoteLongitModal(\'' + id + '\')">'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><polyline points="14 7 21 7 21 14"/></svg></button>';
+  }
+
+  btns += '<button class="action-btn act-delete" data-tip="삭제" onclick="event.stopPropagation();deleteOrder(\'' + id + '\')">'
     + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
 
   return btns;
@@ -1932,23 +2626,218 @@ function buildActionButtons(order) {
 
 function buildResultIcons(order) {
   var sample = encodeURIComponent(order.sample_name);
+  var id = order.id;
   var vcfSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2l1 3 2-6 1 3h2"/></svg>';
   var logSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>';
+  var qcSvg  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   var icons = '';
 
   if (order.has_vcf) {
-    icons += '<button class="dl-btn dl-vcf" title="VCF 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/vcf\',\'_blank\')">' + vcfSvg + '</button>';
+    icons += '<button class="dl-btn dl-vcf" data-tip="VCF 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/vcf\',\'_blank\')">' + vcfSvg + '</button>';
   } else {
-    icons += '<button class="dl-btn dl-vcf disabled" title="VCF 미생성">' + vcfSvg + '</button>';
+    icons += '<button class="dl-btn dl-vcf disabled" data-tip="VCF 미생성">' + vcfSvg + '</button>';
+  }
+
+  if (order.has_qc) {
+    icons += '<a class="dl-btn" href="/api/orders/' + id + '/qc_report.txt" download data-tip="QC 리포트 다운로드" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;justify-content:center;color:var(--teal);text-decoration:none;position:relative">' + qcSvg + '</a>';
+  } else {
+    icons += '<button class="dl-btn disabled" data-tip="QC 미생성">' + qcSvg + '</button>';
   }
 
   if (order.has_log) {
-    icons += '<button class="dl-btn dl-log" title="로그 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/log\',\'_blank\')">' + logSvg + '</button>';
+    icons += '<button class="dl-btn dl-log" data-tip="로그 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/log\',\'_blank\')">' + logSvg + '</button>';
   } else {
-    icons += '<button class="dl-btn dl-log disabled" title="로그 미생성">' + logSvg + '</button>';
+    icons += '<button class="dl-btn dl-log disabled" data-tip="로그 미생성">' + logSvg + '</button>';
   }
 
   return icons;
+}
+
+/* ================================================================
+   VARIANT LISTS (Blacklist / Whitelist / On-hold)
+   ================================================================ */
+var vlCurrentType = 'blacklist';
+var vlEntries = {};  // type -> array of entries
+
+function vlSwitchTab(type, btn) {
+  vlCurrentType = type;
+  document.querySelectorAll('.vl-tab-btn').forEach(function(b) {
+    b.classList.remove('active','active-blacklist','active-whitelist','active-onhold');
+  });
+  btn.classList.add('active', 'active-' + type);
+  vlRenderTable();
+}
+
+function loadVariantLists() {
+  apiFetch('/api/variant-lists').then(function(rows) {
+    vlEntries = { blacklist: [], whitelist: [], onhold: [] };
+    (rows || []).forEach(function(r) {
+      if (vlEntries[r.list_type]) vlEntries[r.list_type].push(r);
+    });
+    ['blacklist','whitelist','onhold'].forEach(function(t) {
+      var cnt = document.getElementById('vl-count-' + t);
+      if (cnt) cnt.textContent = '(' + (vlEntries[t] ? vlEntries[t].length : 0) + ')';
+    });
+    vlRenderTable();
+  }).catch(function() {
+    document.getElementById('vlTableBody').innerHTML =
+      '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--red)">목록을 불러올 수 없습니다.</td></tr>';
+  });
+}
+
+function vlRenderTable() {
+  var rows = (vlEntries[vlCurrentType] || []);
+  var tbody = document.getElementById('vlTableBody');
+  if (!tbody) return;
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text-muted)">항목이 없습니다. 파일 업로드 또는 직접 추가하세요.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var typeBadge = r.entry_type === 'cnumber'
+      ? '<span style="font-size:.7rem;background:#EDE9FE;color:#6D28D9;border-radius:3px;padding:1px 5px">cNum</span>'
+      : '<span style="font-size:.7rem;background:#E0F2FE;color:#0369A1;border-radius:3px;padding:1px 5px">Pos</span>';
+    return '<tr>'
+      + '<td>' + typeBadge + '</td>'
+      + '<td><input value="' + escapeHtml(r.cnumber||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'cnumber\',this.value)" style="min-width:80px"></td>'
+      + '<td><input value="' + escapeHtml(r.chrom||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'chrom\',this.value)" style="min-width:45px"></td>'
+      + '<td><input type="number" value="' + (r.pos||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'pos\',this.value)" style="min-width:65px"></td>'
+      + '<td><input value="' + escapeHtml(r.ref||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'ref\',this.value)" style="min-width:35px;text-transform:uppercase"></td>'
+      + '<td><input value="' + escapeHtml(r.alt||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'alt\',this.value)" style="min-width:35px;text-transform:uppercase"></td>'
+      + '<td><input value="' + escapeHtml(r.gene||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'gene\',this.value)" style="min-width:55px"></td>'
+      + '<td><input value="' + escapeHtml(r.category||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'category\',this.value)" style="min-width:60px"></td>'
+      + '<td><input value="' + escapeHtml(r.ratio||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'ratio\',this.value)" style="min-width:55px"></td>'
+      + '<td><input value="' + escapeHtml(r.note||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'note\',this.value)" style="min-width:80px"></td>'
+      + '<td><button class="vl-del-btn" title="삭제" onclick="vlDeleteEntry(\'' + r.id + '\')">'
+      +   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+      +   '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
+      +   '</svg></button></td>'
+      + '</tr>';
+  }).join('');
+}
+
+function vlUpdateField(entryId, field, value) {
+  apiFetch('/api/variant-lists/' + encodeURIComponent(entryId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [field]: value })
+  }).then(function(res) {
+    if (!res.success) showToast(res.error || '수정 실패', 'error');
+  }).catch(function() { showToast('수정 중 오류가 발생했습니다.', 'error'); });
+}
+
+function vlDeleteEntry(entryId) {
+  if (!confirm('이 항목을 삭제하시겠습니까?')) return;
+  apiFetch('/api/variant-lists/' + encodeURIComponent(entryId), { method: 'DELETE' })
+    .then(function(res) {
+      if (res.success) {
+        showToast('삭제되었습니다.', 'success');
+        loadVariantLists();
+      } else {
+        showToast(res.error || '삭제 실패', 'error');
+      }
+    }).catch(function() { showToast('삭제 중 오류가 발생했습니다.', 'error'); });
+}
+
+function vlToggleNewForm() {
+  var mode = document.getElementById('vl-new-entry_type').value;
+  var isCnum = mode === 'cnumber';
+  document.getElementById('vlNewCnumGroup').style.display = isCnum ? '' : 'none';
+  document.getElementById('vlNewPosGroup').style.display  = isCnum ? 'none' : '';
+  document.getElementById('vlNewPosGroup2').style.display = isCnum ? 'none' : '';
+  document.getElementById('vlNewRefGroup').style.display  = isCnum ? 'none' : '';
+  document.getElementById('vlNewAltGroup').style.display  = isCnum ? 'none' : '';
+}
+
+function vlAddEntry() {
+  var entry_type = document.getElementById('vl-new-entry_type').value;
+  var cnumber  = (document.getElementById('vl-new-cnumber').value || '').trim();
+  var chrom    = (document.getElementById('vl-new-chrom').value || '').trim();
+  var pos      = document.getElementById('vl-new-pos').value;
+  var ref      = (document.getElementById('vl-new-ref').value || '').trim();
+  var alt      = (document.getElementById('vl-new-alt').value || '').trim();
+  var gene     = (document.getElementById('vl-new-gene').value || '').trim();
+  var category = (document.getElementById('vl-new-category').value || '').trim();
+  var ratio    = (document.getElementById('vl-new-ratio').value || '').trim();
+  var note     = (document.getElementById('vl-new-note').value || '').trim();
+
+  if (entry_type === 'cnumber' && !cnumber) { showToast('cNumber를 입력해주세요.', 'error'); return; }
+  if (entry_type === 'position' && (!chrom || !pos)) { showToast('Chr과 Position을 입력해주세요.', 'error'); return; }
+
+  apiFetch('/api/variant-lists', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      list_type: vlCurrentType, entry_type: entry_type,
+      cnumber: cnumber, chrom: chrom, pos: parseInt(pos) || 0,
+      ref: ref, alt: alt, gene: gene,
+      category: category, ratio: ratio, note: note
+    })
+  }).then(function(res) {
+    if (res.success) {
+      showToast('추가되었습니다.', 'success');
+      ['vl-new-cnumber','vl-new-chrom','vl-new-pos','vl-new-ref','vl-new-alt','vl-new-gene','vl-new-category','vl-new-ratio','vl-new-note'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.value = '';
+      });
+      loadVariantLists();
+    } else {
+      showToast(res.error || '추가 실패', 'error');
+    }
+  }).catch(function() { showToast('추가 중 오류가 발생했습니다.', 'error'); });
+}
+
+function vlUploadFile() {
+  var input = document.getElementById('vlFileInput');
+  if (!input || !input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var msg = document.getElementById('vlUploadMsg');
+  if (msg) msg.textContent = '업로드 중...';
+
+  var skipHdr = document.getElementById('vlSkipHeader');
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('list_type', vlCurrentType);
+  fd.append('skip_header', (skipHdr && skipHdr.checked) ? 'true' : 'false');
+
+  fetch('/api/variant-lists/upload', {
+    method: 'POST',
+    body: fd,
+    credentials: 'same-origin'
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    input.value = '';
+    if (res.success) {
+      if (msg) msg.textContent = res.inserted + '개 항목이 추가되었습니다.';
+      showToast(res.inserted + '개 항목이 추가되었습니다.', 'success');
+      loadVariantLists();
+    } else {
+      if (msg) msg.textContent = '';
+      showToast(res.error || '업로드 실패', 'error');
+    }
+  }).catch(function() {
+    input.value = '';
+    if (msg) msg.textContent = '';
+    showToast('업로드 중 오류가 발생했습니다.', 'error');
+  });
+}
+
+/* ── Review List filter ──────────────────────────────────── */
+var reviewListFilter = '';  // '' | 'whitelist' | 'onhold' | 'blacklist'
+
+function setRvListFilter(type) {
+  reviewListFilter = type;
+  ['all','whitelist','onhold','blacklist'].forEach(function(t) {
+    var btn = document.getElementById('rvListBtn-' + t);
+    if (!btn) return;
+    btn.classList.remove('active','wl-active','oh-active','bl-active');
+  });
+  var activeBtn = document.getElementById('rvListBtn-' + (type || 'all'));
+  if (activeBtn) {
+    if (type === 'whitelist') activeBtn.classList.add('wl-active');
+    else if (type === 'onhold') activeBtn.classList.add('oh-active');
+    else if (type === 'blacklist') activeBtn.classList.add('bl-active');
+    else activeBtn.classList.add('active');
+  }
+  applyReviewFilters();
 }
 
 /* ================================================================
@@ -1986,6 +2875,24 @@ function stopOrder(id) {
       loadOrders();
     }).catch(function() { showToast('요청에 실패했습니다.', 'error'); loadOrders(); });
   }, true);
+}
+
+function reannotateOrder(id) {
+  showConfirm('Reannotation (SnpEff 재실행)',
+    '기능: 기존 VarDict VCF를 그대로 사용하고 SnpEff → SnpSift → VariantsToTable 단계만 재실행합니다.\n\n'
+    + '• VarDict는 재실행하지 않습니다.\n'
+    + '• delete_intermediate 설정과 무관하게 동작합니다.\n'
+    + '• SnpEff 파라미터 변경(-canon 추가 등) 후 Annotation만 갱신할 때 사용합니다.\n\n'
+    + '계속하시겠습니까?',
+    function() {
+      setOrderStatusLocally(id, 'starting');
+      showToast('Reannotation 요청 중...', 'info');
+      apiFetch('/api/orders/' + id + '/reannotate', { method: 'POST' }).then(function(r) {
+        if (r.success) { showToast(r.message || 'Reannotation을 시작했습니다.', 'success'); resetLogForOrder(id); }
+        else { showToast(r.error || 'Reannotation에 실패했습니다.', 'error'); }
+        loadOrders();
+      }).catch(function() { showToast('요청에 실패했습니다.', 'error'); loadOrders(); });
+    }, false);
 }
 
 function rerunOrder(id) {
@@ -2040,18 +2947,38 @@ var reviewSampleName = '';
 
 var colLabels = {
   CHROM:'Chr', POS:'Position', REF:'Ref', ALT:'Alt', GENE:'Gene',
-  EFFECT:'Effect', AF:'VAF', DP:'Depth', VD:'Var Depth',
+  TRANSCRIPT:'Transcript', EFFECT:'Effect', IMPACT:'Impact',
+  HGVS_C:'HGVS.c', HGVS_P:'HGVS.p', HGVS_G:'HGVS.g',
+  AF:'VAF', DP:'Depth', VD:'Var Depth', HIAF:'Hi-AF', MQ:'MQ',
+  GT:'Genotype', DUPRATE:'Dup Rate',
   FILTER:'Filter', TYPE:'Type', QUAL:'Qual', ID:'ID', DBSNP_COMMON:'dbSNP'
+};
+
+// Chromosome → RefSeq NC accession (hg19/GRCh37) for HGVS.g in hg19 view
+var NC_HG19 = {
+  chr1:'NC_000001.10',chr2:'NC_000002.11',chr3:'NC_000003.11',
+  chr4:'NC_000004.11',chr5:'NC_000005.9',chr6:'NC_000006.11',
+  chr7:'NC_000007.13',chr8:'NC_000008.10',chr9:'NC_000009.11',
+  chr10:'NC_000010.10',chr11:'NC_000011.9',chr12:'NC_000012.11',
+  chr13:'NC_000013.10',chr14:'NC_000014.8',chr15:'NC_000015.9',
+  chr16:'NC_000016.9',chr17:'NC_000017.10',chr18:'NC_000018.9',
+  chr19:'NC_000019.9',chr20:'NC_000020.10',chr21:'NC_000021.8',
+  chr22:'NC_000022.10',chrX:'NC_000023.10',chrY:'NC_000024.9',
+  chrM:'NC_012920.1'
 };
 
 function openReview(orderId) {
   document.getElementById('reviewOverlay').classList.add('open');
-  document.getElementById('reviewTableBody').innerHTML = '<tr><td colspan="14" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>';
+  document.getElementById('reviewTableBody').innerHTML = '<tr><td colspan="24" class="empty-state"><p>데이터를 불러오는 중...</p></td></tr>';
   clearReviewFilters();
   setupReviewIgvPane(orderId);
   reviewLiftoverByKey = {};
   reviewLiftoverPending = null;
   initReviewAssemblyToggle();
+
+  // Reset list filter
+  reviewListFilter = '';
+  setRvListFilter('');
 
   apiFetch('/api/orders/' + orderId + '/vcf_data').then(function(r) {
     if (!r.success) { showToast(r.error || '데이터를 불러올 수 없습니다.', 'error'); return; }
@@ -2062,6 +2989,17 @@ function openReview(orderId) {
     document.getElementById('reviewDlBtn').onclick = function() {
       window.open('/api/download/' + encodeURIComponent(r.sample_name) + '/txt', '_blank');
     };
+
+    // Update BL button count
+    var blBtn = document.getElementById('rvListBtn-blacklist');
+    if (blBtn) {
+      var blBadge = blBtn.querySelector('.vl-badge-blacklist');
+      if (blBadge) blBadge.textContent = 'BL';
+      blBtn.innerHTML = '<span class="vl-badge vl-badge-blacklist" style="margin:0 4px 0 0">BL</span>Blacklist'
+        + (r.blacklisted_count > 0 ? ' <span style="font-size:.72rem;font-weight:400">(' + r.blacklisted_count + ')</span>' : '');
+    }
+    var blInfo = document.getElementById('rvBlacklistInfo');
+    if (blInfo) blInfo.style.display = 'none';
 
     buildReviewHeader();
     populateReviewDropdowns();
@@ -2170,7 +3108,7 @@ function liftoverFor(row) {
 
 function buildReviewHeader() {
   var headRow = document.getElementById('reviewTableHead');
-  var html = '';
+  var html = '<th style="width:32px;padding:4px 2px" title="Whitelist / On-hold 상태"></th>';
   reviewColumns.forEach(function(c) {
     var label = colLabels[c] || c;
     html += '<th data-col="' + c + '" onclick="sortReview(\'' + c + '\')">' + label + '<span class="sort-arrow" id="rv-sort-' + c + '"></span></th>';
@@ -2219,6 +3157,14 @@ function applyReviewFilters() {
 
   var useHg19Filter = (reviewAssembly === 'hg19' && hg19ViewEnabled);
   reviewFilteredData = reviewAllData.filter(function(r) {
+    // List filter (whitelist / onhold quick-filter)
+    // BL 필터: blacklist만 표시. 그 외: blacklist 제외
+    if (reviewListFilter === 'blacklist') {
+      if ((r._list_tag || '') !== 'blacklist') return false;
+    } else {
+      if ((r._list_tag || '') === 'blacklist') return false;
+      if (reviewListFilter && (r._list_tag || '') !== reviewListFilter) return false;
+    }
     if (gene && (!r.GENE || r.GENE.toUpperCase().indexOf(gene) === -1)) return false;
     // chromosome / position filters operate on the currently displayed assembly
     var rowChrom = r.CHROM;
@@ -2310,7 +3256,17 @@ function renderReviewTable() {
     var chromHg38 = escapeHtml(r.CHROM || '');
     var posHg38 = escapeHtml(r.POS || '');
     var lift = useHg19 ? liftoverFor(r) : null;
-    html += '<tr class="variant-row" data-idx="' + idx + '" data-chrom="' + chromHg38 + '" data-pos="' + posHg38 + '" onclick="onVariantRowClick(this)">';
+    var listTag = r._list_tag || '';
+    var rowClass = 'variant-row';
+    if (listTag === 'whitelist') rowClass += ' vl-row-whitelist';
+    else if (listTag === 'onhold') rowClass += ' vl-row-onhold';
+    else if (listTag === 'blacklist') rowClass += ' vl-row-blacklist';
+    html += '<tr class="' + rowClass + '" data-idx="' + idx + '" data-chrom="' + chromHg38 + '" data-pos="' + posHg38 + '" onclick="onVariantRowClick(this)">';
+    // Leading list-badge cell (always present for alignment)
+    var badgeHtml = '';
+    if (listTag === 'whitelist') badgeHtml = '<span class="vl-badge vl-badge-whitelist" title="Whitelist">WL</span>';
+    else if (listTag === 'onhold') badgeHtml = '<span class="vl-badge vl-badge-onhold" title="On-hold">OH</span>';
+    html += '<td style="white-space:nowrap;padding-right:2px;min-width:32px">' + badgeHtml + '</td>';
     reviewColumns.forEach(function(c) {
       var val = escapeHtml(r[c] || '');
       var cls = '';
@@ -2332,6 +3288,16 @@ function renderReviewTable() {
           cls = ' class="cell-pos19-na"';
           val = 'n/a';
           titleVal = 'hg19로 liftover 실패 (hg38: ' + (r.POS || '') + ')';
+        }
+      } else if (c === 'HGVS_G' && useHg19) {
+        if (lift && lift.ok) {
+          var nc19 = NC_HG19[r.CHROM] || '';
+          val = nc19 ? escapeHtml(nc19 + ':g.' + lift.pos19 + (r.REF||'') + '>' + (r.ALT||'')) : 'n/a';
+          titleVal = 'hg38: ' + (r.HGVS_G || '') + ' → hg19: ' + val;
+        } else {
+          cls = ' class="cell-pos19-na"';
+          val = 'n/a';
+          titleVal = 'hg19로 liftover 실패';
         }
       } else if (c === 'GENE') cls = ' class="cell-gene"';
       else if (c === 'EFFECT') { cls = ' class="cell-effect"'; val = val.replace(/_/g, ' '); }
@@ -2417,6 +3383,27 @@ function kpiClass(val, goodThresh, warnThresh, higherIsBetter) {
 
 function renderQCSummary(d) {
   var html = '';
+
+  // Subsampling notice (shown when analysis was subsampled)
+  if (d.subsample_info && d.subsample_info.enabled) {
+    var si = d.subsample_info;
+    html += '<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:10px 14px;'
+      + 'background:rgba(var(--orange-rgb,235,151,0),0.12);border:1px solid rgba(var(--orange-rgb,235,151,0),0.35);'
+      + 'border-radius:8px;margin-bottom:4px;">'
+      + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--orange,#eb9700)" stroke-width="2.5">'
+      + '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>'
+      + '<line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+      + '<div>'
+      + '<span style="font-weight:600;font-size:.82rem;color:var(--orange,#eb9700)">서브샘플링 적용됨</span>'
+      + '<span style="font-size:.78rem;color:var(--text-muted);margin-left:12px">'
+      + '원본 ' + si.total_gb + ' GB (R1 ' + si.r1_gb + ' + R2 ' + si.r2_gb + ' GB) → '
+      + '목표 ' + (si.target_reads / 1e6).toFixed(0) + 'M reads'
+      + ' &nbsp;·&nbsp; 임계값 ' + si.threshold_gb + ' GB'
+      + ' &nbsp;·&nbsp; seed ' + si.seed
+      + '</span>'
+      + '</div></div>';
+  }
+
   var hs = d.hs_metrics_umi_deduped || d.hs_metrics_aligned || {};
   var dup = d.duplicates || {};
   var fastp = d.fastp || {};
@@ -2810,6 +3797,7 @@ function openCreateModal() {
 
 function openEditModal(orderId) {
   editingOrderId = orderId;
+  editingOrderLongitudinal = false;
   document.getElementById('createModalTitle').textContent = '오더 수정';
   document.getElementById('createModalSubmitText').textContent = '저장';
   document.getElementById('createModal').classList.add('open');
@@ -2830,6 +3818,8 @@ function openEditModal(orderId) {
     document.getElementById('ord-af_threshold').value = o.af_threshold || 0.005;
     document.getElementById('ord-bed_file').value = o.bed_file || '';
     document.getElementById('ord-delete_intermediate').checked = o.delete_intermediate === 'Y';
+    var useUmiSel = document.getElementById('ord-use_umi');
+    if (useUmiSel) useUmiSel.value = o.use_umi || '';
 
     selectedFastq = { name: o.sample_name, r1: o.r1_fastq, r2: o.r2_fastq };
 
@@ -2841,7 +3831,12 @@ function openEditModal(orderId) {
     }
     loadFastqFiles(currentFastqPath);
 
-    if (longitudinalEnabled && o.order_type === 'longitudinal') {
+    if (o.order_type === 'longitudinal') {
+      editingOrderLongitudinal = true;
+      var ots = document.getElementById('orderTypeSection');
+      if (ots) ots.style.display = 'block';
+      var bL = document.getElementById('ordBtnTypeLongit');
+      if (bL) bL.style.display = '';
       currentOrderType = 'longitudinal';
       document.querySelectorAll('.order-type-btn').forEach(function(b) {
         b.classList.toggle('active', b.dataset.type === 'longitudinal');
@@ -2879,6 +3874,8 @@ function openEditModal(orderId) {
 
 function closeCreateModal() {
   editingOrderId = null;
+  editingOrderLongitudinal = false;
+  applyLongitudinalUIVisibility();
   document.getElementById('createModal').classList.remove('open');
 }
 
@@ -2888,6 +3885,8 @@ function resetOrderForm() {
   document.getElementById('ord-bed_file').value = '';
   document.getElementById('ord-reference').value = 'hg38';
   document.getElementById('ord-delete_intermediate').checked = true;
+  var useUmiSel = document.getElementById('ord-use_umi');
+  if (useUmiSel) useUmiSel.value = '';
   document.getElementById('bedBrowserSection').style.display = 'none';
   currentOrderType = 'baseline';
   document.querySelectorAll('.order-type-btn').forEach(function(b) {
@@ -2900,7 +3899,9 @@ function resetOrderForm() {
   if (fr) fr.checked = true;
   var rsel = document.getElementById('ord-reuse_work_order_id');
   if (rsel) rsel.value = '';
+  editingOrderLongitudinal = false;
   onLongitInputModeChange();
+  applyLongitudinalUIVisibility();
 }
 
 function loadDefaultSettings() {
@@ -2951,6 +3952,7 @@ function submitOrder() {
     af_threshold: parseFloat(document.getElementById('ord-af_threshold').value) || 0.005,
     bed_file: document.getElementById('ord-bed_file').value,
     delete_intermediate: document.getElementById('ord-delete_intermediate').checked ? 'Y' : 'N',
+    use_umi: (document.getElementById('ord-use_umi') ? document.getElementById('ord-use_umi').value : ''),
     order_type: currentOrderType
   };
 
@@ -3117,14 +4119,44 @@ function selectBedFile(path) {
 /* ================================================================
    SETTINGS
    ================================================================ */
+// Font-size preference (작게/보통/크게)
+function setFontSize(size) {
+  document.documentElement.setAttribute('data-fs', size);
+  localStorage.setItem('fs', size);
+  ['sm','md','lg'].forEach(function(s) {
+    var b = document.getElementById('fsBtn-' + s);
+    if (b) b.classList.toggle('active', s === size);
+  });
+}
+function initFontSize() {
+  var saved = localStorage.getItem('fs') || 'md';
+  setFontSize(saved);
+}
+
+function toggleSubsampleOptions() {
+  var cb = document.getElementById('set-enable_subsampling');
+  var opts = document.getElementById('subsample-options');
+  if (opts) opts.style.display = (cb && cb.checked) ? 'block' : 'none';
+}
+
+function toggleUmiOptions() {
+  var cb = document.getElementById('set-enable_umi');
+  var opts = document.getElementById('umi-options');
+  var consensusSec = document.getElementById('consensus-filter-section');
+  var on = !!(cb && cb.checked);
+  if (opts) opts.style.display = on ? 'block' : 'none';
+  // Consensus Read Filtering only applies in UMI mode
+  if (consensusSec) consensusSec.style.display = on ? 'block' : 'none';
+}
+
 function loadSettings() {
   var isAdm = currentUser && currentUser.role === 'admin';
-  var saveBtn = document.getElementById('settingsSaveBtn');
   var note = document.getElementById('settingsAdminNote');
-  if (saveBtn) {
-    saveBtn.style.display = isAdm ? 'inline-flex' : 'none';
-  }
   if (note) note.style.display = isAdm ? 'none' : 'block';
+  // Per-tab save buttons: show only for admin
+  document.querySelectorAll('.settings-save-btn').forEach(function(btn) {
+    btn.style.display = isAdm ? '' : 'none';
+  });
   apiFetch('/api/settings').then(function(s) {
     if (s.max_concurrent_samples !== undefined) document.getElementById('set-max_concurrent_samples').value = s.max_concurrent_samples;
     if (s.max_cpus !== undefined) document.getElementById('set-max_cpus').value = s.max_cpus;
@@ -3132,8 +4164,36 @@ function loadSettings() {
     document.getElementById('set-default_reference').value = 'hg38';
     if (s.default_af_threshold !== undefined) document.getElementById('set-default_af_threshold').value = s.default_af_threshold;
     document.getElementById('set-delete_intermediate').checked = s.delete_intermediate === 'Y';
+    var lcb = document.getElementById('set-longitudinal_enabled');
+    if (lcb) {
+      lcb.checked = s.longitudinal_enabled === undefined
+        ? true
+        : (s.longitudinal_enabled === 'true' || s.longitudinal_enabled === true);
+      longitudinalEnabled = lcb.checked;
+    }
+    applyLongitudinalUIVisibility();
     if (s.fastq_host_dir) document.getElementById('set-fastq_host_dir').value = s.fastq_host_dir;
     if (s.bed_host_dir) document.getElementById('set-bed_host_dir').value = s.bed_host_dir;
+    // Select Reporter params
+    var srKeys = ['sr_germline_cutoff','sr_min_af','sr_max_af','sr_min_dp','sr_min_vd','sr_min_mq','sr_min_qual','sr_min_sbf','sr_max_nm'];
+    srKeys.forEach(function(k) { if (s[k] !== undefined) { var el = document.getElementById('set-' + k); if(el) el.value = s[k]; } });
+    // Longitudinal Analysis params
+    var laKeys = ['la_reads_threshold','la_pvalue_threshold','la_vaf_threshold','la_n_sim','la_blist_type'];
+    laKeys.forEach(function(k) { if (s[k] !== undefined) { var el = document.getElementById('set-' + k); if(el) el.value = s[k]; } });
+    // Baseline params
+    var blKeys = ['umi_read_structure','seqtk_sample_size','seqtk_seed','subsample_threshold_gb','fastp_options','min_reads','min_base_quality','max_read_error_rate','max_base_error_rate','max_no_call_fraction'];
+    blKeys.forEach(function(k) { if (s[k] !== undefined) { var el = document.getElementById('set-' + k); if(el) el.value = s[k]; } });
+    var umiCb = document.getElementById('set-enable_umi');
+    if (umiCb) {
+      // Default to true if not explicitly set to 'false'
+      umiCb.checked = (s.enable_umi === undefined) ? true : (s.enable_umi === 'true' || s.enable_umi === true);
+      toggleUmiOptions();
+    }
+    var subCb = document.getElementById('set-enable_subsampling');
+    if (subCb) {
+      subCb.checked = (s.enable_subsampling === 'true' || s.enable_subsampling === true);
+      toggleSubsampleOptions();
+    }
   }).catch(function() { showToast('설정을 불러올 수 없습니다.', 'error'); });
   loadResourceInfo();
 }
@@ -3184,9 +4244,26 @@ function saveSettings() {
     default_reference: 'hg38',
     default_af_threshold: document.getElementById('set-default_af_threshold').value,
     delete_intermediate: document.getElementById('set-delete_intermediate').checked ? 'Y' : 'N',
+    longitudinal_enabled: (document.getElementById('set-longitudinal_enabled') && document.getElementById('set-longitudinal_enabled').checked) ? 'true' : 'false',
     fastq_host_dir: document.getElementById('set-fastq_host_dir').value.trim(),
     bed_host_dir: document.getElementById('set-bed_host_dir').value.trim()
   };
+  // Select Reporter params
+  ['sr_germline_cutoff','sr_min_af','sr_max_af','sr_min_dp','sr_min_vd','sr_min_mq','sr_min_qual','sr_min_sbf','sr_max_nm'].forEach(function(k){
+    var el = document.getElementById('set-' + k); if(el) data[k] = el.value;
+  });
+  // Longitudinal Analysis params
+  ['la_reads_threshold','la_pvalue_threshold','la_vaf_threshold','la_n_sim','la_blist_type'].forEach(function(k){
+    var el = document.getElementById('set-' + k); if(el) data[k] = el.value;
+  });
+  // Baseline params
+  ['umi_read_structure','seqtk_sample_size','seqtk_seed','subsample_threshold_gb','fastp_options','min_reads','min_base_quality','max_read_error_rate','max_base_error_rate','max_no_call_fraction'].forEach(function(k){
+    var el = document.getElementById('set-' + k); if(el) data[k] = el.value;
+  });
+  var umiCb = document.getElementById('set-enable_umi');
+  if (umiCb) data['enable_umi'] = umiCb.checked ? 'true' : 'false';
+  var subCb = document.getElementById('set-enable_subsampling');
+  if (subCb) data['enable_subsampling'] = subCb.checked ? 'true' : 'false';
 
   apiFetch('/api/settings', {
     method: 'POST',
@@ -3195,6 +4272,10 @@ function saveSettings() {
   }).then(function(r) {
     if (r.success) {
       showToast('설정이 저장되었습니다.', 'success');
+      var lcb2 = document.getElementById('set-longitudinal_enabled');
+      if (lcb2) longitudinalEnabled = lcb2.checked;
+      applyLongitudinalUIVisibility();
+      if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) { renderOrderTable(); }
       loadResourceInfo();
       if (r.restart_needed) {
         setTimeout(function() { showToast('리소스/디렉토리 변경은 즉시 적용됩니다. (.env에도 저장됨)', 'info'); }, 500);
@@ -3209,11 +4290,12 @@ function saveSettings() {
 function checkFeatures() {
   apiFetch('/api/features').then(function(f) {
     longitudinalEnabled = !!f.longitudinal;
-    igvEnabled = !!f.igv;
     hg19ViewEnabled = !!f.hg19_view;
     hg19ChainMissing = !!f.hg19_chain_missing;
-    var sec = document.getElementById('orderTypeSection');
-    if (sec) sec.style.display = longitudinalEnabled ? 'block' : 'none';
+    applyLongitudinalUIVisibility();
+    if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) {
+      renderOrderTable();
+    }
     var tg = document.getElementById('assemblyToggleGroup');
     var tgSep = document.getElementById('assemblyToggleSep');
     if (tg) tg.style.display = hg19ViewEnabled ? 'flex' : 'none';
@@ -3223,6 +4305,47 @@ function checkFeatures() {
                    '/roche_nxt/data/liftover/hg38ToHg19.over.chain.gz');
     }
   }).catch(function() {});
+}
+
+function applyLongitudinalUIVisibility() {
+  var on = longitudinalEnabled;
+  // Longitudinal settings section (inside tab)
+  var sec = document.getElementById('longitudinal-settings-section');
+  if (sec) sec.style.display = on ? '' : 'none';
+  // Longitudinal settings tab button
+  var lgTabBtn = document.getElementById('setupTabLongitudinal');
+  if (lgTabBtn) {
+    if (on) {
+      lgTabBtn.classList.remove('tab-disabled');
+      lgTabBtn.title = '';
+    } else {
+      lgTabBtn.classList.add('tab-disabled');
+      lgTabBtn.title = 'Longitudinal 분석이 비활성화되어 있습니다.';
+      // If currently on longitudinal tab, switch to general
+      if (_currentSetupTab === 'longitudinal') {
+        switchSetupTab('general', null);
+      }
+    }
+  }
+  // Order form: show/hide longitudinal order type button
+  var ots = document.getElementById('orderTypeSection');
+  var bLong = document.getElementById('ordBtnTypeLongit');
+  var showOT = on || editingOrderLongitudinal;
+  if (ots) ots.style.display = showOT ? 'block' : 'none';
+  if (bLong) bLong.style.display = (on || editingOrderLongitudinal) ? '' : 'none';
+  if (!on && !editingOrderLongitudinal) {
+    var lr = document.getElementById('longitRefSection');
+    if (lr) lr.style.display = 'none';
+  }
+}
+
+function onLongitudinalSettingToggle() {
+  var lcb = document.getElementById('set-longitudinal_enabled');
+  if (lcb) longitudinalEnabled = !!lcb.checked;
+  applyLongitudinalUIVisibility();
+  if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) {
+    renderOrderTable();
+  }
 }
 
 function setOrderType(type, btn) {
@@ -3325,18 +4448,146 @@ function onBaselineSelected() {
    LONGITUDINAL — RESULT VIEWER
    ================================================================ */
 function openLongit(orderId) {
-  document.getElementById('longitOverlay').classList.add('open');
-  document.getElementById('longitBody').innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:40px">데이터를 불러오는 중...</p>';
   apiFetch('/api/orders/' + orderId + '/longitudinal_data').then(function(d) {
-    if (!d.success) { document.getElementById('longitBody').innerHTML = '<p style="text-align:center;color:var(--red);padding:40px">' + escapeHtml(d.error || 'Error') + '</p>'; return; }
+    if (!d.success) {
+      showToast(d.error || 'Longitudinal 데이터를 불러올 수 없습니다.', 'error');
+      return;
+    }
+    // Prior followup이 없으면 시계열 비교 불가 — 모달 표시하지 않음
+    if (!d.prior_followups || d.prior_followups.length === 0) {
+      showToast('이전 Followup 결과가 없어 시계열 VAF 비교를 표시할 수 없습니다.', 'info');
+      return;
+    }
+    document.getElementById('longitOverlay').classList.add('open');
+    document.getElementById('longitBody').innerHTML = '';
     renderLongitResult(d);
   }).catch(function() {
-    document.getElementById('longitBody').innerHTML = '<p style="text-align:center;color:var(--red);padding:40px">데이터를 불러올 수 없습니다.</p>';
+    showToast('Longitudinal 데이터를 불러올 수 없습니다.', 'error');
   });
 }
 
 function closeLongit() {
   document.getElementById('longitOverlay').classList.remove('open');
+}
+
+/* ================================================================
+   LONGITUDINAL — PROMOTE COMPLETED ORDER (Case 2)
+   ================================================================ */
+var promoteLongitTargetId = null;
+var promoteLongitCompletedOrders = [];
+
+function openPromoteLongitModal(orderId) {
+  if (!longitudinalEnabled) {
+    showToast('Longitudinal 기능이 비활성화되어 있습니다.', 'error');
+    return;
+  }
+  promoteLongitTargetId = orderId;
+  document.getElementById('promoteLongitOverlay').classList.add('open');
+  document.getElementById('promote-baseline-select').innerHTML = '<option value="">-- Baseline 오더 선택 --</option>';
+  document.getElementById('promote-germline-select').innerHTML = '<option value="">-- Germline 오더 선택 --</option>';
+  document.getElementById('promote-followup-list').innerHTML =
+    '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">완료된 오더 목록을 불러오는 중...</div>';
+
+  apiFetch('/api/orders/' + orderId).then(function(o) {
+    if (!o || o.error) {
+      document.getElementById('promoteLongitTargetInfo').textContent = orderId;
+    } else {
+      document.getElementById('promoteLongitTargetInfo').innerHTML =
+        '<strong>' + escapeHtml(o.order_name || o.sample_name) + '</strong> · '
+        + escapeHtml(o.sample_name || '') + ' · '
+        + escapeHtml(o.patient_name || '');
+    }
+  }).catch(function() {
+    document.getElementById('promoteLongitTargetInfo').textContent = orderId;
+  });
+
+  apiFetch('/api/orders/completed_list').then(function(list) {
+    promoteLongitCompletedOrders = (list || []).filter(function(o) { return o.id !== orderId; });
+    var optsHtml = promoteLongitCompletedOrders.map(function(o) {
+      var label = (o.order_name || o.sample_name) + ' — ' + o.sample_name
+                + (o.patient_name ? ' (' + o.patient_name + ')' : '')
+                + (o.order_type === 'longitudinal' ? ' [L]' : '');
+      return '<option value="' + escapeHtml(o.id) + '">' + escapeHtml(label) + '</option>';
+    }).join('');
+    document.getElementById('promote-baseline-select').innerHTML =
+      '<option value="">-- Baseline 오더 선택 --</option>' + optsHtml;
+    document.getElementById('promote-germline-select').innerHTML =
+      '<option value="">-- Germline 오더 선택 --</option>' + optsHtml;
+
+    if (promoteLongitCompletedOrders.length === 0) {
+      document.getElementById('promote-followup-list').innerHTML =
+        '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:.85rem">선택할 수 있는 완료 오더가 없습니다.</div>';
+    } else {
+      document.getElementById('promote-followup-list').innerHTML =
+        promoteLongitCompletedOrders.map(function(o) {
+          var label = (o.order_name || o.sample_name) + ' — ' + o.sample_name
+                    + (o.patient_name ? ' (' + o.patient_name + ')' : '');
+          return '<div class="longit-followup-item">'
+               +   '<label><input type="checkbox" value="' + escapeHtml(o.id) + '"> '
+               +     escapeHtml(label)
+               +   '</label>'
+               + '</div>';
+        }).join('');
+    }
+  }).catch(function() {
+    document.getElementById('promote-followup-list').innerHTML =
+      '<div style="padding:12px;text-align:center;color:var(--red);font-size:.85rem">목록을 불러올 수 없습니다.</div>';
+  });
+}
+
+function closePromoteLongitModal() {
+  document.getElementById('promoteLongitOverlay').classList.remove('open');
+  promoteLongitTargetId = null;
+  promoteLongitCompletedOrders = [];
+}
+
+function submitPromoteToLongitudinal() {
+  if (!promoteLongitTargetId) return;
+  var blId = document.getElementById('promote-baseline-select').value;
+  var glId = document.getElementById('promote-germline-select').value;
+  if (!blId) { showToast('Baseline 오더를 선택해주세요.', 'error'); return; }
+  if (!glId) { showToast('Germline 오더를 선택해주세요.', 'error'); return; }
+  if (blId === promoteLongitTargetId || glId === promoteLongitTargetId) {
+    showToast('Baseline/Germline 오더는 변환 대상 오더 자신일 수 없습니다.', 'error');
+    return;
+  }
+  if (blId === glId) {
+    showToast('Baseline 오더와 Germline 오더는 서로 달라야 합니다.', 'error');
+    return;
+  }
+
+  var fuIds = [];
+  document.querySelectorAll('#promote-followup-list input[type="checkbox"]:checked').forEach(function(cb) {
+    if (cb.value && cb.value !== promoteLongitTargetId) fuIds.push(cb.value);
+  });
+
+  var btn = document.getElementById('promoteLongitConfirmBtn');
+  btn.disabled = true; btn.textContent = '변환 중...';
+
+  apiFetch('/api/orders/' + promoteLongitTargetId + '/promote_to_longitudinal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      baseline_order_id: blId,
+      germline_order_id: glId,
+      followup_order_ids: fuIds
+    })
+  }).then(function(res) {
+    btn.disabled = false; btn.textContent = '변환 후 분석 시작';
+    if (res.success) {
+      showToast(res.message || 'Longitudinal로 변환되어 재실행이 시작되었습니다.', 'success');
+      if (res.warning) {
+        setTimeout(function() { showToast('⚠ ' + res.warning, 'error'); }, 1500);
+      }
+      closePromoteLongitModal();
+      if (typeof loadOrders === 'function') loadOrders();
+    } else {
+      showToast(res.error || '변환에 실패했습니다.', 'error');
+    }
+  }).catch(function(e) {
+    btn.disabled = false; btn.textContent = '변환 후 분석 시작';
+    showToast(e.message || '변환에 실패했습니다.', 'error');
+  });
 }
 
 function renderLongitResult(d) {
@@ -3764,6 +5015,7 @@ function onVariantRowClick(tr) {
    INIT
    ================================================================ */
 (function init() {
+  initFontSize();
   updateClock();
   setInterval(updateClock, 1000);
   bootstrapSession();

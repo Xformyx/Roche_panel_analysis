@@ -93,10 +93,11 @@ LICENSE_META = {
     "dev_mode": bool(_LICENSE_INFO.get("dev_mode")),
 }
 
-# Backwards-compatible aliases so existing call sites keep working. They are
-# thin views over FEATURES and are not mutated anywhere.
-ENABLE_LONGITUDINAL = FEATURES["longitudinal"]
-ENABLE_IGV = FEATURES["igv"]
+# Backwards-compatible aliases so existing call sites keep working.
+# IGV is always a base feature; Longitudinal UI/API is gated by settings
+# (longitudinal_enabled), but pipeline can still run existing L jobs.
+ENABLE_LONGITUDINAL = True
+ENABLE_IGV = True
 ENABLE_HG19_VIEW = FEATURES["hg19_view"]
 
 # ---------------------------------------------------------------------------
@@ -230,6 +231,20 @@ def init_db():
         created_at           TEXT,
         created_by           TEXT DEFAULT ''
     );
+    CREATE TABLE IF NOT EXISTS variant_lists (
+        id          TEXT PRIMARY KEY,
+        list_type   TEXT NOT NULL,   -- 'blacklist' | 'whitelist' | 'onhold'
+        entry_type  TEXT NOT NULL DEFAULT 'position',  -- 'cnumber' | 'position'
+        cnumber     TEXT DEFAULT '',
+        chrom       TEXT DEFAULT '',
+        pos         INTEGER DEFAULT 0,
+        ref         TEXT DEFAULT '',
+        alt         TEXT DEFAULT '',
+        gene        TEXT DEFAULT '',
+        note        TEXT DEFAULT '',
+        created_at  TEXT,
+        updated_at  TEXT
+    );
     """)
     for col, coldef in [
         ("order_type", "TEXT DEFAULT 'baseline'"),
@@ -239,9 +254,21 @@ def init_db():
         ("reuse_work_order_id", "TEXT DEFAULT ''"),
         ("created_by_user_id", "TEXT DEFAULT ''"),
         ("analysis_by_user_id", "TEXT DEFAULT ''"),
+        ("subsample_info", "TEXT DEFAULT ''"),
+        ("use_umi", "TEXT DEFAULT ''"),
     ]:
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col} {coldef}")
+        except sqlite3.OperationalError:
+            pass
+
+    # variant_lists migrations
+    for col, coldef in [
+        ("category", "TEXT DEFAULT ''"),
+        ("ratio",    "TEXT DEFAULT ''"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE variant_lists ADD COLUMN {col} {coldef}")
         except sqlite3.OperationalError:
             pass
 
@@ -375,6 +402,12 @@ def get_setting(key, default=""):
     db = get_db()
     row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
+
+
+def longitudinal_feature_enabled():
+    """Settings → 일반: Longitudinal 분석 사용 여부 (신규 L 오더·변환·API)."""
+    lo = get_all_settings().get("longitudinal_enabled", "true")
+    return str(lo).lower() in ("true", "1", "yes", "on")
 
 
 def docker_container_status(container_name, retries=3):
@@ -517,16 +550,35 @@ def purge_order_disk_assets(order):
     order_id = order["id"]
     sample = order["sample_name"]
     reuse_wid = (order.get("reuse_work_order_id") or "").strip()
+
     dir_candidates = [
         os.path.join(BASE_DIR, "work", order_id),
         os.path.join(BASE_DIR, "work", ".nxf_home", order_id),
         os.path.join(FASTQ_DIR, order_id),
     ]
-    # Longitudinal "reuse work" orders share work/{reuse_id} and results/{sample}; do not delete those trees.
-    if not reuse_wid:
+
+    # Guard: only delete results/{sample} when no other order shares the same sample_name.
+    # This protects a completed baseline/followup's results when a Longitudinal companion
+    # order (Case 2 promote, or reuse-mode Case 1 where sample_name was inherited) is deleted.
+    def _other_order_uses_sample(sample_name, exclude_id):
+        try:
+            db = get_db()
+            row = db.execute(
+                "SELECT id FROM orders WHERE sample_name=? AND id!=? LIMIT 1",
+                (sample_name, exclude_id),
+            ).fetchone()
+            return row is not None
+        except Exception:
+            return True  # err on the safe side
+
+    can_delete_results = (
+        not reuse_wid
+        and not _other_order_uses_sample(sample, order_id)
+    )
+    if can_delete_results:
         dir_candidates.append(os.path.join(RESULTS_DIR, sample))
     nfwd = (order.get("nf_work_dir") or "").strip()
-    if nfwd and not reuse_wid:
+    if nfwd and can_delete_results:
         dir_candidates.append(nfwd)
 
     seen_real = set()
@@ -555,7 +607,7 @@ def purge_order_disk_assets(order):
             pass
 
 
-def start_analysis(order, force=False, resume=True, started_by_user_id=None):
+def start_analysis(order, force=False, resume=True, started_by_user_id=None, extra_nf_params=None):
     """Start a Nextflow analysis via docker run roche_nxt_analysis."""
     db = get_db()
     now = datetime.now().isoformat()
@@ -630,7 +682,10 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None):
         work_dir_rel = f"work/{order_id}"
         nxf_home_rel = f"work/.nxf_home/{order_id}"
 
-    run_name = f"run_{sample}_{order_id}"
+    # Always generate a fresh timestamped run name to avoid "already used" collisions.
+    # Nextflow -resume finds the cache from the work-dir, not from the run name.
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    run_name = f"run_{sample}_{order_id[:8]}_{ts}"
 
     os.makedirs(os.path.join(BASE_DIR, work_dir_rel), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, nxf_home_rel), exist_ok=True)
@@ -640,8 +695,64 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None):
     af = order.get("af_threshold") or 0.005
     ref = "hg38"
 
+    # Read baseline params from settings DB (fallback to nextflow.config defaults)
+    settings = get_all_settings()
+    bl_seqtk_size    = settings.get("seqtk_sample_size",    "40000000")
+    bl_seqtk_seed    = settings.get("seqtk_seed",           "12345")
+    bl_fastp_options = settings.get("fastp_options",         "-g -W 5 -q 20 -u 40 -x -3 -l 75 -c")
+    bl_min_reads     = settings.get("min_reads",             "1")
+    bl_min_bq        = settings.get("min_base_quality",      "20")
+    bl_max_rer       = settings.get("max_read_error_rate",   "0.025")
+    bl_max_ber       = settings.get("max_base_error_rate",   "0.1")
+    bl_max_ncf       = settings.get("max_no_call_fraction",  "0.1")
+
+    # ── Subsampling: check FASTQ file sizes ──────────────────────────────────
+    enable_sub = settings.get("enable_subsampling", "false").lower() in ("true", "1", "yes")
+    sub_threshold_gb = float(settings.get("subsample_threshold_gb", "20") or "20")
+    do_subsample = False
+    subsample_info_dict = {}
+    if enable_sub:
+        fastq_base = FASTQ_SOURCE_DIR if os.path.isdir(FASTQ_SOURCE_DIR) else FASTQ_DIR
+        r1_path_host = os.path.join(fastq_base, order["r1_fastq"])
+        r2_path_host = os.path.join(fastq_base, order["r2_fastq"])
+        try:
+            r1_bytes = os.path.getsize(r1_path_host) if os.path.isfile(r1_path_host) else 0
+            r2_bytes = os.path.getsize(r2_path_host) if os.path.isfile(r2_path_host) else 0
+            total_gb = (r1_bytes + r2_bytes) / 1e9
+            if total_gb >= sub_threshold_gb:
+                do_subsample = True
+                subsample_info_dict = {
+                    "enabled": True,
+                    "r1_gb": round(r1_bytes / 1e9, 2),
+                    "r2_gb": round(r2_bytes / 1e9, 2),
+                    "total_gb": round(total_gb, 2),
+                    "threshold_gb": sub_threshold_gb,
+                    "target_reads": int(bl_seqtk_size),
+                    "seed": int(bl_seqtk_seed),
+                }
+        except OSError:
+            pass
+    # Persist subsample_info in order record
+    sub_info_json = json.dumps(subsample_info_dict) if subsample_info_dict else ""
+    db.execute(
+        "UPDATE orders SET subsample_info=? WHERE id=?",
+        (sub_info_json, order_id),
+    )
+    db.commit()
+
     uid_gid = subprocess.run(["id", "-u"], capture_output=True, text=True).stdout.strip()
     gid = subprocess.run(["id", "-g"], capture_output=True, text=True).stdout.strip()
+
+    # UMI mode resolution: per-order override > global setting (default true)
+    enable_umi_global = settings.get("enable_umi", "true").lower() in ("true", "1", "yes")
+    order_use_umi = (order.get("use_umi") or "").strip().upper()
+    if order_use_umi == "Y":
+        use_umi_flag = True
+    elif order_use_umi == "N":
+        use_umi_flag = False
+    else:
+        use_umi_flag = enable_umi_global
+    umi_structure = settings.get("umi_read_structure", "3M3S+T 3M3S+T")
 
     nf_cmd = [
         "nextflow", "run", "/work_nxt/main.nf",
@@ -649,12 +760,24 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None):
         "-name", run_name,
         "-work-dir", f"/work_nxt/{work_dir_rel}",
         "--input", ss_container_path,
-        # Per-sample paths come from publishDir: ${params.outdir}/${sample_id}/...
-        # Use results root so outputs land in results/<sample_id>/output, not results/<sample>/<sample>/...
         "--outdir", "/work_nxt/results",
         "--reference", ref,
         "--af_threshold", str(af),
         "--data_dir", "/work_nxt_data",
+        # UMI mode
+        "--use_umi",            "true" if use_umi_flag else "false",
+        "--umi_read_structure", umi_structure,
+        # Subsampling flag (determined by file-size check above)
+        "--subsample", "true" if do_subsample else "false",
+        # Baseline params from settings DB
+        "--seqtk_sample_size",    bl_seqtk_size,
+        "--seqtk_seed",           bl_seqtk_seed,
+        "--fastp_options",        bl_fastp_options,
+        "--min_reads",            bl_min_reads,
+        "--min_base_quality",     bl_min_bq,
+        "--max_read_error_rate",  bl_max_rer,
+        "--max_base_error_rate",  bl_max_ber,
+        "--max_no_call_fraction", bl_max_ncf,
     ]
 
     if resume and not force:
@@ -669,6 +792,77 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None):
 
     if order.get("order_type") == "longitudinal":
         nf_cmd.extend(["--run_select_reporter", "true", "--run_longitudinal", "true"])
+
+        # Select Reporter parameters from settings DB
+        settings = get_all_settings()
+        nf_cmd.extend([
+            "--sr_germline_cutoff", str(settings.get("sr_germline_cutoff", "0.005")),
+            "--sr_min_af",          str(settings.get("sr_min_af",          "0.005")),
+            "--sr_max_af",          str(settings.get("sr_max_af",          "0.35")),
+            "--sr_min_dp",          str(settings.get("sr_min_dp",          "1000")),
+            "--sr_min_vd",          str(settings.get("sr_min_vd",          "15")),
+            "--sr_min_mq",          str(settings.get("sr_min_mq",          "55")),
+            "--sr_min_qual",        str(settings.get("sr_min_qual",        "45")),
+            "--sr_min_sbf",         str(settings.get("sr_min_sbf",         "1e-05")),
+            "--sr_max_nm",          str(settings.get("sr_max_nm",          "4")),
+            "--la_reads_threshold", str(settings.get("la_reads_threshold", "1000")),
+            "--la_pvalue_threshold",str(settings.get("la_pvalue_threshold","0.001")),
+            "--la_vaf_threshold",   str(settings.get("la_vaf_threshold",   "0.1")),
+            "--la_n_sim",           str(settings.get("la_n_sim",           "10000")),
+            "--la_blist_type",      str(settings.get("la_blist_type",      "variant")),
+        ])
+
+        # Pass Baseline VCF and Germline BAM paths so SELECT_REPORTERS uses
+        # the correct cross-sample inputs (not the Followup's own data).
+        baseline_id = (order.get("baseline_order_id") or "").strip()
+        germline_id = (order.get("germline_order_id") or "").strip()
+
+        if baseline_id and germline_id:
+            db_conn = get_db()
+            baseline_row = db_conn.execute("SELECT sample_name FROM orders WHERE id=?", (baseline_id,)).fetchone()
+            germline_row = db_conn.execute("SELECT sample_name FROM orders WHERE id=?", (germline_id,)).fetchone()
+
+            if baseline_row and germline_row:
+                bl_sample = baseline_row["sample_name"]
+                gm_sample = germline_row["sample_name"]
+
+                results_rel = os.path.relpath(RESULTS_DIR, BASE_DIR)
+
+                # Baseline annotated VCF txt
+                bl_ann_host = os.path.join(RESULTS_DIR, bl_sample, "output", f"{bl_sample}_vardict_annotated_vcf.txt")
+                if not os.path.isfile(bl_ann_host):
+                    import glob as _glob2
+                    bl_candidates = _glob2.glob(os.path.join(RESULTS_DIR, bl_sample, "output", "**", f"{bl_sample}_vardict_annotated_vcf.txt"), recursive=True)
+                    if bl_candidates:
+                        bl_ann_host = bl_candidates[0]
+                if os.path.isfile(bl_ann_host):
+                    bl_ann_container = f"/work_nxt/{os.path.relpath(bl_ann_host, BASE_DIR)}"
+                    nf_cmd.extend(["--longitudinal_baseline_ann_txt", bl_ann_container])
+
+                # Germline clipped_sorted BAM (prefer results/, fallback to work/)
+                gm_bam_host = os.path.join(RESULTS_DIR, gm_sample, "output", "bam", f"{gm_sample}_clipped_sorted.bam")
+                gm_bai_host = gm_bam_host + ".bai"
+                if not os.path.isfile(gm_bam_host):
+                    import glob as _glob3
+                    gm_candidates = _glob3.glob(os.path.join(BASE_DIR, "work", "**", f"{gm_sample}_clipped_sorted.bam"), recursive=True)
+                    # Prefer the actual file over symlinks
+                    gm_candidates_real = [p for p in gm_candidates if not os.path.islink(p)]
+                    if gm_candidates_real:
+                        gm_bam_host = gm_candidates_real[0]
+                        gm_bai_host = gm_bam_host[:-4] + ".bai"
+                    elif gm_candidates:
+                        gm_bam_host = os.path.realpath(gm_candidates[0])
+                        gm_bai_host = gm_bam_host[:-4] + ".bai"
+                if os.path.isfile(gm_bam_host):
+                    gm_bam_container = f"/work_nxt/{os.path.relpath(gm_bam_host, BASE_DIR)}"
+                    gm_bai_container = f"/work_nxt/{os.path.relpath(gm_bai_host, BASE_DIR)}"
+                    nf_cmd.extend([
+                        "--longitudinal_germline_bam", gm_bam_container,
+                        "--longitudinal_germline_bai", gm_bai_container,
+                    ])
+
+    if extra_nf_params:
+        nf_cmd.extend(extra_nf_params)
 
     docker_cmd = [
         "docker", "run", "-d",
@@ -879,6 +1073,56 @@ def api_admin_users_list():
     return jsonify({"success": True, "users": [dict_from_row(r) for r in rows]})
 
 
+DEFAULT_USER_PASSWORD = "user1234"
+
+
+@app.route("/api/admin/users/<user_id>/reset-password", methods=["POST"])
+def api_admin_users_reset_password(user_id):
+    """Admin-only: force-reset a general user's password.
+
+    The next login will be prompted to change the password (must_change_password=1).
+    To keep the attack surface small this endpoint refuses to:
+      - reset an admin's password (including the admin's own)
+      - reset a non-existent user
+    """
+    acting_uid = session.get("user_id")
+    if not is_admin_user(acting_uid):
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+
+    target_id = (user_id or "").strip()
+    if not target_id:
+        return jsonify({"success": False, "error": "사용자 ID가 필요합니다."}), 400
+
+    target = get_user_by_id(target_id)
+    if not target:
+        return jsonify({"success": False, "error": "존재하지 않는 사용자입니다."}), 404
+
+    if (target.get("role") or "") == "admin":
+        return jsonify({
+            "success": False,
+            "error": "관리자 계정의 비밀번호는 이 기능으로 초기화할 수 없습니다.",
+        }), 403
+
+    data = request.json or {}
+    new_pw = (data.get("new_password") or "").strip() or DEFAULT_USER_PASSWORD
+    if len(new_pw) < 4:
+        return jsonify({"success": False, "error": "비밀번호는 4자 이상이어야 합니다."}), 400
+
+    db = get_db()
+    db.execute(
+        "UPDATE users SET password_hash=?, must_change_password=1 WHERE id=?",
+        (generate_password_hash(new_pw), target_id),
+    )
+    db.commit()
+
+    return jsonify({
+        "success": True,
+        "user_id": target_id,
+        "temporary_password": new_pw,
+        "must_change_password": True,
+    })
+
+
 @app.route("/api/admin/users", methods=["POST"])
 def api_admin_users_create():
     uid = session.get("user_id")
@@ -893,7 +1137,7 @@ def api_admin_users_create():
     if db.execute("SELECT 1 FROM users WHERE id=?", (new_id,)).fetchone():
         return jsonify({"success": False, "error": "이미 존재하는 ID입니다."}), 400
     now = datetime.now().isoformat()
-    default_pw = "user1234"
+    default_pw = DEFAULT_USER_PASSWORD
     db.execute(
         """INSERT INTO users (id, password_hash, role, name, affiliation, phone, email,
            must_change_password, created_at, created_by)
@@ -947,8 +1191,8 @@ def index():
 def api_features():
     chain_ready = ENABLE_HG19_VIEW and os.path.isfile(LIFTOVER_CHAIN_HG38_TO_HG19)
     return jsonify({
-        "longitudinal": ENABLE_LONGITUDINAL,
-        "igv": ENABLE_IGV,
+        "longitudinal": longitudinal_feature_enabled(),
+        "igv": True,
         "hg19_view": bool(chain_ready),
         "hg19_chain_missing": ENABLE_HG19_VIEW and not chain_ready,
         "license": LICENSE_META,
@@ -1062,12 +1306,14 @@ def api_completed_list():
 def api_create_order():
     data = request.json
     order_type = data.get("order_type", "baseline")
+    if order_type == "longitudinal" and not longitudinal_feature_enabled():
+        return jsonify({"success": False, "error": "Longitudinal 분석이 설정에서 비활성화되어 있습니다."}), 403
     reuse_wid = (data.get("reuse_work_order_id") or "").strip()
     if reuse_wid:
-        if order_type != "longitudinal" or not ENABLE_LONGITUDINAL:
+        if order_type != "longitudinal":
             return jsonify({"success": False, "error": "reuse_work_order_id는 Longitudinal에서만 사용할 수 있습니다."}), 400
 
-    if order_type == "longitudinal" and ENABLE_LONGITUDINAL and reuse_wid:
+    if order_type == "longitudinal" and reuse_wid:
         db = get_db()
         src = db.execute("SELECT * FROM orders WHERE id=?", (reuse_wid,)).fetchone()
         if not src:
@@ -1088,7 +1334,7 @@ def api_create_order():
     order_id = datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:6]
     now = datetime.now().isoformat()
 
-    if order_type == "longitudinal" and ENABLE_LONGITUDINAL:
+    if order_type == "longitudinal":
         if not data.get("baseline_order_id") or not data.get("germline_order_id"):
             return jsonify({"success": False, "error": "Longitudinal requires baseline and germline order selection"}), 400
 
@@ -1096,14 +1342,19 @@ def api_create_order():
 
     db = get_db()
     created_by = session.get("user_id") or ""
+    # use_umi: '' (inherit global), 'Y', or 'N'
+    use_umi_val = (data.get("use_umi") or "").strip().upper()
+    if use_umi_val not in ("Y", "N", ""):
+        use_umi_val = ""
     db.execute("""
         INSERT INTO orders (id, order_name, patient_name, patient_dob, chart_number,
             department, doctor_name, diagnosis, doctor_comment,
             sample_name, r1_fastq, r2_fastq, reference, profile,
             af_threshold, bed_file, delete_intermediate,
             order_type, baseline_order_id, germline_order_id, followup_order_ids, reuse_work_order_id,
+            use_umi,
             status, created_at, updated_at, created_by_user_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         order_id,
         data.get("order_name", sample_name),
@@ -1127,6 +1378,7 @@ def api_create_order():
         data.get("germline_order_id", ""),
         followup_ids,
         reuse_wid,
+        use_umi_val,
         "registered", now, now,
         created_by,
     ))
@@ -1156,9 +1408,12 @@ def api_update_order(order_id):
     now = datetime.now().isoformat()
 
     order_type = data.get("order_type", row["order_type"])
+    if order_type == "longitudinal" and not longitudinal_feature_enabled():
+        if (row["order_type"] or "") != "longitudinal":
+            return jsonify({"success": False, "error": "Longitudinal 분석이 설정에서 비활성화되어 있습니다."}), 403
     reuse_wid = (data.get("reuse_work_order_id") or "").strip() if "reuse_work_order_id" in data else None
     if reuse_wid is not None and reuse_wid:
-        if order_type != "longitudinal" or not ENABLE_LONGITUDINAL:
+        if order_type != "longitudinal":
             return jsonify({"success": False, "error": "reuse_work_order_id는 Longitudinal에서만 사용할 수 있습니다."}), 400
         src = db.execute("SELECT * FROM orders WHERE id=?", (reuse_wid,)).fetchone()
         if not src:
@@ -1177,6 +1432,7 @@ def api_update_order(order_id):
         "bed_file", "delete_intermediate",
         "order_type", "baseline_order_id", "germline_order_id", "followup_order_ids",
         "reuse_work_order_id",
+        "use_umi",
     ]
     sets = ["updated_at=?"]
     params = [now]
@@ -1187,6 +1443,10 @@ def api_update_order(order_id):
                 val = "hg38"
             if col == "followup_order_ids" and isinstance(val, list):
                 val = ",".join(val)
+            if col == "use_umi":
+                val = (val or "").strip().upper()
+                if val not in ("Y", "N", ""):
+                    val = ""
             sets.append(f"{col}=?")
             params.append(val)
 
@@ -1281,6 +1541,222 @@ def api_force_order(order_id):
         return jsonify({"success": True, "container_id": cid})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/orders/<order_id>/reannotate", methods=["POST"])
+def api_reannotate(order_id):
+    """Re-run SnpEff → SnpSift → VariantsToTable using the published *_vardict.vcf.
+    Works regardless of delete_intermediate setting — only published VCF is needed.
+    """
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "Order not found"}), 404
+    order = dict_from_row(row)
+
+    if order.get("status") == "running":
+        return jsonify({"success": False, "error": "분석이 진행 중입니다. 완료 후 시도하세요."}), 400
+
+    sample = order["sample_name"]
+
+    # Find published VarDict VCF
+    vcf_candidates = glob.glob(
+        os.path.join(RESULTS_DIR, sample, "**", f"{sample}_vardict.vcf"),
+        recursive=True,
+    )
+    if not vcf_candidates:
+        return jsonify({"success": False, "error": f"Published VarDict VCF를 찾을 수 없습니다: {sample}_vardict.vcf"}), 404
+
+    vcf_host = vcf_candidates[0]
+    # Convert host path to container path
+    vcf_container = vcf_host.replace(RESULTS_DIR, "/work_nxt/results", 1)
+
+    try:
+        start_analysis(
+            order,
+            force=False,
+            resume=False,
+            started_by_user_id=session.get("user_id") or "",
+            extra_nf_params=["--reannotate_vcf", vcf_container],
+        )
+        return jsonify({"success": True, "message": "Reannotation을 시작했습니다. SnpEff → SnpSift → VariantsToTable만 재실행합니다."})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/orders/<order_id>/promote_to_longitudinal", methods=["POST"])
+def api_promote_to_longitudinal(order_id):
+    """Convert an already-completed Followup order in-place to a Longitudinal
+    order and trigger a Nextflow `-resume` run.
+
+    Use case: Baseline, Germline, AND a Followup order have all been analyzed
+    as regular orders. The user later decides to add Longitudinal comparison
+    for that Followup. Instead of creating a new order, the existing Followup
+    order is "promoted":
+
+      - order_type           = 'longitudinal'
+      - baseline_order_id    = <chosen completed baseline>
+      - germline_order_id    = <chosen completed germline>
+      - followup_order_ids   = (optional) prior followups for VAF trend
+      - reuse_work_order_id  = '' (use this order's own work dir)
+
+    Because work-dir / NXF_HOME / samplesheet are unchanged, Nextflow's
+    -resume hits the cache and only the new processes (select_reporter,
+    longitudinal) actually execute.
+    """
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "Order not found"}), 404
+    order = dict_from_row(row)
+
+    if (order.get("status") or "") != "completed":
+        return jsonify({
+            "success": False,
+            "error": "분석 완료(completed) 상태의 오더만 Longitudinal로 변환할 수 있습니다.",
+        }), 400
+    if (order.get("order_type") or "") == "longitudinal":
+        return jsonify({"success": False, "error": "이미 Longitudinal 오더입니다."}), 400
+    if not longitudinal_feature_enabled():
+        return jsonify({"success": False, "error": "Longitudinal 분석이 설정에서 비활성화되어 있습니다."}), 403
+
+    data = request.json or {}
+    baseline_id = (data.get("baseline_order_id") or "").strip()
+    germline_id = (data.get("germline_order_id") or "").strip()
+    if not baseline_id or not germline_id:
+        return jsonify({
+            "success": False,
+            "error": "Baseline 오더와 Germline 오더를 모두 선택해야 합니다.",
+        }), 400
+    if baseline_id == order_id or germline_id == order_id:
+        return jsonify({
+            "success": False,
+            "error": "Baseline/Germline 오더는 변환 대상 오더 자신일 수 없습니다.",
+        }), 400
+
+    for ref_id, label in ((baseline_id, "Baseline"), (germline_id, "Germline")):
+        ref = db.execute("SELECT id, status FROM orders WHERE id=?", (ref_id,)).fetchone()
+        if not ref:
+            return jsonify({"success": False, "error": f"{label} 오더를 찾을 수 없습니다: {ref_id}"}), 400
+        if ref["status"] != "completed":
+            return jsonify({
+                "success": False,
+                "error": f"{label} 오더는 분석 완료(completed) 상태여야 합니다.",
+            }), 400
+
+    followup_ids_raw = data.get("followup_order_ids", "")
+    if isinstance(followup_ids_raw, list):
+        followup_ids = ",".join([fid.strip() for fid in followup_ids_raw if fid and str(fid).strip()])
+    else:
+        followup_ids = str(followup_ids_raw or "").strip()
+    # Reject self-reference in followup list
+    if followup_ids:
+        if order_id in [fid.strip() for fid in followup_ids.split(",")]:
+            return jsonify({
+                "success": False,
+                "error": "이전 Followup 목록에 변환 대상 오더 자신을 포함할 수 없습니다.",
+            }), 400
+
+    now = datetime.now().isoformat()
+    db.execute(
+        """UPDATE orders
+              SET order_type='longitudinal',
+                  baseline_order_id=?,
+                  germline_order_id=?,
+                  followup_order_ids=?,
+                  reuse_work_order_id='',
+                  status='queued',
+                  error_message='',
+                  updated_at=?
+            WHERE id=?""",
+        (baseline_id, germline_id, followup_ids, now, order_id),
+    )
+    db.commit()
+
+    # Re-fetch with updated columns and trigger a resume run.
+    order = dict_from_row(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
+    container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
+    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
+
+    # ── Bypass mode: use published BAM + annotated TXT when work dir is sparse ──
+    # When delete_intermediate=Y cleaned the work dir, we can skip the heavy
+    # FASTQ→BAM→VarDict steps by pointing Nextflow directly at the published
+    # outputs that were preserved in results/<sample>/output/.
+    sample = order["sample_name"]
+    bypass_params = []
+
+    bam_pattern  = os.path.join(RESULTS_DIR, sample, "output", "bam", f"{sample}_clipped_sorted.bam")
+    ann_pattern  = os.path.join(RESULTS_DIR, sample, "output", f"{sample}_vardict_annotated_vcf.txt")
+
+    # Also allow the annotated txt that may live under a subdirectory (output_subdir)
+    import glob as _glob
+    if not os.path.isfile(ann_pattern):
+        candidates = _glob.glob(os.path.join(RESULTS_DIR, sample, "output", "**", f"{sample}_vardict_annotated_vcf.txt"), recursive=True)
+        if candidates:
+            ann_pattern = candidates[0]
+
+    if os.path.isfile(bam_pattern) and os.path.isfile(ann_pattern):
+        bai_path = bam_pattern + ".bai"
+        if not os.path.isfile(bai_path):
+            bai_candidates = _glob.glob(os.path.join(RESULTS_DIR, sample, "output", "bam", "*.bai"))
+            bai_path = bai_candidates[0] if bai_candidates else bam_pattern + ".bai"
+
+        # Container-internal paths (/work_nxt maps to host BASE_DIR)
+        results_rel = os.path.relpath(RESULTS_DIR, BASE_DIR)
+        container_bam = f"/work_nxt/{results_rel}/{sample}/output/bam/{os.path.basename(bam_pattern)}"
+        container_bai = f"/work_nxt/{results_rel}/{sample}/output/bam/{os.path.basename(bai_path)}"
+        container_ann = f"/work_nxt/{os.path.relpath(ann_pattern, BASE_DIR)}"
+
+        bypass_params = [
+            "--precomputed_bam",     container_bam,
+            "--precomputed_bai",     container_bai,
+            "--precomputed_ann_txt", container_ann,
+        ]
+        bypass_mode = True
+    else:
+        bypass_mode = False
+
+    # Warn if the work directory has few cached tasks (delete_intermediate may have cleaned it up)
+    # and we also could not find published outputs for bypass mode.
+    work_dir = os.path.join(BASE_DIR, "work", order_id)
+    cached_count = 0
+    if os.path.isdir(work_dir):
+        try:
+            cached_count = len(_glob.glob(os.path.join(work_dir, "**", ".exitcode"), recursive=True))
+        except Exception:
+            pass
+
+    if bypass_mode:
+        resume_warning = ""  # bypass: no full re-run needed
+    elif cached_count < 10:
+        resume_warning = (
+            "중간 파일이 삭제된 상태여서 전체 파이프라인을 처음부터 재실행합니다 "
+            "(delete_intermediate 옵션이 켜져 있었던 것으로 추정됩니다). "
+            "완료 후 Longitudinal 단계가 자동으로 이어집니다."
+        )
+    else:
+        resume_warning = ""
+
+    try:
+        cid = start_analysis(
+            order, force=False, resume=(not bypass_mode), started_by_user_id=session.get("user_id") or "",
+            extra_nf_params=bypass_params if bypass_mode else None,
+        )
+        mode_msg = "Bypass 모드 (published BAM 재사용): SELECT_REPORTER + Longitudinal 단계만 실행합니다." if bypass_mode else "Nextflow -resume 으로 재실행합니다."
+        return jsonify({
+            "success": True,
+            "container_id": cid,
+            "message": f"Longitudinal 분석을 시작했습니다. {mode_msg}",
+            "warning": resume_warning,
+            "bypass_mode": bypass_mode,
+        })
+    except Exception as e:
+        db.execute(
+            "UPDATE orders SET status='failed', error_message=?, updated_at=? WHERE id=?",
+            (str(e), datetime.now().isoformat(), order_id),
+        )
+        db.commit()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/orders/<order_id>/delete", methods=["DELETE"])
@@ -1497,6 +1973,14 @@ def api_qc_data(order_id):
 
     result = {"success": True, "sample_name": sample, "order_name": order.get("order_name", "")}
 
+    # Subsampling info (stored at analysis-start time)
+    sub_info_raw = order.get("subsample_info", "") or ""
+    if sub_info_raw:
+        try:
+            result["subsample_info"] = json.loads(sub_info_raw)
+        except Exception:
+            pass
+
     # 1. fastp
     fastp_path = os.path.join(trim_dir, "fastp.json")
     if os.path.isfile(fastp_path):
@@ -1633,6 +2117,165 @@ def api_qc_data(order_id):
     return jsonify(result)
 
 
+@app.route("/api/orders/<order_id>/qc_report.txt")
+def api_qc_report_txt(order_id):
+    """Generate a plain-text QC summary report for download."""
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return ("Order not found", 404)
+    order = dict_from_row(row)
+
+    # Reuse api_qc_data logic by calling it internally
+    from flask import current_app
+    with current_app.test_request_context(f"/api/orders/{order_id}/qc_data"):
+        resp = api_qc_data(order_id)
+        if hasattr(resp, "get_json"):
+            d = resp.get_json()
+        else:
+            import json as _json
+            d = _json.loads(resp.data)
+
+    lines = []
+    def h(title):
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append(f"  {title}")
+        lines.append("=" * 60)
+    def row_kv(k, v):
+        lines.append(f"  {k:<40} {v}")
+
+    lines.append("Roche_nxt QC Summary Report")
+    lines.append(f"Sample  : {d.get('sample_name','')}")
+    lines.append(f"Order   : {d.get('order_name','')}")
+    lines.append(f"Order ID: {order_id}")
+    lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # Subsampling
+    sub = d.get("subsample_info")
+    if sub and sub.get("enabled"):
+        h("Subsampling")
+        row_kv("R1 size (GB)", sub.get("r1_gb",""))
+        row_kv("R2 size (GB)", sub.get("r2_gb",""))
+        row_kv("Total size (GB)", sub.get("total_gb",""))
+        row_kv("Threshold (GB)", sub.get("threshold_gb",""))
+        row_kv("Target reads", sub.get("target_reads",""))
+        row_kv("Seed", sub.get("seed",""))
+
+    # fastp
+    fp = d.get("fastp")
+    if fp:
+        h("Adapter Trimming (fastp)")
+        row_kv("Reads before filtering", fp.get("before_total_reads",""))
+        row_kv("Reads after filtering", fp.get("after_total_reads",""))
+        row_kv("Passed filter reads", fp.get("passed_filter_reads",""))
+        row_kv("Low quality reads (removed)", fp.get("low_quality_reads",""))
+        row_kv("Too short reads (removed)", fp.get("too_short_reads",""))
+        row_kv("Adapter trimmed reads", fp.get("adapter_trimmed_reads",""))
+        row_kv("Q20 rate (before)", f"{float(fp.get('before_q20_rate',0))*100:.2f}%")
+        row_kv("Q30 rate (before)", f"{float(fp.get('before_q30_rate',0))*100:.2f}%")
+        row_kv("Q20 rate (after)", f"{float(fp.get('after_q20_rate',0))*100:.2f}%")
+        row_kv("Q30 rate (after)", f"{float(fp.get('after_q30_rate',0))*100:.2f}%")
+        row_kv("GC content (after)", f"{float(fp.get('after_gc_content',0))*100:.2f}%")
+        row_kv("Mean read length R1 (after)", fp.get("after_read1_mean_length",""))
+        row_kv("Mean read length R2 (after)", fp.get("after_read2_mean_length",""))
+
+    # Alignment
+    for label, title in [("aligned", "Alignment Metrics — Aligned (pre-dedup)"),
+                          ("umi_deduped", "Alignment Metrics — UMI Deduped")]:
+        al = d.get(f"alignment_{label}")
+        if al:
+            h(title)
+            row_kv("Total reads", al.get("total_reads",""))
+            row_kv("PF reads aligned", al.get("pf_reads_aligned",""))
+            row_kv("% PF reads aligned", f"{float(al.get('pct_pf_reads_aligned',0))*100:.2f}%")
+            row_kv("Mismatch rate", al.get("pf_mismatch_rate",""))
+            row_kv("% chimeras", al.get("pct_chimeras",""))
+            row_kv("% adapter", al.get("pct_adapter",""))
+            row_kv("Mean read length", al.get("mean_read_length",""))
+            row_kv("% reads aligned in pairs", f"{float(al.get('pct_reads_aligned_in_pairs',0))*100:.2f}%")
+            row_kv("Strand balance", al.get("strand_balance",""))
+
+    # Insert size
+    for label, title in [("aligned", "Insert Size — Aligned"),
+                          ("umi_deduped", "Insert Size — UMI Deduped")]:
+        ins = d.get(f"insert_size_{label}")
+        if ins:
+            h(title)
+            row_kv("Median insert size", ins.get("median_insert_size",""))
+            row_kv("Mean insert size", ins.get("mean_insert_size",""))
+            row_kv("Std deviation", ins.get("standard_deviation",""))
+            row_kv("Min / Max", f"{ins.get('min_insert_size','')} / {ins.get('max_insert_size','')}")
+            row_kv("Read pairs", ins.get("read_pairs",""))
+
+    # Duplicates
+    dup = d.get("duplicates")
+    if dup:
+        h("Duplicate Metrics (MarkDuplicates)")
+        row_kv("Read pairs examined", dup.get("read_pairs_examined",""))
+        row_kv("Read pair duplicates", dup.get("read_pair_duplicates",""))
+        row_kv("Optical duplicates", dup.get("read_pair_optical_duplicates",""))
+        row_kv("% duplication", f"{float(dup.get('percent_duplication',0))*100:.4f}%")
+        row_kv("Estimated library size", dup.get("estimated_library_size",""))
+
+    # On-target
+    ot_al = d.get("ontarget_aligned")
+    ot_umi = d.get("ontarget_umi_deduped")
+    if ot_al is not None or ot_umi is not None:
+        h("On-target Reads")
+        if ot_al is not None:  row_kv("On-target reads (aligned)", f"{ot_al:,}")
+        if ot_umi is not None: row_kv("On-target reads (UMI deduped)", f"{ot_umi:,}")
+
+    # HS metrics
+    for label, title in [("aligned", "Hybridization Selection Metrics — Aligned"),
+                          ("umi_deduped", "Hybridization Selection Metrics — UMI Deduped")]:
+        hs = d.get(f"hs_metrics_{label}")
+        if hs:
+            h(title)
+            row_kv("Mean target coverage", hs.get("mean_target_coverage",""))
+            row_kv("Median target coverage", hs.get("median_target_coverage",""))
+            row_kv("Max target coverage", hs.get("max_target_coverage",""))
+            row_kv("% selected bases", f"{float(hs.get('pct_selected_bases',0))*100:.2f}%")
+            row_kv("Fold enrichment", hs.get("fold_enrichment",""))
+            row_kv("Fold 80 base penalty", hs.get("fold_80_base_penalty",""))
+            row_kv("% zero coverage targets", f"{float(hs.get('zero_cvg_targets_pct',0))*100:.2f}%")
+            row_kv("% bases >=1x", f"{float(hs.get('pct_target_bases_1x',0))*100:.2f}%")
+            row_kv("% bases >=10x", f"{float(hs.get('pct_target_bases_10x',0))*100:.2f}%")
+            row_kv("% bases >=20x", f"{float(hs.get('pct_target_bases_20x',0))*100:.2f}%")
+            row_kv("% bases >=30x", f"{float(hs.get('pct_target_bases_30x',0))*100:.2f}%")
+            row_kv("% bases >=50x", f"{float(hs.get('pct_target_bases_50x',0))*100:.2f}%")
+            row_kv("% bases >=100x", f"{float(hs.get('pct_target_bases_100x',0))*100:.2f}%")
+            row_kv("% bases >=250x", f"{float(hs.get('pct_target_bases_250x',0))*100:.2f}%")
+            row_kv("% bases >=500x", f"{float(hs.get('pct_target_bases_500x',0))*100:.2f}%")
+            row_kv("% bases >=1000x", f"{float(hs.get('pct_target_bases_1000x',0))*100:.2f}%")
+            row_kv("On-target bases", hs.get("on_target_bases",""))
+            row_kv("Total reads", hs.get("total_reads",""))
+            row_kv("PF unique reads", hs.get("pf_unique_reads",""))
+
+    # Mismatch rate
+    mm = d.get("mismatch_rate")
+    if mm:
+        h("Mismatch Rate")
+        for k, v in mm.items():
+            row_kv(k, v)
+
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("  End of Report")
+    lines.append("=" * 60)
+    lines.append("")
+
+    txt = "\n".join(lines)
+    sample = order["sample_name"]
+    filename = f"{sample}_QC_report.txt"
+    from flask import Response
+    return Response(
+        txt,
+        mimetype="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
 @app.route("/api/orders/<order_id>/vcf_data")
 def api_vcf_data(order_id):
     """Parse the VariantsToTable annotated txt and return JSON for the review table."""
@@ -1652,38 +2295,89 @@ def api_vcf_data(order_id):
     fp = candidates[0]
 
     display_cols = [
-        "CHROM", "POS", "REF", "ALT", "GENE", "EFFECT", "AF", "DP", "VD",
-        "FILTER", "TYPE", "QUAL", "ID", "DBSNP_COMMON",
+        "CHROM", "POS", "REF", "ALT", "GENE", "TRANSCRIPT", "EFFECT", "IMPACT",
+        "HGVS_C", "HGVS_P", "HGVS_G", "AF", "DP", "VD", "HIAF", "MQ", "GT",
+        "DUPRATE", "FILTER", "TYPE", "QUAL", "ID", "DBSNP_COMMON",
     ]
 
     def parse_ann(ann_str):
-        """Extract gene and effect from the first SnpEff ANN entry."""
-        if not ann_str or ann_str == "NA" or ann_str == ".":
-            return "", ""
-        first = ann_str.split(",")[0]
-        parts = first.split("|")
-        effect = parts[1] if len(parts) > 1 else ""
-        gene = parts[3] if len(parts) > 3 else ""
-        return gene, effect
+        """Extract gene, effect, impact, transcript, HGVS.c, HGVS.p from SnpEff ANN.
+
+        Prefers the first entry whose transcript ID starts with 'NM_'.
+        Falls back to the very first entry if no NM_ transcript is found.
+        """
+        if not ann_str or ann_str in ("NA", "."):
+            return "", "", "", "", "", ""
+        entries = ann_str.split(",")
+        chosen = entries[0]
+        for entry in entries:
+            p = entry.split("|")
+            tx = p[6] if len(p) > 6 else ""
+            if tx.startswith("NM_"):
+                chosen = entry
+                break
+        parts = chosen.split("|")
+        effect     = parts[1]  if len(parts) > 1  else ""
+        impact     = parts[2]  if len(parts) > 2  else ""
+        gene       = parts[3]  if len(parts) > 3  else ""
+        transcript = parts[6]  if len(parts) > 6  else ""
+        hgvs_c     = parts[9]  if len(parts) > 9  else ""
+        hgvs_p     = parts[10] if len(parts) > 10 else ""
+        return gene, effect, impact, transcript, hgvs_c, hgvs_p
 
     try:
+        by_position, by_cnumber = _build_list_lookup()
         rows_out = []
+        blacklisted = 0
         with open(fp, "r") as fh:
             header = fh.readline().rstrip("\n").split("\t")
             col_idx = {c: i for i, c in enumerate(header)}
+            # Genotype fields are emitted as "<sample>.GT" etc — find them
+            gt_col = next((c for c in col_idx if c.endswith(".GT")), None)
             for line in fh:
                 vals = line.rstrip("\n").split("\t")
-                gene, effect = parse_ann(vals[col_idx["ANN"]] if "ANN" in col_idx else "")
+                gene, effect, impact, transcript, hgvs_c, hgvs_p = parse_ann(
+                    vals[col_idx["ANN"]] if "ANN" in col_idx else ""
+                )
                 rec = {}
                 for c in display_cols:
                     if c == "GENE":
                         rec[c] = gene
+                    elif c == "TRANSCRIPT":
+                        rec[c] = transcript
                     elif c == "EFFECT":
                         rec[c] = effect
+                    elif c == "IMPACT":
+                        rec[c] = impact
+                    elif c == "HGVS_C":
+                        rec[c] = hgvs_c
+                    elif c == "HGVS_P":
+                        rec[c] = hgvs_p
+                    elif c == "HGVS_G":
+                        chrom_val = vals[col_idx["CHROM"]] if "CHROM" in col_idx else ""
+                        pos_val   = vals[col_idx["POS"]]   if "POS"   in col_idx else ""
+                        ref_val   = vals[col_idx["REF"]]   if "REF"   in col_idx else ""
+                        alt_val   = vals[col_idx["ALT"]]   if "ALT"   in col_idx else ""
+                        nc = _NC_HG38.get(chrom_val, "")
+                        rec[c] = f"{nc}:g.{pos_val}{ref_val}>{alt_val}" if nc and pos_val else ""
+                    elif c == "GT":
+                        rec[c] = vals[col_idx[gt_col]] if gt_col else ""
                     elif c in col_idx:
                         rec[c] = vals[col_idx[c]]
                     else:
                         rec[c] = ""
+                # Annotate with variant-list membership
+                tag = _get_list_tag(
+                    rec.get("CHROM", ""),
+                    rec.get("POS", ""),
+                    rec.get("REF", ""),
+                    rec.get("ALT", ""),
+                    rec.get("ID", ""),
+                    by_position, by_cnumber,
+                )
+                if tag == "blacklist":
+                    blacklisted += 1
+                rec["_list_tag"] = tag  # '' | 'whitelist' | 'onhold' | 'blacklist'
                 rows_out.append(rec)
         return jsonify({
             "success": True,
@@ -1692,6 +2386,7 @@ def api_vcf_data(order_id):
             "sample_name": sample,
             "order_name": order.get("order_name", ""),
             "total": len(rows_out),
+            "blacklisted_count": blacklisted,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1818,8 +2513,6 @@ def _list_bam_tracks(order, auto_index=True):
 
 @app.route("/api/orders/<order_id>/coverage-context")
 def api_coverage_context(order_id):
-    if not ENABLE_IGV:
-        return _igv_disabled_response()
     db = get_db()
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
@@ -1843,8 +2536,6 @@ def api_coverage_context(order_id):
 
 @app.route("/api/orders/<order_id>/index_bam", methods=["POST"])
 def api_index_bam(order_id):
-    if not ENABLE_IGV:
-        return _igv_disabled_response()
     db = get_db()
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
@@ -1924,8 +2615,6 @@ def _guess_mimetype(path):
 @app.route("/api/orders/<order_id>/file/<path:filename>", methods=["GET", "HEAD"])
 def api_order_file(order_id, filename):
     """Serve result files for IGV.js. Only BAM/BAI are allowed by default."""
-    if not ENABLE_IGV:
-        return _igv_disabled_response()
     db = get_db()
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
@@ -2202,6 +2891,45 @@ def api_get_settings():
     settings["max_memory"] = env.get("MAX_MEMORY", "0")
     settings["max_concurrent_samples"] = env.get("MAX_CONCURRENT_SAMPLES", "0")
     settings["default_reference"] = "hg38"
+
+    # Longitudinal defaults (DB values take precedence)
+    _sr_defaults = {
+        "sr_germline_cutoff": "0.005",
+        "sr_min_af":          "0.005",
+        "sr_max_af":          "0.35",
+        "sr_min_dp":          "1000",
+        "sr_min_vd":          "15",
+        "sr_min_mq":          "55",
+        "sr_min_qual":        "45",
+        "sr_min_sbf":         "1e-05",
+        "sr_max_nm":          "4",
+    }
+    _la_defaults = {
+        "la_reads_threshold":  "1000",
+        "la_pvalue_threshold": "0.001",
+        "la_vaf_threshold":    "0.1",
+        "la_n_sim":            "10000",
+        "la_blist_type":       "variant",
+    }
+    # Baseline defaults
+    _bl_defaults = {
+        "enable_umi":             "true",
+        "umi_read_structure":     "3M3S+T 3M3S+T",
+        "seqtk_sample_size":      "40000000",
+        "seqtk_seed":             "12345",
+        "enable_subsampling":     "false",
+        "subsample_threshold_gb": "20",
+        "fastp_options":          "-g -W 5 -q 20 -u 40 -x -3 -l 75 -c",
+        "min_reads":              "1",
+        "min_base_quality":       "20",
+        "max_read_error_rate":    "0.025",
+        "max_base_error_rate":    "0.1",
+        "max_no_call_fraction":   "0.1",
+    }
+    for k, v in {**_sr_defaults, **_la_defaults, **_bl_defaults}.items():
+        settings.setdefault(k, v)
+    settings.setdefault("longitudinal_enabled", "true")
+
     return jsonify(settings)
 
 
@@ -2247,6 +2975,384 @@ def api_save_settings():
         db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))
     db.commit()
     return jsonify({"success": True, "restart_needed": restart_needed})
+
+
+# ---------------------------------------------------------------------------
+# Variant Lists (Blacklist / Whitelist / On-hold)
+# ---------------------------------------------------------------------------
+
+_VL_PRIORITY = {"blacklist": 3, "whitelist": 2, "onhold": 1}
+
+# Chromosome → RefSeq NC accession for HGVS.g construction
+_NC_HG38 = {
+    "chr1":"NC_000001.11","chr2":"NC_000002.12","chr3":"NC_000003.12",
+    "chr4":"NC_000004.12","chr5":"NC_000005.10","chr6":"NC_000006.12",
+    "chr7":"NC_000007.14","chr8":"NC_000008.11","chr9":"NC_000009.12",
+    "chr10":"NC_000010.11","chr11":"NC_000011.10","chr12":"NC_000012.12",
+    "chr13":"NC_000013.11","chr14":"NC_000014.9","chr15":"NC_000015.10",
+    "chr16":"NC_000016.10","chr17":"NC_000017.11","chr18":"NC_000018.10",
+    "chr19":"NC_000019.10","chr20":"NC_000020.11","chr21":"NC_000021.9",
+    "chr22":"NC_000022.11","chrX":"NC_000023.11","chrY":"NC_000024.10",
+    "chrM":"NC_012920.1",
+}
+
+
+def _norm_chrom(c):
+    """Normalize chromosome name for comparison (add 'chr' prefix if absent)."""
+    c = (c or "").strip()
+    if c and not c.lower().startswith("chr"):
+        c = "chr" + c
+    return c.lower()
+
+
+def _build_list_lookup():
+    """Return (by_position, by_cnumber) lookup dicts for fast matching."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT list_type, entry_type, cnumber, chrom, pos, ref, alt FROM variant_lists"
+    ).fetchall()
+
+    by_position = {}  # (chrom_norm, pos, ref_u, alt_u) or (chrom_norm, pos, '', '') -> list_type
+    by_cnumber = {}   # cnumber_lower -> list_type
+
+    for r in rows:
+        r = dict_from_row(r)
+        lt = r["list_type"]
+        p = _VL_PRIORITY.get(lt, 0)
+        if r["entry_type"] == "cnumber" and (r.get("cnumber") or "").strip():
+            key = r["cnumber"].strip().lower()
+            if key not in by_cnumber or p > _VL_PRIORITY.get(by_cnumber[key], 0):
+                by_cnumber[key] = lt
+        else:
+            chrom = _norm_chrom(r.get("chrom") or "")
+            pos = int(r.get("pos") or 0)
+            if not chrom or not pos:
+                continue
+            ref_u = (r.get("ref") or "").strip().upper()
+            alt_u = (r.get("alt") or "").strip().upper()
+            # Specific key (with ref/alt) takes priority over position-only
+            for key in [(chrom, pos, ref_u, alt_u), (chrom, pos, "", "")]:
+                if key not in by_position or p > _VL_PRIORITY.get(by_position[key], 0):
+                    by_position[key] = lt
+
+    return by_position, by_cnumber
+
+
+def _get_list_tag(chrom, pos_str, ref, alt, vcf_id, by_position, by_cnumber):
+    """Return 'blacklist', 'whitelist', 'onhold', or '' for this variant."""
+    best = ""
+    best_p = 0
+
+    chrom_n = _norm_chrom(chrom)
+    pos = int(pos_str or 0)
+    ref_u = (ref or "").strip().upper()
+    alt_u = (alt or "").strip().upper()
+
+    # Position match (specific first, then position-only)
+    for key in [(chrom_n, pos, ref_u, alt_u), (chrom_n, pos, "", "")]:
+        lt = by_position.get(key)
+        if lt:
+            p = _VL_PRIORITY.get(lt, 0)
+            if p > best_p:
+                best = lt
+                best_p = p
+
+    # cNumber match (against VCF ID field — may be semicolon-separated)
+    if vcf_id and vcf_id not in (".", ""):
+        for vid in str(vcf_id).split(";"):
+            vid = vid.strip().lower()
+            if vid and vid in by_cnumber:
+                p = _VL_PRIORITY.get(by_cnumber[vid], 0)
+                if p > best_p:
+                    best = by_cnumber[vid]
+                    best_p = p
+
+    return best
+
+
+def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False):
+    """Parse an uploaded xlsx / txt / bed file and return list-entry dicts.
+
+    skip_header: when True, forcibly treat the first row as a header row
+                 (ignores auto-detection and always skips row 0).
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
+    now = datetime.now().isoformat()
+    entries = []
+
+    if ext in ("xlsx", "xls"):
+        import io
+        try:
+            import openpyxl
+        except ImportError:
+            raise ValueError("openpyxl가 설치되어 있지 않습니다 (pip install openpyxl).")
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        ws = wb.active
+        raw_rows = [
+            [str(cell or "").strip() for cell in row]
+            for row in ws.iter_rows(values_only=True)
+        ]
+        wb.close()
+    elif ext == "bed":
+        lines = [
+            l.rstrip() for l in file_bytes.decode("utf-8", errors="replace").splitlines()
+            if l.strip() and not l.startswith("#")
+            and not l.lower().startswith("track") and not l.lower().startswith("browser")
+        ]
+        for line in lines:
+            cols = line.split("\t") if "\t" in line else line.split()
+            if len(cols) < 2:
+                continue
+            chrom = cols[0].strip()
+            try:
+                pos = int(cols[1]) + 1  # BED 0-based start → 1-based
+            except Exception:
+                continue
+            note = cols[3].strip() if len(cols) > 3 else ""
+            entries.append({
+                "id": str(uuid.uuid4()), "list_type": list_type,
+                "entry_type": "position", "cnumber": "",
+                "chrom": chrom, "pos": pos, "ref": "", "alt": "",
+                "gene": "", "note": note, "created_at": now, "updated_at": now,
+            })
+        return entries
+    else:
+        content = file_bytes.decode("utf-8", errors="replace")
+        lines = [l.rstrip() for l in content.splitlines() if l.strip() and not l.startswith("#")]
+        if not lines:
+            return []
+        sep = "\t" if "\t" in lines[0] else ","
+        raw_rows = [l.split(sep) for l in lines]
+
+    if not raw_rows:
+        return []
+
+    # Detect or force header row
+    HEADER_KEYWORDS = {
+        "CNUMBER", "C_NUMBER", "C#", "CNUMBER.", "VARIANT_ID", "VARIANT-ID",
+        "VARIANT", "CHROM", "CHR", "CHROMOSOME", "POS", "POSITION", "START",
+        "REF", "ALT", "GENE", "GENE_NAME", "NOTE", "COMMENT", "ID",
+        "분류", "CATEGORY", "비율", "RATIO", "빈도", "FREQUENCY",
+    }
+    first_upper = [c.strip().upper().replace(" ", "_") for c in raw_rows[0]]
+
+    if skip_header:
+        has_header = True
+    else:
+        has_header = any(c in HEADER_KEYWORDS for c in first_upper)
+
+    if has_header:
+        header = first_upper
+        data_rows = raw_rows[1:]
+    else:
+        header = None
+        data_rows = raw_rows
+
+    def _gi(h, *names):
+        for n in names:
+            if n in h:
+                return h.index(n)
+        return -1
+
+    def _gv(row, i):
+        return row[i].strip() if i >= 0 and i < len(row) else ""
+
+    if header is not None:
+        cn_col  = _gi(header, "CNUMBER", "C_NUMBER", "C#", "CNUMBER.", "VARIANT_ID", "VARIANT-ID", "VARIANT", "ID")
+        chr_col = _gi(header, "CHROM", "CHR", "CHROMOSOME")
+        pos_col = _gi(header, "POS", "POSITION", "START")
+        ref_col = _gi(header, "REF", "REFERENCE")
+        alt_col = _gi(header, "ALT", "ALTERNATE")
+        gn_col  = _gi(header, "GENE", "GENE_NAME")
+        nt_col  = _gi(header, "NOTE", "COMMENT", "DESCRIPTION", "REMARK", "비고")
+        cat_col = _gi(header, "분류", "CATEGORY", "CLASS", "TYPE")
+        rat_col = _gi(header, "비율", "RATIO", "FREQUENCY", "빈도", "FREQ")
+
+        for row in data_rows:
+            if not any(v.strip() for v in row):
+                continue
+            cn  = _gv(row, cn_col)
+            chm = _gv(row, chr_col)
+            ps  = _gv(row, pos_col)
+            cat = _gv(row, cat_col)
+            rat = _gv(row, rat_col)
+
+            # Decide entry_type: if chrom+pos present → position; else cnumber
+            if chm and ps:
+                try:
+                    pos_int = int(float(ps))
+                except Exception:
+                    pos_int = 0
+                entries.append({
+                    "id": str(uuid.uuid4()), "list_type": list_type,
+                    "entry_type": "position", "cnumber": cn,
+                    "chrom": chm, "pos": pos_int,
+                    "ref": _gv(row, ref_col).upper(), "alt": _gv(row, alt_col).upper(),
+                    "gene": _gv(row, gn_col), "note": _gv(row, nt_col),
+                    "category": cat, "ratio": rat,
+                    "created_at": now, "updated_at": now,
+                })
+            elif cn:
+                entries.append({
+                    "id": str(uuid.uuid4()), "list_type": list_type,
+                    "entry_type": "cnumber", "cnumber": cn,
+                    "chrom": chm, "pos": 0,
+                    "ref": _gv(row, ref_col).upper(), "alt": _gv(row, alt_col).upper(),
+                    "gene": _gv(row, gn_col), "note": _gv(row, nt_col),
+                    "category": cat, "ratio": rat,
+                    "created_at": now, "updated_at": now,
+                })
+    else:
+        # No header: treat each line as a bare cNumber
+        for row in data_rows:
+            cn = row[0].strip() if row else ""
+            if not cn:
+                continue
+            entries.append({
+                "id": str(uuid.uuid4()), "list_type": list_type,
+                "entry_type": "cnumber", "cnumber": cn,
+                "chrom": "", "pos": 0, "ref": "", "alt": "", "gene": "",
+                "note": row[1].strip() if len(row) > 1 else "",
+                "category": "", "ratio": "",
+                "created_at": now, "updated_at": now,
+            })
+
+    return entries
+
+
+# ── API: Variant Lists CRUD ──────────────────────────────────────────────────
+
+@app.route("/api/variant-lists")
+def api_vl_list():
+    """GET /api/variant-lists?type=blacklist|whitelist|onhold|longitudinal  (or all if omitted)."""
+    list_type = request.args.get("type", "")
+    db = get_db()
+    if list_type in ("blacklist", "whitelist", "onhold"):
+        rows = db.execute(
+            "SELECT * FROM variant_lists WHERE list_type=? ORDER BY created_at DESC", (list_type,)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM variant_lists ORDER BY list_type, created_at DESC"
+        ).fetchall()
+    return jsonify([dict_from_row(r) for r in rows])
+
+
+@app.route("/api/variant-lists", methods=["POST"])
+def api_vl_create():
+    """Add a single variant-list entry."""
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    data = request.json or {}
+    list_type = data.get("list_type", "")
+    if list_type not in ("blacklist", "whitelist", "onhold"):
+        return jsonify({"success": False, "error": "list_type must be blacklist/whitelist/onhold"}), 400
+    entry_type = data.get("entry_type", "position")
+    if entry_type not in ("cnumber", "position"):
+        return jsonify({"success": False, "error": "entry_type must be cnumber or position"}), 400
+
+    now = datetime.now().isoformat()
+    vid = str(uuid.uuid4())
+    db = get_db()
+    db.execute(
+        """INSERT INTO variant_lists
+           (id, list_type, entry_type, cnumber, chrom, pos, ref, alt, gene, note,
+            category, ratio, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            vid, list_type, entry_type,
+            (data.get("cnumber") or "").strip(),
+            (data.get("chrom") or "").strip(),
+            int(data.get("pos") or 0),
+            (data.get("ref") or "").strip().upper(),
+            (data.get("alt") or "").strip().upper(),
+            (data.get("gene") or "").strip(),
+            (data.get("note") or "").strip(),
+            (data.get("category") or "").strip(),
+            (data.get("ratio") or "").strip(),
+            now, now,
+        ),
+    )
+    db.commit()
+    return jsonify({"success": True, "id": vid})
+
+
+@app.route("/api/variant-lists/<entry_id>", methods=["PUT"])
+def api_vl_update(entry_id):
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    db = get_db()
+    row = db.execute("SELECT id FROM variant_lists WHERE id=?", (entry_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "Not found"}), 404
+    data = request.json or {}
+    now = datetime.now().isoformat()
+    editable = ["list_type", "entry_type", "cnumber", "chrom", "pos", "ref", "alt", "gene", "note", "category", "ratio"]
+    sets = ["updated_at=?"]
+    params = [now]
+    for col in editable:
+        if col in data:
+            val = data[col]
+            if col in ("ref", "alt") and isinstance(val, str):
+                val = val.upper()
+            if col == "pos":
+                val = int(val or 0)
+            sets.append(f"{col}=?")
+            params.append(val)
+    params.append(entry_id)
+    db.execute(f"UPDATE variant_lists SET {', '.join(sets)} WHERE id=?", params)
+    db.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/api/variant-lists/<entry_id>", methods=["DELETE"])
+def api_vl_delete(entry_id):
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    db = get_db()
+    db.execute("DELETE FROM variant_lists WHERE id=?", (entry_id,))
+    db.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/api/variant-lists/upload", methods=["POST"])
+def api_vl_upload():
+    """Upload an xlsx / txt / bed file and bulk-insert entries."""
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    list_type = request.form.get("list_type", "")
+    if list_type not in ("blacklist", "whitelist", "onhold"):
+        return jsonify({"success": False, "error": "list_type must be blacklist/whitelist/onhold"}), 400
+    skip_header = request.form.get("skip_header", "false").lower() in ("true", "1", "yes")
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"success": False, "error": "파일이 전달되지 않았습니다."}), 400
+    file_bytes = f.read()
+    try:
+        entries = _parse_variant_list_file(file_bytes, f.filename, list_type, skip_header=skip_header)
+    except Exception as e:
+        return jsonify({"success": False, "error": f"파일 파싱 오류: {e}"}), 400
+    if not entries:
+        return jsonify({"success": False, "error": "파싱된 항목이 없습니다. 파일 형식을 확인해주세요."}), 400
+    # Ensure category/ratio keys exist (older entries from bed/txt may lack them)
+    for e in entries:
+        e.setdefault("category", "")
+        e.setdefault("ratio", "")
+    db = get_db()
+    db.executemany(
+        """INSERT OR IGNORE INTO variant_lists
+           (id, list_type, entry_type, cnumber, chrom, pos, ref, alt, gene, note,
+            category, ratio, created_at, updated_at)
+           VALUES (:id,:list_type,:entry_type,:cnumber,:chrom,:pos,:ref,:alt,:gene,:note,
+                   :category,:ratio,:created_at,:updated_at)""",
+        entries,
+    )
+    db.commit()
+    return jsonify({"success": True, "inserted": len(entries)})
 
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,6 @@ process FASTQ_TO_SAM {
         -O ${sample_id}_unmapped.bam \
         -SM ${sample_id} \
         --MAX_RECORDS_IN_RAM 2000000 \
-        --COMPRESSION_LEVEL 5
+        --COMPRESSION_LEVEL 1
     """
 }

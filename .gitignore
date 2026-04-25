@@ -10,6 +10,8 @@ results/
 
 # ===== Logs & Database =====
 log/
+*.db
+web_ui/orders.db
 
 # ===== Environment (contains site-specific paths) =====
 .env
@@ -22,8 +24,8 @@ __pycache__/
 .eggs/
 *.egg
 
-# ===== Docker images (offline deploy artifacts) =====
-deploy/images/
+# ===== Deploy (offline bundle artifacts) =====
+deploy/
 
 # ===== Licensing =====
 # Private signing keys, customer licenses, and the on-disk license file

@@ -125,6 +125,11 @@ make prod-up
 
 ## 3. 시나리오 B: 고객 초기 배포 (폐쇄망 포함)
 
+> **완전 오프라인(Docker 조차 없는) 서버에 USB 하나로 설치**하려면
+> [`docs/OFFLINE_INSTALL.md`](OFFLINE_INSTALL.md) 의 자동화 플로우
+> (`make usb-bundle` + 11단계 설치 스크립트) 를 사용하세요. 아래 내용은
+> 고객 서버에 이미 Docker 가 있는 경우의 수동 절차입니다.
+
 ### 3.1 담당자 측 — 전달 번들 만들기
 
 **사전 조건**: `make keygen` 이 한 번 실행되어 `web_ui/_vendor_keys/license_pubkey.b64`

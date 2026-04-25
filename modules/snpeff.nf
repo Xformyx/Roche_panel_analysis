@@ -14,7 +14,7 @@ process SNPEFF {
     def datadir_opt = snpeff_data_dir ? "-dataDir ${snpeff_data_dir}" : ""
     """
     java -jar \${SNPEFF_JAR} \
-        -v -noStats -noLog \
+        -v -noStats -noLog -canon \
         ${datadir_opt} \
         ${snpeff_db} \
         ${input_vcf} \
