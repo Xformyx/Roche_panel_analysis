@@ -175,7 +175,7 @@ tbody tr:hover{background:#F8FAFC}
 .vl-table-outer{width:fit-content;max-width:100%;border:1px solid var(--border);border-radius:6px;overflow:hidden}
 .vl-thead-wrap{overflow:hidden;background:var(--bg-alt)}
 .vl-tbody-wrap{max-height:380px;overflow-y:auto;overflow-x:hidden}
-.vl-table{border-collapse:separate;border-spacing:0;font-size:.8rem;table-layout:fixed;width:1010px}
+.vl-table{border-collapse:separate;border-spacing:0;font-size:.8rem;table-layout:fixed;width:1088px}
 .vl-table th{background:var(--bg-alt);font-weight:600;padding:7px 8px;text-align:left;border-bottom:2px solid var(--border);white-space:nowrap}
 .vl-table td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle;overflow:hidden}
 .vl-table tr:last-child td{border-bottom:none}
@@ -313,6 +313,7 @@ tbody tr:hover{background:#F8FAFC}
 @keyframes toast-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
 .toast-success{background:#065F46;color:#fff}
 .toast-error{background:#991B1B;color:#fff}
+.toast-warning{background:#92400E;color:#fff}
 .toast-info{background:var(--sidebar);color:#fff}
 
 /* ===== CONFIRM DIALOG ===== */
@@ -1326,13 +1327,15 @@ tbody tr:hover{background:#F8FAFC}
                 <div class="vl-thead-wrap">
                   <table class="vl-table">
                     <colgroup>
+                      <col style="width:38px">
                       <col style="width:70px"><col style="width:190px"><col style="width:65px">
-                      <col style="width:90px"><col style="width:52px"><col style="width:52px">
+                      <col style="width:130px"><col style="width:52px"><col style="width:52px">
                       <col style="width:78px"><col style="width:95px"><col style="width:82px">
                       <col style="width:202px"><col style="width:34px">
                     </colgroup>
                     <thead>
                       <tr>
+                        <th style="text-align:center;color:var(--text-muted)">#</th>
                         <th>입력 방식</th>
                         <th>cNumber / ID</th>
                         <th>Chr</th>
@@ -1351,20 +1354,21 @@ tbody tr:hover{background:#F8FAFC}
                 <div class="vl-tbody-wrap">
                   <table class="vl-table" id="vlTable">
                     <colgroup>
+                      <col style="width:38px">
                       <col style="width:70px"><col style="width:190px"><col style="width:65px">
-                      <col style="width:90px"><col style="width:52px"><col style="width:52px">
+                      <col style="width:130px"><col style="width:52px"><col style="width:52px">
                       <col style="width:78px"><col style="width:95px"><col style="width:82px">
                       <col style="width:202px"><col style="width:34px">
                     </colgroup>
                     <tbody id="vlTableBody">
-                      <tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text-muted)">불러오는 중...</td></tr>
+                      <tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-muted)">불러오는 중...</td></tr>
                     </tbody>
                   </table>
                 </div>
               </div>
 
               <!-- Add new row -->
-              <div class="vl-add-row" id="vlAddRow" style="width:1010px;max-width:100%;box-sizing:border-box">
+              <div class="vl-add-row" id="vlAddRow" style="width:1088px;max-width:100%;box-sizing:border-box">
                 <div class="form-group" style="min-width:110px;max-width:130px">
                   <label>입력 방식</label>
                   <select id="vl-new-entry_type" onchange="vlToggleNewForm()">
@@ -2041,6 +2045,7 @@ function showToast(msg, type) {
   var icons = {
     success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
     error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+    warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
   };
   var container = document.getElementById('toastContainer');
@@ -2681,7 +2686,7 @@ function loadVariantLists() {
     vlRenderTable();
   }).catch(function() {
     document.getElementById('vlTableBody').innerHTML =
-      '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--red)">목록을 불러올 수 없습니다.</td></tr>';
+      '<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--red)">목록을 불러올 수 없습니다.</td></tr>';
   });
 }
 
@@ -2690,14 +2695,15 @@ function vlRenderTable() {
   var tbody = document.getElementById('vlTableBody');
   if (!tbody) return;
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text-muted)">항목이 없습니다. 파일 업로드 또는 직접 추가하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-muted)">항목이 없습니다. 파일 업로드 또는 직접 추가하세요.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(function(r) {
+  tbody.innerHTML = rows.map(function(r, idx) {
     var typeBadge = r.entry_type === 'cnumber'
       ? '<span style="font-size:.7rem;background:#EDE9FE;color:#6D28D9;border-radius:3px;padding:1px 5px">cNum</span>'
       : '<span style="font-size:.7rem;background:#E0F2FE;color:#0369A1;border-radius:3px;padding:1px 5px">Pos</span>';
     return '<tr>'
+      + '<td style="text-align:center;color:var(--text-muted);font-size:.75rem;user-select:none">' + (idx + 1) + '</td>'
       + '<td>' + typeBadge + '</td>'
       + '<td><input value="' + escapeHtml(r.cnumber||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'cnumber\',this.value)" style="min-width:80px"></td>'
       + '<td><input value="' + escapeHtml(r.chrom||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'chrom\',this.value)" style="min-width:45px"></td>'
@@ -2806,8 +2812,11 @@ function vlUploadFile() {
   }).then(function(r) { return r.json(); }).then(function(res) {
     input.value = '';
     if (res.success) {
-      if (msg) msg.textContent = res.inserted + '개 항목이 추가되었습니다.';
-      showToast(res.inserted + '개 항목이 추가되었습니다.', 'success');
+      var skipInfo = (res.skipped && res.skipped.length > 0)
+        ? ' (스킵: ' + res.skipped.length + '행 — Variant 컬럼이 비어있음: 행 ' + res.skipped.map(function(s){ return s.row; }).join(', ') + ')'
+        : '';
+      if (msg) msg.textContent = res.inserted + '개 항목이 추가되었습니다.' + skipInfo;
+      showToast(res.inserted + '개 항목이 추가되었습니다.' + (res.skipped && res.skipped.length ? ' (' + res.skipped.length + '행 스킵)' : ''), res.skipped && res.skipped.length ? 'warning' : 'success');
       loadVariantLists();
     } else {
       if (msg) msg.textContent = '';

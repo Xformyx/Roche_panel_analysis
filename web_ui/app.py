@@ -3071,7 +3071,7 @@ def _get_list_tag(chrom, pos_str, ref, alt, vcf_id, by_position, by_cnumber):
 
 
 def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False):
-    """Parse an uploaded xlsx / txt / bed file and return list-entry dicts.
+    """Parse an uploaded xlsx / txt / bed file and return (entries, skipped_rows).
 
     skip_header: when True, forcibly treat the first row as a header row
                  (ignores auto-detection and always skips row 0).
@@ -3079,6 +3079,7 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
     now = datetime.now().isoformat()
     entries = []
+    skipped_rows = []
 
     if ext in ("xlsx", "xls"):
         import io
@@ -3115,12 +3116,12 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
                 "chrom": chrom, "pos": pos, "ref": "", "alt": "",
                 "gene": "", "note": note, "created_at": now, "updated_at": now,
             })
-        return entries
+        return entries, []
     else:
         content = file_bytes.decode("utf-8", errors="replace")
         lines = [l.rstrip() for l in content.splitlines() if l.strip() and not l.startswith("#")]
         if not lines:
-            return []
+            return [], []
         sep = "\t" if "\t" in lines[0] else ","
         raw_rows = [l.split(sep) for l in lines]
 
@@ -3134,6 +3135,23 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
         "REF", "ALT", "GENE", "GENE_NAME", "NOTE", "COMMENT", "ID",
         "분류", "CATEGORY", "비율", "RATIO", "빈도", "FREQUENCY",
     }
+
+    # Regex to detect position-format variants: e.g. "11-69532129-G-T-snv"
+    _POS_VARIANT_RE = re.compile(
+        r'^([A-Za-z0-9]+)-(\d+)-([A-Za-z*]+)-([A-Za-z*]+)(?:-\w+)?$'
+    )
+
+    def _parse_variant_field(v):
+        """Return (entry_type, chrom, pos_int, ref, alt, cnumber) from a Variant field."""
+        v = (v or "").strip()
+        if not v:
+            return None
+        m = _POS_VARIANT_RE.match(v)
+        if m:
+            chrom_raw, pos_str, ref, alt = m.group(1), m.group(2), m.group(3).upper(), m.group(4).upper()
+            chrom = chrom_raw if chrom_raw.lower().startswith("chr") else f"chr{chrom_raw}"
+            return ("position", chrom, int(pos_str), ref, alt, "")
+        return ("cnumber", "", 0, "", "", v)
     first_upper = [c.strip().upper().replace(" ", "_") for c in raw_rows[0]]
 
     if skip_header:
@@ -3166,19 +3184,37 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
         gn_col  = _gi(header, "GENE", "GENE_NAME")
         nt_col  = _gi(header, "NOTE", "COMMENT", "DESCRIPTION", "REMARK", "비고")
         cat_col = _gi(header, "분류", "CATEGORY", "CLASS", "TYPE")
-        rat_col = _gi(header, "비율", "RATIO", "FREQUENCY", "빈도", "FREQ")
+        rat_col = _gi(header, "비율", "RATIO")
+        freq_col = _gi(header, "빈도", "FREQUENCY", "FREQ")
 
-        for row in data_rows:
+        skipped_rows = []
+        for row_idx, row in enumerate(data_rows, start=2):  # 2 = first data row (row 1 = header)
             if not any(v.strip() for v in row):
-                continue
+                continue  # truly empty row
             cn  = _gv(row, cn_col)
             chm = _gv(row, chr_col)
             ps  = _gv(row, pos_col)
             cat = _gv(row, cat_col)
             rat = _gv(row, rat_col)
+            freq = _gv(row, freq_col)
+            gene = _gv(row, gn_col)
+            note = _gv(row, nt_col)
 
-            # Decide entry_type: if chrom+pos present → position; else cnumber
-            if chm and ps:
+            # Try to parse Variant column as position format first
+            parsed = _parse_variant_field(cn) if cn else None
+
+            if parsed and parsed[0] == "position":
+                _, chm, pos_int, ref, alt, _ = parsed
+                entries.append({
+                    "id": str(uuid.uuid4()), "list_type": list_type,
+                    "entry_type": "position", "cnumber": "",
+                    "chrom": chm, "pos": pos_int,
+                    "ref": ref, "alt": alt,
+                    "gene": gene, "note": note,
+                    "category": cat, "ratio": rat or freq,
+                    "created_at": now, "updated_at": now,
+                })
+            elif chm and ps:
                 try:
                     pos_int = int(float(ps))
                 except Exception:
@@ -3188,8 +3224,8 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
                     "entry_type": "position", "cnumber": cn,
                     "chrom": chm, "pos": pos_int,
                     "ref": _gv(row, ref_col).upper(), "alt": _gv(row, alt_col).upper(),
-                    "gene": _gv(row, gn_col), "note": _gv(row, nt_col),
-                    "category": cat, "ratio": rat,
+                    "gene": gene, "note": note,
+                    "category": cat, "ratio": rat or freq,
                     "created_at": now, "updated_at": now,
                 })
             elif cn:
@@ -3198,10 +3234,12 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
                     "entry_type": "cnumber", "cnumber": cn,
                     "chrom": chm, "pos": 0,
                     "ref": _gv(row, ref_col).upper(), "alt": _gv(row, alt_col).upper(),
-                    "gene": _gv(row, gn_col), "note": _gv(row, nt_col),
-                    "category": cat, "ratio": rat,
+                    "gene": gene, "note": note,
+                    "category": cat, "ratio": rat or freq,
                     "created_at": now, "updated_at": now,
                 })
+            else:
+                skipped_rows.append({"row": row_idx, "values": [v for v in row[:6]]})
     else:
         # No header: treat each line as a bare cNumber
         for row in data_rows:
@@ -3217,7 +3255,7 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
                 "created_at": now, "updated_at": now,
             })
 
-    return entries
+    return entries, skipped_rows
 
 
 # ── API: Variant Lists CRUD ──────────────────────────────────────────────────
@@ -3333,7 +3371,7 @@ def api_vl_upload():
         return jsonify({"success": False, "error": "파일이 전달되지 않았습니다."}), 400
     file_bytes = f.read()
     try:
-        entries = _parse_variant_list_file(file_bytes, f.filename, list_type, skip_header=skip_header)
+        entries, skipped = _parse_variant_list_file(file_bytes, f.filename, list_type, skip_header=skip_header)
     except Exception as e:
         return jsonify({"success": False, "error": f"파일 파싱 오류: {e}"}), 400
     if not entries:
@@ -3352,7 +3390,7 @@ def api_vl_upload():
         entries,
     )
     db.commit()
-    return jsonify({"success": True, "inserted": len(entries)})
+    return jsonify({"success": True, "inserted": len(entries), "skipped": skipped})
 
 
 # ---------------------------------------------------------------------------
