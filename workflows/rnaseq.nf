@@ -5,63 +5,225 @@
  *  Roche_nxt: RNAseq Analysis Pipeline
  * ============================================================
  *
- *  RNA-seq expression & fusion analysis pipeline.
- *  Currently a skeleton — tools and steps TBD.
+ *  Standard RNA-seq analysis pipeline:
+ *    1. FastQC           — raw read quality control
+ *    2. fastp            — adapter trimming & quality filtering
+ *    3. STAR             — splice-aware alignment (2-pass)
+ *    4. samtools stats   — alignment statistics
+ *    5. RSeQC            — RNA-seq specific QC metrics
+ *    6. featureCounts    — gene-level expression quantification
+ *    7. Expression plots — CPM/TPM distribution, top genes, PCA
+ *    8. QC summary JSON  — parsed metrics for web UI
+ *    9. MultiQC          — aggregate QC report
+ *
+ *  Samplesheet format (CSV):
+ *    sample_id,fastq_1,fastq_2
+ *
+ *  Required parameters:
+ *    --input        : path to samplesheet CSV
+ *    --star_index   : path to STAR genome index directory
+ *    --gtf          : path to genome annotation GTF file
+ *
+ *  Optional parameters:
+ *    --bed12        : BED12 file for RSeQC (enables TIN, read distribution)
+ *    --outdir       : output directory (default: /work_nxt/results)
+ *    --reference    : genome reference name (default: hg38)
+ *    --data_dir     : base data directory (default: /work_nxt_data)
+ *    --max_cpus     : maximum CPUs (default: 8)
+ *    --max_memory   : maximum memory in GB (default: 32)
+ *    --skip_rseqc   : skip RSeQC steps (default: false)
+ *    --skip_plots   : skip expression visualization plots (default: false)
  *
  *  Author  : Kenneth Kwon
- *  Version : 0.1.0 (skeleton)
+ *  Version : 1.0.0
  * ============================================================
  */
 
 nextflow.enable.dsl = 2
 
 // ── Parameters ───────────────────────────────────────────────
-params.input      = null
-params.outdir     = '/work_nxt/results'
-params.reference  = 'hg38'
-params.data_dir   = '/work_nxt_data'
-params.max_cpus   = 8
-params.max_memory = 32
+params.input           = null
+params.outdir          = '/work_nxt/results'
+params.reference       = 'hg38'
+params.data_dir        = '/work_nxt_data'
+params.max_cpus        = 8
+params.max_memory      = 32
+params.publish_dir_mode = 'copy'
+
+// RNA-specific references (resolved from nextflow.config genomes block or passed directly)
+params.star_index      = null
+params.gtf             = null
+params.bed12           = null    // BED12 for RSeQC (optional)
+
+// fastp options for RNA (shorter min-length than ctDNA)
+params.fastp_options   = '-g -W 5 -q 20 -u 40 -x -3 -l 50 -c'
+
+// Skip flags
+params.skip_rseqc      = false
+params.skip_plots      = false
+
+// ── Module includes ──────────────────────────────────────────
+include { FASTQC }              from '../modules/fastqc'
+include { FASTP }               from '../modules/fastp'
+include { STAR_ALIGN }          from '../modules/star_align'
+include { FEATURECOUNTS }       from '../modules/featurecounts'
+include { MULTIQC }             from '../modules/multiqc'
+include { SAMTOOLS_FLAGSTAT;
+          SAMTOOLS_STATS }      from '../modules/samtools_stats'
+include { RSEQC_INFER_EXPERIMENT;
+          RSEQC_READ_DISTRIBUTION;
+          RSEQC_JUNCTION_SATURATION;
+          RSEQC_TIN }           from '../modules/rseqc'
+include { RNASEQ_PLOTS }        from '../modules/rnaseq_plots'
+include { RNASEQ_QC_SUMMARY }   from '../modules/rnaseq_qc_summary'
 
 // ── Log pipeline info ────────────────────────────────────────
 log.info """
 ╔══════════════════════════════════════════════════════════════╗
-║        Roche_nxt: RNAseq Analysis Pipeline                  ║
+║        Roche_nxt: RNAseq Analysis Pipeline  v1.0.0          ║
 ╚══════════════════════════════════════════════════════════════╝
 
-  Input       : ${params.input}
-  Reference   : ${params.reference}
-  Output dir  : ${params.outdir}
+  Input        : ${params.input}
+  Reference    : ${params.reference}
+  STAR Index   : ${params.star_index}
+  GTF          : ${params.gtf}
+  BED12        : ${params.bed12 ?: '(not provided — RSeQC skipped)'}
+  Output dir   : ${params.outdir}
+  Max CPUs     : ${params.max_cpus}
+  Max Memory   : ${params.max_memory} GB
+  Skip RSeQC   : ${params.skip_rseqc}
+  Skip Plots   : ${params.skip_plots}
 ──────────────────────────────────────────────────────────────
 """
+
+// ── Validation ───────────────────────────────────────────────
+def validateRnaParams() {
+    if (!params.input)       error "ERROR: --input samplesheet.csv is required"
+    if (!params.star_index)  error "ERROR: --star_index (STAR genome index directory) is required"
+    if (!params.gtf)         error "ERROR: --gtf (genome annotation GTF) is required"
+}
 
 // ── Main workflow ────────────────────────────────────────────
 workflow {
 
-    if (!params.input) {
-        error "ERROR: --input samplesheet.csv is required"
-    }
+    validateRnaParams()
 
-    // Parse samplesheet
+    // ── Resolve reference paths ──────────────────────────────
+    def star_idx = file(params.star_index)
+    def gtf_file = file(params.gtf)
+    def bed12_file = params.bed12 ? file(params.bed12) : null
+    def run_rseqc = !params.skip_rseqc && (bed12_file != null)
+
+    // ── Parse samplesheet ────────────────────────────────────
     Channel
         .fromPath(params.input)
         .splitCsv(header: true)
-        .map { row -> tuple(row.sample_id, file(row.fastq_1), file(row.fastq_2)) }
+        .map { row ->
+            def sample_id = row.sample_id
+            def r1 = file(row.fastq_1)
+            def r2 = file(row.fastq_2)
+            if (!r1.exists()) log.warn "WARNING: R1 FASTQ not found: ${r1}"
+            if (!r2.exists()) log.warn "WARNING: R2 FASTQ not found: ${r2}"
+            tuple(sample_id, r1, r2)
+        }
         .set { reads_ch }
 
-    // TODO: implement RNAseq analysis steps
-    // Suggested pipeline:
-    //   1. FastQC           — raw read QC
-    //   2. Trim Galore      — adapter trimming
-    //   3. STAR / HISAT2    — alignment to reference transcriptome
-    //   4. featureCounts    — gene expression quantification
-    //   5. DESeq2 / edgeR   — differential expression (optional)
-    //   6. STAR-Fusion      — fusion gene detection (optional)
-    //   7. MultiQC          — aggregate QC report
+    // ── Step 1: FastQC (raw reads) ───────────────────────────
+    FASTQC(reads_ch)
 
-    reads_ch.view { sample, r1, r2 ->
-        log.info "🧬 RNAseq sample queued: ${sample} (R1: ${r1.name}, R2: ${r2.name})"
+    // ── Step 2: fastp (adapter trimming) ────────────────────
+    FASTP(reads_ch)
+
+    // ── Step 3: STAR alignment ───────────────────────────────
+    STAR_ALIGN(FASTP.out.reads, star_idx)
+
+    // ── Step 4: samtools stats ───────────────────────────────
+    SAMTOOLS_FLAGSTAT(STAR_ALIGN.out.bam)
+    SAMTOOLS_STATS(STAR_ALIGN.out.bam)
+
+    // ── Step 5: RSeQC (RNA-seq specific QC) ─────────────────
+    if (run_rseqc) {
+        RSEQC_INFER_EXPERIMENT(
+            STAR_ALIGN.out.bam,
+            STAR_ALIGN.out.bai,
+            bed12_file
+        )
+        RSEQC_READ_DISTRIBUTION(
+            STAR_ALIGN.out.bam,
+            bed12_file
+        )
+        RSEQC_JUNCTION_SATURATION(
+            STAR_ALIGN.out.bam,
+            STAR_ALIGN.out.bai,
+            bed12_file
+        )
+        RSEQC_TIN(
+            STAR_ALIGN.out.bam,
+            STAR_ALIGN.out.bai,
+            bed12_file
+        )
     }
 
-    log.warn "⚠ RNAseq pipeline is not yet implemented. Sample registered successfully."
+    // ── Step 6: featureCounts (gene quantification) ──────────
+    FEATURECOUNTS(STAR_ALIGN.out.bam, gtf_file)
+
+    // ── Step 7: Expression visualization plots ───────────────
+    if (!params.skip_plots) {
+        RNASEQ_PLOTS(FEATURECOUNTS.out.counts, gtf_file)
+    }
+
+    // ── Step 8: QC summary JSON (for web UI) ─────────────────
+    // Join all per-sample QC outputs by sample_id
+    qc_input_ch = STAR_ALIGN.out.log_final
+        .join(FASTP.out.report.map { sid, json, html -> tuple(sid, json) })
+        .join(FEATURECOUNTS.out.summary)
+        .join(SAMTOOLS_FLAGSTAT.out.flagstat)
+
+    RNASEQ_QC_SUMMARY(
+        qc_input_ch.map { sid, star_log, fastp_json, fc_summary, flagstat ->
+            tuple(sid, star_log)
+        },
+        qc_input_ch.map { sid, star_log, fastp_json, fc_summary, flagstat ->
+            tuple(sid, fastp_json)
+        },
+        qc_input_ch.map { sid, star_log, fastp_json, fc_summary, flagstat ->
+            tuple(sid, fc_summary)
+        },
+        qc_input_ch.map { sid, star_log, fastp_json, fc_summary, flagstat ->
+            tuple(sid, flagstat)
+        }
+    )
+
+    // ── Step 9: MultiQC aggregate report ────────────────────
+    multiqc_input = Channel.empty()
+    multiqc_input = multiqc_input.mix(
+        FASTQC.out.zip.map { sid, zip -> zip }
+    )
+    multiqc_input = multiqc_input.mix(
+        FASTP.out.report.map { sid, json, html -> [json, html] }.flatten()
+    )
+    multiqc_input = multiqc_input.mix(
+        STAR_ALIGN.out.log_final.map { sid, log -> log }
+    )
+    multiqc_input = multiqc_input.mix(
+        FEATURECOUNTS.out.summary.map { sid, summary -> summary }
+    )
+    multiqc_input = multiqc_input.mix(
+        SAMTOOLS_STATS.out.stats.map { sid, stats -> stats }
+    )
+
+    MULTIQC(multiqc_input.collect())
+
+    // ── Completion summary ───────────────────────────────────
+    workflow.onComplete {
+        def status = workflow.success ? "SUCCESS" : "FAILED"
+        log.info """
+╔══════════════════════════════════════════════════════════════╗
+║  RNAseq Pipeline ${status}
+╚══════════════════════════════════════════════════════════════╝
+  Duration  : ${workflow.duration}
+  Output    : ${params.outdir}
+  MultiQC   : ${params.outdir}/MultiQC/multiqc_report.html
+"""
+    }
 }

@@ -902,6 +902,9 @@ tbody tr:hover{background:#F8FAFC}
           <button class="setup-tab-btn" data-stab="variantlists" onclick="switchSetupTab('variantlists',this)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Variant 리스트
           </button>
+          <button class="setup-tab-btn" data-stab="rnaseq" onclick="switchSetupTab('rnaseq',this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>RNAseq 레퍼런스
+          </button>
         </div>
         <div class="section-body" style="padding-top:0">
           <div class="settings-form">
@@ -1447,6 +1450,80 @@ tbody tr:hover{background:#F8FAFC}
             </div>
             </div><!-- /stab-variantlists -->
 
+            <!-- ===================== TAB: RNAseq 레퍼런스 ===================== -->
+            <div class="setup-tab-panel" id="stab-rnaseq">
+            <div class="form-section">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                RNAseq 레퍼런스 경로 설정
+              </div>
+              <p style="font-size:.78rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5">
+                RNA 파이프라인 실행 시 STAR Index, GTF, BED12 경로를 지정합니다.
+                비워두면 <code style="font-size:.72rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">nextflow.config</code>의 genomes 블록에서 자동 해석합니다.
+              </p>
+
+              <div class="form-grid" style="grid-template-columns:1fr">
+                <div class="form-group">
+                  <label>STAR Index 경로 <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">(STAR genome index directory)</span></label>
+                  <input type="text" id="set-rna_star_index"
+                    placeholder="/work_nxt_data/refs/hg38/star_index"
+                    style="font-family:monospace;font-size:.82rem">
+                  <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">
+                    STAR --genomeDir 에 전달되는 인덱스 디렉토리. 비워두면 nextflow.config genomes 블록의 star_index 값 사용.
+                  </span>
+                </div>
+                <div class="form-group">
+                  <label>GTF 경로 <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">(genome annotation GTF)</span></label>
+                  <input type="text" id="set-rna_gtf"
+                    placeholder="/work_nxt_data/refs/hg38/genes.gtf"
+                    style="font-family:monospace;font-size:.82rem">
+                  <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">
+                    featureCounts 유전자 열거에 사용하는 GTF 열거 파일.
+                  </span>
+                </div>
+                <div class="form-group">
+                  <label>BED12 경로 <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">(RSeQC 선택사항)</span></label>
+                  <input type="text" id="set-rna_bed12"
+                    placeholder="/work_nxt_data/refs/hg38/genes.bed12"
+                    style="font-family:monospace;font-size:.82rem">
+                  <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">
+                    RSeQC (TIN, read distribution 등)에 사용. 비워두면 RSeQC 단계를 건너맙니다.
+                  </span>
+                </div>
+                <div class="form-group">
+                  <label>fastp 옵션 (RNA) <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">(RNA 전용 기본값)</span></label>
+                  <input type="text" id="set-rna_fastp_options"
+                    value="-g -W 5 -q 20 -u 40 -x -3 -l 50 -c"
+                    style="font-family:monospace;font-size:.82rem">
+                  <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">
+                    RNA에는 <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-l 50</code> (최소 50bp) 권장. ctDNA는 -l 75 사용.
+                  </span>
+                </div>
+              </div>
+
+              <!-- Reference build info -->
+              <div style="margin-top:14px;padding:10px 12px;background:var(--bg-secondary);border-radius:6px;font-size:.75rem;color:var(--text-muted)">
+                <strong style="color:var(--text)">STAR Index 생성 명령 (hg38 예시):</strong><br>
+                <code style="font-size:.72rem;display:block;margin-top:4px;white-space:pre-wrap">STAR --runMode genomeGenerate \
+  --genomeDir /work_nxt_data/refs/hg38/star_index \
+  --genomeFastaFiles /work_nxt_data/refs/hg38/ucsc.hg38.fasta \
+  --sjdbGTFfile /work_nxt_data/refs/hg38/genes.gtf \
+  --runThreadN 16</code>
+                <div style="margin-top:8px">
+                  <strong style="color:var(--text)">BED12 변환 (선택사항):</strong><br>
+                  <code style="font-size:.72rem">gtfToGenePred genes.gtf genes.genePred &amp;&amp; genePredToBed genes.genePred genes.bed12</code>
+                </div>
+              </div>
+
+              <div class="tab-save-row">
+                <button class="btn btn-primary settings-save-btn" onclick="saveSettings()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  설정 저장
+                </button>
+              </div>
+            </div>
+            </div><!-- /stab-rnaseq -->
+
           </div><!-- /settings-form -->
         </div><!-- /section-body -->
       </div><!-- /section -->
@@ -1486,16 +1563,54 @@ tbody tr:hover{background:#F8FAFC}
         </div>
       </div>
 
-      <!-- RNA-specific params placeholder (shown when RNA panel selected) -->
+      <!-- RNA-specific params (shown when RNA panel selected) -->
       <div id="rnaPanelParamsSection" style="display:none">
         <div class="form-section">
           <div class="form-section-title">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             RNAseq 분석 파라미터
           </div>
-          <p style="font-size:.78rem;color:var(--text-muted);margin:4px 0 0;line-height:1.45">
-            RNA 파이프라인 파라미터는 추후 업데이트 예정입니다. 현재는 기본값으로 분석이 수행됩니다.
+          <p style="font-size:.75rem;color:var(--text-muted);margin:0 0 10px;line-height:1.5">
+            STAR 정렬 &rarr; featureCounts 정량 &rarr; 발현량 시각화 &rarr; MultiQC 파이프라인이 실행됩니다.
+            레퍼런스 경로는 설정(Setup)에서 지정하거나 nextflow.config의 genomes 블록에서 자동 해석됩니다.
           </p>
+
+          <!-- Reference info badge -->
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(68,114,196,0.08);border:1px solid rgba(68,114,196,0.25);border-radius:6px;margin-bottom:12px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4472C4" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span style="font-size:.75rem;color:var(--text-muted)">
+              STAR Index &amp; GTF 경로는 <strong>Setup &rarr; RNAseq 레퍼런스</strong> 섹션에서 설정합니다.
+              설정하지 않으면 nextflow.config의 genomes 블록 경로를 자동 사용합니다.
+            </span>
+          </div>
+
+          <!-- fastp options for RNA -->
+          <div class="form-group">
+            <label>fastp 옵션 <span style="font-size:.66rem;color:var(--text-muted);font-weight:400">(RNA 권장: 최소 길이 50bp)</span></label>
+            <input type="text" id="rna-fastp_options" value="-g -W 5 -q 20 -u 40 -x -3 -l 50 -c"
+              style="font-family:monospace;font-size:.82rem"
+              placeholder="-g -W 5 -q 20 -u 40 -x -3 -l 50 -c">
+            <span style="font-size:.7rem;color:var(--text-muted);margin-top:3px;display:block">
+              <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-l 50</code> 최소 리드 길이 &nbsp;
+              <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-q 20</code> 최소 품질 &nbsp;
+              <code style="font-size:.68rem;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">-c</code> 페어 교정
+            </span>
+          </div>
+
+          <!-- Pipeline steps info -->
+          <div style="margin-top:10px;padding:10px 12px;background:var(--bg-secondary);border-radius:6px">
+            <div style="font-size:.75rem;font-weight:600;color:var(--text);margin-bottom:6px">파이프라인 단계</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
+              <div style="font-size:.72rem;color:var(--text-muted)">1. FastQC &mdash; 원시 리드 QC</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">2. fastp &mdash; 어댑터 트리밍</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">3. STAR &mdash; 스플라이스 정렬 (2-pass)</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">4. samtools &mdash; 정렬 통계</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">5. RSeQC &mdash; RNA-seq 특화 QC</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">6. featureCounts &mdash; 유전자 정량</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">7. 발현량 시각화 &mdash; CPM/TPM 플롯</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">8. MultiQC &mdash; 통합 QC 리포트</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3465,8 +3580,14 @@ function openQC(orderId) {
   apiFetch('/api/orders/' + orderId + '/qc_data').then(function(d) {
     if (!d.success) { showToast(d.error || 'QC 데이터를 불러올 수 없습니다.', 'error'); return; }
     qcData = d;
-    document.getElementById('qcTitle').textContent = (d.order_name || d.sample_name) + ' — QC Report';
-    renderQCSummary(d);
+    var isRna = (d.panel_type === 'rna') || !!d.rna_star;
+    var panelBadge = isRna ? ' <span style="font-size:.7rem;background:rgba(68,114,196,0.15);color:#4472C4;padding:2px 7px;border-radius:10px;font-weight:600">RNA-seq</span>' : '';
+    document.getElementById('qcTitle').innerHTML = (d.order_name || d.sample_name) + ' — QC Report' + panelBadge;
+    if (isRna) {
+      renderRnaQCSummary(d);
+    } else {
+      renderQCSummary(d);
+    }
     renderQCTabs(d);
   }).catch(function() { showToast('QC 데이터 로딩 실패', 'error'); });
 }
@@ -3587,12 +3708,24 @@ function renderQCSummary(d) {
 
 function renderQCTabs(d) {
   var tabs = [];
-  if (d.hs_metrics_umi_deduped || d.hs_metrics_aligned) tabs.push({ id: 'coverage', label: 'Coverage' });
-  if (d.fastp) tabs.push({ id: 'trimming', label: 'Trimming (fastp)' });
-  if (d.alignment_umi_deduped || d.alignment_aligned) tabs.push({ id: 'alignment', label: 'Alignment' });
-  if (d.insert_size_umi_deduped || d.insert_size_aligned) tabs.push({ id: 'insertsize', label: 'Insert Size' });
-  if (d.duplicates) tabs.push({ id: 'duplicates', label: 'Duplicates' });
-  if (d.mismatch_rate) tabs.push({ id: 'mismatch', label: 'Mismatch Rate' });
+  var isRna = (d.panel_type === 'rna') || !!d.rna_star;
+  if (isRna) {
+    // RNA-seq specific tabs
+    if (d.rna_star) tabs.push({ id: 'rna_alignment', label: 'STAR Alignment' });
+    if (d.fastp || (d.rna_qc && d.rna_qc.fastp)) tabs.push({ id: 'trimming', label: 'Trimming (fastp)' });
+    if (d.rna_featurecounts) tabs.push({ id: 'rna_featurecounts', label: 'featureCounts' });
+    if (d.rna_expression) tabs.push({ id: 'rna_expression', label: 'Expression' });
+    if (d.rna_plots && d.rna_plots.length > 0) tabs.push({ id: 'rna_plots', label: 'Expression Plots' });
+    if (d.rna_flagstat) tabs.push({ id: 'rna_flagstat', label: 'Flagstat' });
+  } else {
+    // ctDNA (Exome) tabs
+    if (d.hs_metrics_umi_deduped || d.hs_metrics_aligned) tabs.push({ id: 'coverage', label: 'Coverage' });
+    if (d.fastp) tabs.push({ id: 'trimming', label: 'Trimming (fastp)' });
+    if (d.alignment_umi_deduped || d.alignment_aligned) tabs.push({ id: 'alignment', label: 'Alignment' });
+    if (d.insert_size_umi_deduped || d.insert_size_aligned) tabs.push({ id: 'insertsize', label: 'Insert Size' });
+    if (d.duplicates) tabs.push({ id: 'duplicates', label: 'Duplicates' });
+    if (d.mismatch_rate) tabs.push({ id: 'mismatch', label: 'Mismatch Rate' });
+  }
 
   var tabHtml = '';
   tabs.forEach(function(t, i) {
@@ -3622,8 +3755,214 @@ function buildQCTabContent(tabId, d) {
     case 'insertsize': return buildInsertSizeTab(d);
     case 'duplicates': return buildDuplicatesTab(d);
     case 'mismatch': return buildMismatchTab(d);
+    // ── RNA-seq tabs ─────────────────────────────────────────────────────────────────────────
+    case 'rna_alignment': return buildRnaAlignmentTab(d);
+    case 'rna_featurecounts': return buildRnaFeatureCountsTab(d);
+    case 'rna_expression': return buildRnaExpressionTab(d);
+    case 'rna_plots': return buildRnaPlotsTab(d);
+    case 'rna_flagstat': return buildRnaFlagstatTab(d);
     default: return '';
   }
+}
+
+// ── RNA-seq QC Summary KPIs ─────────────────────────────────────────────────────────────────────────
+function renderRnaQCSummary(d) {
+  var html = '';
+  var star = d.rna_star || {};
+  var fastp = d.fastp || {};
+  var fc = d.rna_featurecounts || {};
+
+  // Uniquely mapped %
+  var uniqPct = parseFloat(star.uniquely_mapped_pct);
+  html += '<div class="qc-kpi ' + kpiClass(uniqPct, 75, 60, true) + '">';
+  html += '<div class="kpi-label">Uniquely Mapped</div>';
+  html += '<div class="kpi-value">' + (isNaN(uniqPct) ? (star.uniquely_mapped_pct || '-') : uniqPct.toFixed(1) + '%') + '</div>';
+  html += '<div class="kpi-sub">Reads: ' + fmtNum(star.uniquely_mapped) + '</div></div>';
+
+  // Multi-mapped %
+  var multiPct = parseFloat(star.multi_mapped_pct);
+  html += '<div class="qc-kpi ' + kpiClass(multiPct, 5, 20, false) + '">';
+  html += '<div class="kpi-label">Multi-Mapped</div>';
+  html += '<div class="kpi-value">' + (isNaN(multiPct) ? (star.multi_mapped_pct || '-') : multiPct.toFixed(1) + '%') + '</div>';
+  html += '<div class="kpi-sub">Reads: ' + fmtNum(star.multi_mapped) + '</div></div>';
+
+  // Q30
+  var q30 = parseFloat(fastp.after_q30_rate);
+  html += '<div class="qc-kpi ' + kpiClass(q30, 0.90, 0.80, true) + '">';
+  html += '<div class="kpi-label">Q30 (After Trim)</div>';
+  html += '<div class="kpi-value">' + fmtPct(fastp.after_q30_rate) + '</div>';
+  html += '<div class="kpi-sub">Q20: ' + fmtPct(fastp.after_q20_rate) + '</div></div>';
+
+  // Total reads
+  html += '<div class="qc-kpi neutral">';
+  html += '<div class="kpi-label">Total Reads (Raw)</div>';
+  html += '<div class="kpi-value">' + fmtNum(fastp.before_total_reads || star.total_reads) + '</div>';
+  html += '<div class="kpi-sub">After trim: ' + fmtNum(fastp.after_total_reads) + '</div></div>';
+
+  // Assigned reads (featureCounts)
+  var assigned = parseInt(fc.Assigned) || 0;
+  var total_fc = 0;
+  Object.keys(fc).forEach(function(k) { total_fc += parseInt(fc[k]) || 0; });
+  var assignedPct = total_fc > 0 ? (assigned / total_fc * 100) : 0;
+  html += '<div class="qc-kpi ' + kpiClass(assignedPct, 60, 40, true) + '">';
+  html += '<div class="kpi-label">Assigned (featureCounts)</div>';
+  html += '<div class="kpi-value">' + (assignedPct > 0 ? assignedPct.toFixed(1) + '%' : '-') + '</div>';
+  html += '<div class="kpi-sub">Reads: ' + fmtNum(assigned) + '</div></div>';
+
+  // Avg mapped length
+  html += '<div class="qc-kpi neutral">';
+  html += '<div class="kpi-label">Avg Mapped Length</div>';
+  html += '<div class="kpi-value">' + (star.avg_mapped_length || '-') + ' bp</div>';
+  html += '<div class="kpi-sub">Mismatch: ' + (star.mismatch_rate_per_base || '-') + '%</div></div>';
+
+  document.getElementById('qcSummary').innerHTML = html;
+}
+
+// ── RNA STAR Alignment tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaAlignmentTab(d) {
+  var s = d.rna_star || {};
+  var html = '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">STAR 2-pass Alignment Summary</div>';
+  html += qcRow('Total Input Reads', fmtNum(s.total_reads));
+  html += qcRow('Uniquely Mapped Reads', fmtNum(s.uniquely_mapped) + ' (' + (s.uniquely_mapped_pct || '-') + '%)');
+  html += qcRow('Multi-Mapped Reads', fmtNum(s.multi_mapped) + ' (' + (s.multi_mapped_pct || '-') + '%)');
+  html += qcRow('Unmapped: Too Short', (s.unmapped_too_short_pct || '-') + '%');
+  html += qcRow('Unmapped: Other', (s.unmapped_other_pct || '-') + '%');
+  html += '<div class="qc-section-title">Read Length &amp; Error Rates</div>';
+  html += qcRow('Avg Input Read Length', (s.avg_input_read_length || '-') + ' bp');
+  html += qcRow('Avg Mapped Length', (s.avg_mapped_length || '-') + ' bp');
+  html += qcRow('Mismatch Rate per Base', (s.mismatch_rate_per_base || '-') + '%');
+  html += qcRow('Deletion Rate per Base', (s.deletion_rate_per_base || '-'));
+  html += qcRow('Insertion Rate per Base', (s.insertion_rate_per_base || '-'));
+  html += '<div class="qc-section-title">Splicing</div>';
+  html += qcRow('Total Splices', fmtNum(s.splices_total));
+  html += qcRow('Annotated Splices (sjdb)', fmtNum(s.splices_annotated));
+  html += '</div>';
+  return html;
+}
+
+// ── RNA featureCounts tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaFeatureCountsTab(d) {
+  var fc = d.rna_featurecounts || {};
+  var html = '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">featureCounts Assignment Summary</div>';
+  var total = 0;
+  Object.keys(fc).forEach(function(k) { total += parseInt(fc[k]) || 0; });
+  var assigned = parseInt(fc.Assigned) || 0;
+  var assignedPct = total > 0 ? (assigned / total * 100).toFixed(1) : '-';
+  html += qcRow('Assigned', fmtNum(assigned) + ' (' + assignedPct + '%)');
+  html += qcRow('Unassigned: No Features', fmtNum(fc.Unassigned_NoFeatures));
+  html += qcRow('Unassigned: Ambiguity', fmtNum(fc.Unassigned_Ambiguity));
+  html += qcRow('Unassigned: MultiMapping', fmtNum(fc.Unassigned_MultiMapping));
+  html += qcRow('Unassigned: Unmapped', fmtNum(fc.Unassigned_Unmapped));
+  html += qcRow('Unassigned: MappingQuality', fmtNum(fc.Unassigned_MappingQuality));
+  html += qcRow('Total Processed', fmtNum(total));
+
+  // Donut chart (CSS only)
+  if (total > 0) {
+    var pct = assigned / total * 100;
+    html += '<div style="margin-top:12px;text-align:center">';
+    html += '<div style="display:inline-block;position:relative;width:100px;height:100px">';
+    html += '<svg viewBox="0 0 36 36" width="100" height="100">';
+    html += '<path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--bg-secondary)" stroke-width="3"/>';
+    var dashArr = pct.toFixed(1) + ' ' + (100 - pct).toFixed(1);
+    html += '<path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--green)" stroke-width="3" stroke-dasharray="' + dashArr + '" stroke-dashoffset="25"/>';
+    html += '<text x="18" y="20" text-anchor="middle" font-size="7" fill="var(--text)" font-weight="bold">' + pct.toFixed(0) + '%</text>';
+    html += '</svg>';
+    html += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:4px">Assigned</div>';
+    html += '</div></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// ── RNA Expression table tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaExpressionTab(d) {
+  var expr = d.rna_expression || {};
+  var genes = expr.top_genes || [];
+  var total = expr.total_genes || 0;
+  var html = '<div style="margin-bottom:8px;font-size:.8rem;color:var(--text-muted)">'
+    + '전체 유전자 ' + fmtNum(total) + '개 · 상위 ' + genes.length + '개 표시 (TPM 내림차순)';
+  if (d.sample_name) {
+    html += ' &nbsp;<a href="/api/download/' + d.sample_name + '/expression" style="font-size:.72rem;color:var(--primary)" download>TSV 다운로드</a>';
+  }
+  html += '</div>';
+  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.78rem">';
+  html += '<thead><tr style="background:var(--bg-secondary)">';
+  html += '<th style="padding:5px 8px;text-align:left;font-weight:600">Gene ID</th>';
+  html += '<th style="padding:5px 8px;text-align:right;font-weight:600">Count</th>';
+  html += '<th style="padding:5px 8px;text-align:right;font-weight:600">CPM</th>';
+  html += '<th style="padding:5px 8px;text-align:right;font-weight:600">TPM</th>';
+  html += '<th style="padding:5px 8px;text-align:right;font-weight:600">Length (bp)</th>';
+  html += '</tr></thead><tbody>';
+  genes.forEach(function(g, i) {
+    var bg = i % 2 === 0 ? '' : 'background:var(--bg-secondary)';
+    var tpm = parseFloat(g.TPM);
+    var tpmColor = tpm > 100 ? 'var(--red)' : tpm > 10 ? 'var(--orange,#eb9700)' : tpm > 1 ? 'var(--green)' : 'var(--text-muted)';
+    html += '<tr style="' + bg + '">';
+    html += '<td style="padding:4px 8px;font-family:monospace;font-size:.75rem">' + (g.gene_id || '') + '</td>';
+    html += '<td style="padding:4px 8px;text-align:right">' + fmtNum(parseInt(g.count)) + '</td>';
+    html += '<td style="padding:4px 8px;text-align:right">' + (parseFloat(g.CPM) || 0).toFixed(2) + '</td>';
+    html += '<td style="padding:4px 8px;text-align:right;color:' + tpmColor + ';font-weight:600">' + (tpm || 0).toFixed(2) + '</td>';
+    html += '<td style="padding:4px 8px;text-align:right">' + fmtNum(parseInt(g.length)) + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+// ── RNA Expression Plots tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaPlotsTab(d) {
+  var plots = d.rna_plots || [];
+  var sample = d.sample_name || '';
+  var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;padding:4px 0">';
+  var plotLabels = {
+    'count_distribution': '리드 카운트 분포 (log2 CPM)',
+    'top30_genes': '상위 30 발현 유전자 (TPM)',
+    'expression_categories': '발현량 카테고리 분포',
+    'cumulative_expression': '누적 발현량 (상위 N개 유전자)'
+  };
+  if (plots.length === 0) {
+    html += '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:32px">';
+    html += '발현량 플롯 파일을 찾을 수 없습니다. 파이프라인 완료 후 생성됩니다.';
+    html += '</div>';
+  } else {
+    plots.forEach(function(relPath) {
+      var fname = relPath.split('/').pop().replace('.png','');
+      var key = Object.keys(plotLabels).find(function(k) { return fname.indexOf(k) >= 0; });
+      var label = key ? plotLabels[key] : fname;
+      html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:12px">';
+      html += '<div style="font-size:.78rem;font-weight:600;color:var(--text);margin-bottom:8px">' + label + '</div>';
+      html += '<img src="/api/results_image/' + encodeURIComponent(relPath) + '" style="width:100%;border-radius:4px" loading="lazy">';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  return html;
+}
+
+// ── RNA Flagstat tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaFlagstatTab(d) {
+  var fs = d.rna_flagstat || {};
+  var html = '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">samtools flagstat</div>';
+  var labels = {
+    'total': 'Total Reads',
+    'mapped': 'Mapped Reads',
+    'paired_in_sequencing': 'Paired in Sequencing',
+    'read1': 'Read 1',
+    'read2': 'Read 2',
+    'properly_paired': 'Properly Paired',
+    'with_itself_and_mate_mapped': 'Both Reads Mapped',
+    'singletons': 'Singletons',
+    'with_mate_mapped_to_a_different_chr': 'Mate on Different Chr',
+    'with_mate_mapped_to_a_different_chr_(mapQ>=5)': 'Mate on Diff Chr (mapQ≥5)'
+  };
+  Object.keys(labels).forEach(function(k) {
+    if (fs[k] !== undefined) html += qcRow(labels[k], fmtNum(fs[k]));
+  });
+  html += '</div>';
+  return html;
 }
 
 function qcRow(label, value) {
@@ -4368,6 +4707,10 @@ function loadSettings() {
     if (panelRnaCb)   panelRnaCb.checked   = panelsEnabled.indexOf('rna')   !== -1;
     bothPanelsEnabled = panelsEnabled.indexOf('exome') !== -1 && panelsEnabled.indexOf('rna') !== -1;
     applyBothPanelsUI();
+    // ── RNAseq reference paths ─────────────────────────────────────────────────────────────────────────
+    ['rna_star_index', 'rna_gtf', 'rna_bed12', 'rna_fastp_options'].forEach(function(k) {
+      if (s[k] !== undefined) { var el = document.getElementById('set-' + k); if (el) el.value = s[k]; }
+    });
     if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) renderOrderTable();
   }).catch(function() { showToast('설정을 불러올 수 없습니다.', 'error'); });
   loadResourceInfo();
@@ -4452,6 +4795,11 @@ function saveSettings() {
     return;
   }
   data['panels_enabled'] = panelParts.join(',');
+  // ── RNAseq reference paths ─────────────────────────────────────────────────────────────────────────
+  ['rna_star_index', 'rna_gtf', 'rna_bed12', 'rna_fastp_options'].forEach(function(k) {
+    var el = document.getElementById('set-' + k);
+    if (el) data[k] = el.value.trim();
+  });
 
   apiFetch('/api/settings', {
     method: 'POST',
