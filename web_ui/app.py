@@ -255,7 +255,8 @@ def init_db():
         ("created_by_user_id", "TEXT DEFAULT ''"),
         ("analysis_by_user_id", "TEXT DEFAULT ''"),
         ("subsample_info", "TEXT DEFAULT ''"),
-        ("use_umi", "TEXT DEFAULT ''"),
+        ("use_umi",     "TEXT DEFAULT ''"),
+        ("panel_type",  "TEXT DEFAULT 'exome'"),
     ]:
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col} {coldef}")
@@ -754,43 +755,67 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
         use_umi_flag = enable_umi_global
     umi_structure = settings.get("umi_read_structure", "3M3S+T 3M3S+T")
 
-    nf_cmd = [
-        "nextflow", "run", "/work_nxt/main.nf",
-        "-profile", "local",
-        "-name", run_name,
-        "-work-dir", f"/work_nxt/{work_dir_rel}",
-        "--input", ss_container_path,
-        "--outdir", "/work_nxt/results",
-        "--reference", ref,
-        "--af_threshold", str(af),
-        "--data_dir", "/work_nxt_data",
-        # UMI mode
-        "--use_umi",            "true" if use_umi_flag else "false",
-        "--umi_read_structure", umi_structure,
-        # Subsampling flag (determined by file-size check above)
-        "--subsample", "true" if do_subsample else "false",
-        # Baseline params from settings DB
-        "--seqtk_sample_size",    bl_seqtk_size,
-        "--seqtk_seed",           bl_seqtk_seed,
-        "--fastp_options",        bl_fastp_options,
-        "--min_reads",            bl_min_reads,
-        "--min_base_quality",     bl_min_bq,
-        "--max_read_error_rate",  bl_max_rer,
-        "--max_base_error_rate",  bl_max_ber,
-        "--max_no_call_fraction", bl_max_ncf,
-    ]
+    panel_type = (order.get("panel_type") or "exome").strip().lower()
+
+    if panel_type == "rna":
+        # ── RNAseq pipeline ────────────────────────────────────────────────
+        nf_cmd = [
+            "nextflow", "run", "/work_nxt/workflows/rnaseq.nf",
+            "-profile", "local",
+            "-name", run_name,
+            "-work-dir", f"/work_nxt/{work_dir_rel}",
+            "--input", ss_container_path,
+            "--outdir", "/work_nxt/results",
+            "--reference", ref,
+            "--data_dir", "/work_nxt_data",
+            "--max_cpus",   str(cpus_per_sample),
+            "--max_memory", str(mem_per_sample),
+        ]
+    else:
+        # ── Exome (ctDNA) pipeline — existing logic ────────────────────────
+        nf_cmd = [
+            "nextflow", "run", "/work_nxt/main.nf",
+            "-profile", "local",
+            "-name", run_name,
+            "-work-dir", f"/work_nxt/{work_dir_rel}",
+            "--input", ss_container_path,
+            "--outdir", "/work_nxt/results",
+            "--reference", ref,
+            "--af_threshold", str(af),
+            "--data_dir", "/work_nxt_data",
+            # UMI mode
+            "--use_umi",            "true" if use_umi_flag else "false",
+            "--umi_read_structure", umi_structure,
+            # Subsampling flag (determined by file-size check above)
+            "--subsample", "true" if do_subsample else "false",
+            # Baseline params from settings DB
+            "--seqtk_sample_size",    bl_seqtk_size,
+            "--seqtk_seed",           bl_seqtk_seed,
+            "--fastp_options",        bl_fastp_options,
+            "--min_reads",            bl_min_reads,
+            "--min_base_quality",     bl_min_bq,
+            "--max_read_error_rate",  bl_max_rer,
+            "--max_base_error_rate",  bl_max_ber,
+            "--max_no_call_fraction", bl_max_ncf,
+        ]
 
     if resume and not force:
         nf_cmd.append("-resume")
 
-    if order.get("bed_file"):
-        nf_cmd.extend(["--target_bed", f"/work_nxt_bed/{order['bed_file']}"])
-    if order.get("delete_intermediate") == "Y":
-        nf_cmd.append("--delete_intermediate")
+    if panel_type == "rna":
+        # RNAseq pipeline: skip exome-specific flags
+        if extra_nf_params:
+            nf_cmd.extend(extra_nf_params)
+    else:
+        # Exome-specific options
+        if order.get("bed_file"):
+            nf_cmd.extend(["--target_bed", f"/work_nxt_bed/{order['bed_file']}"])
+        if order.get("delete_intermediate") == "Y":
+            nf_cmd.append("--delete_intermediate")
 
-    nf_cmd.extend(["--max_cpus", str(cpus_per_sample), "--max_memory", str(mem_per_sample)])
+        nf_cmd.extend(["--max_cpus", str(cpus_per_sample), "--max_memory", str(mem_per_sample)])
 
-    if order.get("order_type") == "longitudinal":
+    if panel_type != "rna" and order.get("order_type") == "longitudinal":
         nf_cmd.extend(["--run_select_reporter", "true", "--run_longitudinal", "true"])
 
         # Select Reporter parameters from settings DB
@@ -861,7 +886,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
                         "--longitudinal_germline_bai", gm_bai_container,
                     ])
 
-    if extra_nf_params:
+    if panel_type != "rna" and extra_nf_params:
         nf_cmd.extend(extra_nf_params)
 
     docker_cmd = [
@@ -1346,15 +1371,21 @@ def api_create_order():
     use_umi_val = (data.get("use_umi") or "").strip().upper()
     if use_umi_val not in ("Y", "N", ""):
         use_umi_val = ""
+
+    # panel_type: 'exome' (default) or 'rna'
+    panel_type_val = (data.get("panel_type") or "exome").strip().lower()
+    if panel_type_val not in ("exome", "rna"):
+        panel_type_val = "exome"
+
     db.execute("""
         INSERT INTO orders (id, order_name, patient_name, patient_dob, chart_number,
             department, doctor_name, diagnosis, doctor_comment,
             sample_name, r1_fastq, r2_fastq, reference, profile,
             af_threshold, bed_file, delete_intermediate,
             order_type, baseline_order_id, germline_order_id, followup_order_ids, reuse_work_order_id,
-            use_umi,
+            use_umi, panel_type,
             status, created_at, updated_at, created_by_user_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         order_id,
         data.get("order_name", sample_name),
@@ -1379,6 +1410,7 @@ def api_create_order():
         followup_ids,
         reuse_wid,
         use_umi_val,
+        panel_type_val,
         "registered", now, now,
         created_by,
     ))
@@ -2929,6 +2961,7 @@ def api_get_settings():
     for k, v in {**_sr_defaults, **_la_defaults, **_bl_defaults}.items():
         settings.setdefault(k, v)
     settings.setdefault("longitudinal_enabled", "true")
+    settings.setdefault("panels_enabled", "exome")
 
     return jsonify(settings)
 

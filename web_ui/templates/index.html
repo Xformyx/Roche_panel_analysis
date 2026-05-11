@@ -135,7 +135,10 @@ tbody tr:hover{background:#F8FAFC}
 .filter-btn{padding:6px 14px;border-radius:99px;font-size:.8rem;font-weight:500;background:var(--bg);color:var(--text-light);border:1px solid transparent;transition:all .15s;cursor:pointer}
 .filter-btn:hover{color:var(--text);border-color:var(--border)}
 .filter-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.filter-btn.active-exome{background:#1D4ED8;color:#fff;border-color:#1D4ED8}
+.filter-btn.active-rna{background:#065F46;color:#fff;border-color:#065F46}
 .filter-bar .spacer{flex:1}
+.filter-group-sep{width:1px;height:22px;background:var(--border);margin:0 4px;flex-shrink:0}
 .order-search-bar{padding:0 20px 14px}
 .order-search-input{width:100%;max-width:420px;padding:9px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem;background:var(--card)}
 .order-search-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
@@ -158,6 +161,7 @@ tbody tr:hover{background:#F8FAFC}
 .badge-type{display:inline-block;font-size:.65rem;font-weight:600;padding:2px 6px;border-radius:4px;vertical-align:middle;margin-left:6px}
 .badge-type-baseline{background:var(--blue-bg);color:var(--blue)}
 .badge-type-longitudinal{background:#F3E8FF;color:#7C3AED}
+.badge-type-rna{background:#ECFDF5;color:#065F46}
 /* ── Variant List badges ─────────────────────────────────── */
 .vl-badge{display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;border-radius:3px;padding:1px 5px;line-height:1.3;white-space:nowrap;vertical-align:middle;margin-right:4px}
 .vl-badge-whitelist{background:#DCFCE7;color:#15803D;border:1px solid #86EFAC}
@@ -742,12 +746,18 @@ tbody tr:hover{background:#F8FAFC}
       <div class="section">
         <!-- Filter bar -->
         <div class="filter-bar">
+          <!-- 상태 필터 그룹 -->
           <button class="filter-btn active" data-status="" onclick="setOrderFilter(this,'')">전체</button>
           <button class="filter-btn" data-status="registered" onclick="setOrderFilter(this,'registered')">등록</button>
           <button class="filter-btn" data-status="running" onclick="setOrderFilter(this,'running')">실행 중</button>
           <button class="filter-btn" data-status="completed" onclick="setOrderFilter(this,'completed')">완료</button>
           <button class="filter-btn" data-status="failed" onclick="setOrderFilter(this,'failed')">실패</button>
           <button class="filter-btn" data-status="cancelled" onclick="setOrderFilter(this,'cancelled')">취소</button>
+          <!-- Panel 필터 그룹 (둘 다 활성화된 경우에만 표시) -->
+          <div class="filter-group-sep" id="panelFilterSep" style="display:none"></div>
+          <button class="filter-btn" id="panelFilterAll" data-panel="" onclick="setPanelFilter(this,'')" style="display:none">전체 Panel</button>
+          <button class="filter-btn" id="panelFilterExome" data-panel="exome" onclick="setPanelFilter(this,'exome')" style="display:none">Exome</button>
+          <button class="filter-btn" id="panelFilterRna" data-panel="rna" onclick="setPanelFilter(this,'rna')" style="display:none">RNA</button>
           <div class="spacer"></div>
           <button class="btn btn-primary" onclick="openCreateModal()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -761,10 +771,11 @@ tbody tr:hover{background:#F8FAFC}
 
         <!-- Order table -->
         <div style="overflow-x:auto">
-          <table>
+          <table id="orderTable">
             <thead>
               <tr>
                 <th>오더명</th>
+                <th id="panelColTh" style="display:none">Panel</th>
                 <th>환자</th>
                 <th>샘플</th>
                 <th>차트번호</th>
@@ -962,6 +973,23 @@ tbody tr:hover{background:#F8FAFC}
                   </label>
                   <span style="font-size:.7rem;color:var(--text-muted);display:block;margin-top:4px;line-height:1.4">끄면 Longitudinal 전용 UI가 숨겨집니다. 기존 완료 오더 결과는 그대로 유지됩니다.</span>
                 </div>
+              </div>
+              <div style="margin-top:20px">
+                <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:10px">Panel 종류</label>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                    <input type="checkbox" id="set-panel-exome" onchange="onPanelSettingChange()" style="width:16px;height:16px">
+                    <span style="font-size:.85rem;font-weight:500">Exome Panel</span>
+                    <span style="font-size:.75rem;color:var(--text-muted)">(ctDNA / 변이 분석)</span>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                    <input type="checkbox" id="set-panel-rna" onchange="onPanelSettingChange()" style="width:16px;height:16px">
+                    <span style="font-size:.85rem;font-weight:500">RNA Panel</span>
+                    <span style="font-size:.75rem;color:var(--text-muted)">(RNAseq 발현 분석)</span>
+                  </label>
+                </div>
+                <span id="panel-setting-warn" style="font-size:.72rem;color:var(--red);display:none;margin-top:6px">최소 하나 이상의 Panel을 선택해야 합니다.</span>
+                <span style="font-size:.7rem;color:var(--text-muted);display:block;margin-top:6px;line-height:1.4">둘 다 선택하면 오더 생성 시 Panel 종류를 선택합니다. 하나만 선택하면 해당 Panel로 자동 설정됩니다.</span>
               </div>
             </div>
 
@@ -1440,6 +1468,37 @@ tbody tr:hover{background:#F8FAFC}
     </div>
     <div class="modal-body">
 
+      <!-- Panel Type Selector (shown when both panels are enabled) -->
+      <div id="panelTypeSection" style="display:none;margin-bottom:16px">
+        <div class="form-section" style="padding:12px 16px">
+          <div class="form-section-title" style="margin-bottom:10px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Panel 선택
+          </div>
+          <div style="display:flex;gap:10px">
+            <button type="button" id="panelBtnExome" class="order-type-btn active" onclick="selectPanelType('exome',this)">
+              Exome Panel <span style="font-size:.72rem;opacity:.8">(ctDNA)</span>
+            </button>
+            <button type="button" id="panelBtnRna" class="order-type-btn" onclick="selectPanelType('rna',this)">
+              RNA Panel <span style="font-size:.72rem;opacity:.8">(RNAseq)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RNA-specific params placeholder (shown when RNA panel selected) -->
+      <div id="rnaPanelParamsSection" style="display:none">
+        <div class="form-section">
+          <div class="form-section-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            RNAseq 분석 파라미터
+          </div>
+          <p style="font-size:.78rem;color:var(--text-muted);margin:4px 0 0;line-height:1.45">
+            RNA 파이프라인 파라미터는 추후 업데이트 예정입니다. 현재는 기본값으로 분석이 수행됩니다.
+          </p>
+        </div>
+      </div>
+
       <!-- Order Type Selector (hidden when longitudinal disabled) -->
       <div id="orderTypeSection" style="display:none">
         <div class="order-type-selector">
@@ -1869,6 +1928,8 @@ tbody tr:hover{background:#F8FAFC}
 var currentPage = 'dashboard';
 var currentUser = null;
 var currentOrderFilter = '';
+var currentPanelFilter = '';   // '' = all, 'exome', 'rna'
+var bothPanelsEnabled  = false; // true when both Exome+RNA are enabled in settings
 var currentOrderType = 'baseline';
 var longitudinalEnabled = true;
 var editingOrderLongitudinal = false;
@@ -1977,7 +2038,7 @@ function startOrdersTimer() {
 function filterOrdersByStatus(status) {
   navigateTo('orders', true);
   currentOrderFilter = status || '';
-  document.querySelectorAll('.filter-btn').forEach(function(b) {
+  document.querySelectorAll('.filter-btn[data-status]').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-status') === (status || ''));
   });
   loadOrders();
@@ -2436,9 +2497,47 @@ function loadResources() {
    ================================================================ */
 function setOrderFilter(btn, status) {
   currentOrderFilter = status;
-  document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+  // Only reset status buttons (those with data-status attribute)
+  document.querySelectorAll('.filter-btn[data-status]').forEach(function(b) { b.classList.remove('active'); });
   btn.classList.add('active');
   loadOrders();
+}
+
+function setPanelFilter(btn, panel) {
+  currentPanelFilter = panel;
+  document.querySelectorAll('.filter-btn[data-panel]').forEach(function(b) {
+    b.classList.remove('active', 'active-exome', 'active-rna');
+  });
+  if (panel === 'exome') btn.classList.add('active-exome');
+  else if (panel === 'rna') btn.classList.add('active-rna');
+  else btn.classList.add('active');
+  renderOrderTable();
+}
+
+function applyBothPanelsUI() {
+  var sep       = document.getElementById('panelFilterSep');
+  var btnAll    = document.getElementById('panelFilterAll');
+  var btnExome  = document.getElementById('panelFilterExome');
+  var btnRna    = document.getElementById('panelFilterRna');
+  var th        = document.getElementById('panelColTh');
+  var show = bothPanelsEnabled;
+  var d = show ? '' : 'none';
+  if (sep)      sep.style.display      = d;
+  if (btnAll)   btnAll.style.display   = d;
+  if (btnExome) btnExome.style.display = d;
+  if (btnRna)   btnRna.style.display   = d;
+  if (th)       th.style.display       = show ? '' : 'none';
+  if (!show) {
+    currentPanelFilter = '';
+  } else {
+    // Ensure '전체 Panel' is active when first showing
+    if (!currentPanelFilter) {
+      document.querySelectorAll('.filter-btn[data-panel]').forEach(function(b) {
+        b.classList.remove('active', 'active-exome', 'active-rna');
+      });
+      if (btnAll) btnAll.classList.add('active');
+    }
+  }
 }
 
 function parseOrderDate(s) {
@@ -2513,16 +2612,23 @@ function renderOrderTable() {
   if (!tbody) return;
   updateOrderSortArrows();
 
+  var colCount = bothPanelsEnabled ? 10 : 9;
   if (!cachedOrders || cachedOrders.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">'
+    tbody.innerHTML = '<tr><td colspan="' + colCount + '" class="empty-state">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
       + '<p>등록된 오더가 없습니다.</p></td></tr>';
     return;
   }
 
   var filtered = filterOrdersBySearch(cachedOrders);
+  // Apply panel filter
+  if (currentPanelFilter) {
+    filtered = filtered.filter(function(o) {
+      return (o.panel_type || 'exome') === currentPanelFilter;
+    });
+  }
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">'
+    tbody.innerHTML = '<tr><td colspan="' + colCount + '" class="empty-state">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
       + '<p>검색 조건에 맞는 오더가 없습니다.</p></td></tr>';
     return;
@@ -2537,8 +2643,18 @@ function renderOrderTable() {
     var logClick = 'onclick="toggleLog(\'' + o.id + '\',\'' + escapeHtml(o.sample_name) + '\',\'' + o.status + '\')"';
     var typeBadge = '';
     if (o.order_type === 'longitudinal') typeBadge = '<span class="badge-type badge-type-longitudinal">L</span>';
+    // Panel column cell
+    var pt = o.panel_type || 'exome';
+    var panelCell = bothPanelsEnabled
+      ? '<td ' + logClick + '>'
+          + (pt === 'rna'
+            ? '<span class="badge-type badge-type-rna" style="margin-left:0">RNA</span>'
+            : '<span class="badge-type" style="margin-left:0;background:#DBEAFE;color:#1D4ED8">Exome</span>')
+          + '</td>'
+      : '';
     html += '<tr class="' + rowClass + '" data-id="' + o.id + '" data-sample="' + escapeHtml(o.sample_name) + '" data-status="' + o.status + '">'
       + '<td ' + logClick + '>' + escapeHtml(o.order_name || '-') + typeBadge + '</td>'
+      + panelCell
       + '<td ' + logClick + '>' + escapeHtml(o.patient_name || '-') + '</td>'
       + '<td ' + logClick + '>' + escapeHtml(o.sample_name || '-') + '</td>'
       + '<td ' + logClick + '>' + escapeHtml(o.chart_number || '-') + '</td>'
@@ -3830,6 +3946,10 @@ function openEditModal(orderId) {
     var useUmiSel = document.getElementById('ord-use_umi');
     if (useUmiSel) useUmiSel.value = o.use_umi || '';
 
+    // Restore panel type
+    currentPanelType = o.panel_type || 'exome';
+    applyPanelTypeUI();
+
     selectedFastq = { name: o.sample_name, r1: o.r1_fastq, r2: o.r2_fastq };
 
     if (o.r1_fastq) {
@@ -3911,6 +4031,8 @@ function resetOrderForm() {
   editingOrderLongitudinal = false;
   onLongitInputModeChange();
   applyLongitudinalUIVisibility();
+  currentPanelType = 'exome';
+  applyPanelTypeUI();
 }
 
 function loadDefaultSettings() {
@@ -3918,7 +4040,41 @@ function loadDefaultSettings() {
     document.getElementById('ord-reference').value = 'hg38';
     if (s.default_af_threshold) document.getElementById('ord-af_threshold').value = s.default_af_threshold;
     if (s.delete_intermediate) document.getElementById('ord-delete_intermediate').checked = s.delete_intermediate === 'Y';
+    // Panel selector: show only when both panels enabled
+    var panelsEnabled = s.panels_enabled || 'exome';
+    var hasExome = panelsEnabled.indexOf('exome') !== -1;
+    var hasRna   = panelsEnabled.indexOf('rna')   !== -1;
+    var pts = document.getElementById('panelTypeSection');
+    if (pts) pts.style.display = (hasExome && hasRna) ? 'block' : 'none';
+    // Auto-select the only available panel
+    if (!hasExome && hasRna) {
+      currentPanelType = 'rna';
+    } else {
+      currentPanelType = 'exome';
+    }
+    applyPanelTypeUI();
   }).catch(function() {});
+}
+
+var currentPanelType = 'exome';
+
+function selectPanelType(type, btn) {
+  currentPanelType = type;
+  applyPanelTypeUI();
+}
+
+function applyPanelTypeUI() {
+  var btnExome = document.getElementById('panelBtnExome');
+  var btnRna   = document.getElementById('panelBtnRna');
+  if (btnExome) btnExome.classList.toggle('active', currentPanelType === 'exome');
+  if (btnRna)   btnRna.classList.toggle('active',   currentPanelType === 'rna');
+  var rnaSection = document.getElementById('rnaPanelParamsSection');
+  if (rnaSection) rnaSection.style.display = currentPanelType === 'rna' ? 'block' : 'none';
+  // Hide exome-specific options when RNA selected
+  var exomeOnlyEls = document.querySelectorAll('.exome-only-param');
+  exomeOnlyEls.forEach(function(el) {
+    el.style.display = currentPanelType === 'rna' ? 'none' : '';
+  });
 }
 
 function submitOrder() {
@@ -3962,7 +4118,8 @@ function submitOrder() {
     bed_file: document.getElementById('ord-bed_file').value,
     delete_intermediate: document.getElementById('ord-delete_intermediate').checked ? 'Y' : 'N',
     use_umi: (document.getElementById('ord-use_umi') ? document.getElementById('ord-use_umi').value : ''),
-    order_type: currentOrderType
+    order_type: currentOrderType,
+    panel_type: currentPanelType || 'exome'
   };
 
   if (currentOrderType === 'longitudinal' && longitudinalEnabled) {
@@ -4203,6 +4360,15 @@ function loadSettings() {
       subCb.checked = (s.enable_subsampling === 'true' || s.enable_subsampling === true);
       toggleSubsampleOptions();
     }
+    // Panel settings
+    var panelsEnabled = s.panels_enabled || 'exome';
+    var panelExomeCb = document.getElementById('set-panel-exome');
+    var panelRnaCb   = document.getElementById('set-panel-rna');
+    if (panelExomeCb) panelExomeCb.checked = panelsEnabled.indexOf('exome') !== -1;
+    if (panelRnaCb)   panelRnaCb.checked   = panelsEnabled.indexOf('rna')   !== -1;
+    bothPanelsEnabled = panelsEnabled.indexOf('exome') !== -1 && panelsEnabled.indexOf('rna') !== -1;
+    applyBothPanelsUI();
+    if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) renderOrderTable();
   }).catch(function() { showToast('설정을 불러올 수 없습니다.', 'error'); });
   loadResourceInfo();
 }
@@ -4273,6 +4439,19 @@ function saveSettings() {
   if (umiCb) data['enable_umi'] = umiCb.checked ? 'true' : 'false';
   var subCb = document.getElementById('set-enable_subsampling');
   if (subCb) data['enable_subsampling'] = subCb.checked ? 'true' : 'false';
+  // Panel settings
+  var panelParts = [];
+  var pExome = document.getElementById('set-panel-exome');
+  var pRna   = document.getElementById('set-panel-rna');
+  if (pExome && pExome.checked) panelParts.push('exome');
+  if (pRna   && pRna.checked)   panelParts.push('rna');
+  if (panelParts.length === 0) {
+    showToast('최소 하나 이상의 Panel을 선택해야 합니다.', 'error');
+    var w = document.getElementById('panel-setting-warn');
+    if (w) w.style.display = 'block';
+    return;
+  }
+  data['panels_enabled'] = panelParts.join(',');
 
   apiFetch('/api/settings', {
     method: 'POST',
@@ -4284,6 +4463,11 @@ function saveSettings() {
       var lcb2 = document.getElementById('set-longitudinal_enabled');
       if (lcb2) longitudinalEnabled = lcb2.checked;
       applyLongitudinalUIVisibility();
+      // Update Panel UI
+      var pExomeSaved = document.getElementById('set-panel-exome');
+      var pRnaSaved   = document.getElementById('set-panel-rna');
+      bothPanelsEnabled = (pExomeSaved && pExomeSaved.checked) && (pRnaSaved && pRnaSaved.checked);
+      applyBothPanelsUI();
       if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) { renderOrderTable(); }
       loadResourceInfo();
       if (r.restart_needed) {
@@ -4355,6 +4539,13 @@ function onLongitudinalSettingToggle() {
   if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) {
     renderOrderTable();
   }
+}
+
+function onPanelSettingChange() {
+  var warn = document.getElementById('panel-setting-warn');
+  var pExome = document.getElementById('set-panel-exome');
+  var pRna   = document.getElementById('set-panel-rna');
+  if (warn) warn.style.display = (pExome && pExome.checked) || (pRna && pRna.checked) ? 'none' : 'block';
 }
 
 function setOrderType(type, btn) {
