@@ -4102,20 +4102,24 @@ function buildRnaGeneViewerTab(d) {
   html += '</select>';
   html += '<button onclick="gvSearchMultiGenes(\'' + sample + '\')" style="padding:7px 16px;background:var(--primary);color:white;border:none;border-radius:6px;font-size:.83rem;cursor:pointer;font-weight:600">조회</button>';
   html += '</div>';
-  // Preset gene sets
-  html += '<div style="margin-bottom:8px;font-size:.75rem;color:var(--text-muted)">빠른 선택: ';
-  var presets = [
-    { label: 'Oncogenes', genes: 'MYC,KRAS,EGFR,BRAF,PIK3CA,AKT1,ERBB2' },
-    { label: 'Tumor Suppressors', genes: 'TP53,BRCA1,BRCA2,RB1,PTEN,APC,VHL' },
-    { label: 'Cell Cycle', genes: 'CCND1,CDK4,CDK6,CDKN2A,CDKN1A,E2F1,RB1' },
-    { label: 'Apoptosis', genes: 'BCL2,BAX,CASP3,CASP9,PARP1,MCL1,BCL2L1' },
-    { label: 'Immune Checkpoint', genes: 'PDCD1,CD274,CTLA4,LAG3,TIGIT,HAVCR2,CD276' },
-  ];
-  presets.forEach(function(p) {
-    html += '<span style="cursor:pointer;color:var(--primary);text-decoration:underline;margin-right:8px" '
-      + 'onclick="document.getElementById(\x27gv-multi-genes\x27).value=\x27' + p.genes + '\x27">' + p.label + '</span>';
-  });
-  html += '</div>';
+  // Preset gene sets (from gene_presets.js)
+  if (typeof buildPresetUI === 'function') {
+    html += buildPresetUI();
+  } else {
+    html += '<div style="margin-bottom:8px;font-size:.75rem;color:var(--text-muted)">빠른 선택: ';
+    var presets = [
+      { label: 'Oncogenes', genes: 'MYC,KRAS,EGFR,BRAF,PIK3CA,AKT1,ERBB2' },
+      { label: 'Tumor Suppressors', genes: 'TP53,BRCA1,BRCA2,RB1,PTEN,APC,VHL' },
+      { label: 'Cell Cycle', genes: 'CCND1,CDK4,CDK6,CDKN2A,CDKN1A,E2F1,RB1' },
+      { label: 'Apoptosis', genes: 'BCL2,BAX,CASP3,CASP9,PARP1,MCL1,BCL2L1' },
+      { label: 'Immune Checkpoint', genes: 'PDCD1,CD274,CTLA4,LAG3,TIGIT,HAVCR2,CD276' },
+    ];
+    presets.forEach(function(p) {
+      html += '<span style="cursor:pointer;color:var(--primary);text-decoration:underline;margin-right:8px" '
+        + 'onclick="document.getElementById(\x27gv-multi-genes\x27).value=\x27' + p.genes + '\x27">' + p.label + '</span>';
+    });
+    html += '</div>';
+  }
   html += '<div id="gv-multi-chart-container" style="min-height:320px"><div style="color:var(--text-muted);font-size:.8rem;padding:40px;text-align:center">유전자를 입력하고 조회하세요.</div></div>';
   html += '</div>';
 
@@ -6086,5 +6090,6 @@ function onVariantRowClick(tr) {
 })();
 </script>
 
+<script src="/static/gene_presets.js"></script>
 </body>
 </html>
