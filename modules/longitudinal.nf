@@ -1,7 +1,7 @@
 process LONGITUDINAL_ANALYSIS {
     tag "$sample_id"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/output/longitudinal", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/output/longitudinal" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(followup_bam), path(followup_bai), path(reporters_txt)

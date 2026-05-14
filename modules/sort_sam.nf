@@ -48,7 +48,7 @@ process SORT_SAM_COORDINATE_FINAL {
     tag "$sample_id"
     label 'process_medium'
 
-    publishDir "${params.outdir}/${sample_id}/output/bam", mode: params.publish_dir_mode, pattern: "*.{bam,bai}", enabled: params.delete_intermediate
+    publishDir { "${params.outdir}/${sample_id}/output/bam" }, mode: params.publish_dir_mode, pattern: "*.{bam,bai}", enabled: params.delete_intermediate
 
     input:
     tuple val(sample_id), path(input_bam)

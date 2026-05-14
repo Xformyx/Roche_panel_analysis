@@ -1,7 +1,7 @@
 process FASTP {
     tag "$sample_id"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/trimming", mode: params.publish_dir_mode,
+    publishDir { "${params.outdir}/${sample_id}/trimming" }, mode: params.publish_dir_mode,
         saveAs: { fn -> fn.endsWith(".fastq.gz") ? null : fn }
 
     input:

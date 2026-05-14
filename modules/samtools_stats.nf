@@ -9,7 +9,7 @@
 process SAMTOOLS_FLAGSTAT {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)
@@ -26,7 +26,7 @@ process SAMTOOLS_FLAGSTAT {
 process SAMTOOLS_IDXSTATS {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)
@@ -44,7 +44,7 @@ process SAMTOOLS_IDXSTATS {
 process SAMTOOLS_STATS {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)

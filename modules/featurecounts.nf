@@ -10,7 +10,7 @@
 process FEATURECOUNTS {
     tag "$sample_id"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/featureCounts", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/featureCounts" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)
@@ -22,12 +22,20 @@ process FEATURECOUNTS {
 
     script:
     """
+    # Auto-detect paired-end by checking BAM flags (0x1 = read paired)
+    PE_COUNT=\$(samtools view -f 0x1 -c ${bam} 2>/dev/null || echo 0)
+    if [ "\$PE_COUNT" -gt 0 ]; then
+        PE_FLAGS="-p -B -C"
+    else
+        PE_FLAGS=""
+    fi
+
     featureCounts \\
         -T ${task.cpus} \\
-        -p -B -C \\
-        --byReadGroup \\
+        \$PE_FLAGS \\
         -a ${gtf} \\
         -o ${sample_id}_counts.txt \\
         ${bam}
+    
     """
 }

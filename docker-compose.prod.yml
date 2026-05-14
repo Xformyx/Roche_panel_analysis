@@ -11,6 +11,14 @@
 #
 # The customer must have placed a valid signed license at
 # ./license/license.json (see LICENSE.md for details).
+#
+# Key directories (configure in .env):
+#   HOST_DIR        — Roche_nxt install root (e.g. /opt/roche_nxt)
+#   DATA_HOST_DIR   — Reference data root; defaults to HOST_DIR/data
+#                     Contains hg38/ with genome, STAR index, GTF, CTAT lib, etc.
+#   FASTQ_HOST_DIR  — Where input FASTQ files are placed by the lab
+#   BED_HOST_DIR    — BED target files
+#   LIFTOVER_HOST_DIR — hg38ToHg19 chain file (for hg19 view feature)
 
 services:
   roche-nxt-web:
@@ -22,15 +30,15 @@ services:
     ports:
       - "${WEB_PORT:-8080}:5000"
     volumes:
-      # Data directories the product needs to read/write at runtime. Source
-      # code is NOT mounted — it lives inside the image.
-      - ${RESULTS_HOST_DIR:-./results}:/roche_nxt/results
-      - ${WORK_HOST_DIR:-./work}:/roche_nxt/work
-      - ${LOG_HOST_DIR:-./log}:/roche_nxt/log
-      - ${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}:/fastq_source:ro
-      - ${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}:/bed_source:ro
-      - ${LIFTOVER_HOST_DIR:-./data/liftover}:/liftover:ro
-      - ${LICENSE_HOST_DIR:-./license}:/roche_nxt/license:ro
+      # Mount the entire install directory as /roche_nxt so all sub-paths
+      # (fastq/, data/, results/, work/, log/, etc.) resolve correctly inside
+      # the container — mirrors the dev setup without the source-code override.
+      - ${HOST_DIR:-/opt/roche_nxt}:/roche_nxt
+      # Input sources (read-only, accessible via /fastq_source and /bed_source)
+      - ${FASTQ_HOST_DIR:-./fastq}:/fastq_source:ro
+      - ${BED_HOST_DIR:-./bed}:/bed_source:ro
+      - ${LIFTOVER_HOST_DIR:-./liftover}:/liftover:ro
+      # Docker socket — allows spawning sibling analysis containers
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     read_only: false      # pipeline writes to log/work/results
@@ -40,10 +48,16 @@ services:
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-Asia/Seoul}
       - ROCHE_NXT_DIR=/roche_nxt
-      - HOST_DIR=${HOST_DIR:-.}
+      # HOST_DIR must be the HOST-side path (not the container path).
+      # The web container uses it to construct docker run -v arguments
+      # for sibling analysis containers.
+      - HOST_DIR=${HOST_DIR:-/opt/roche_nxt}
+      # DATA_HOST_DIR: host-side path to reference data root.
+      # Defaults to HOST_DIR/data. Override if refs live on a separate disk.
+      - DATA_HOST_DIR=${DATA_HOST_DIR:-}
       - ANALYSIS_IMAGE=roche_nxt_analysis:latest
-      - FASTQ_HOST_DIR=${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}
-      - BED_HOST_DIR=${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}
+      - FASTQ_HOST_DIR=${FASTQ_HOST_DIR:-}
+      - BED_HOST_DIR=${BED_HOST_DIR:-}
       - LIFTOVER_CHAIN_HG38_TO_HG19=${LIFTOVER_CHAIN_HG38_TO_HG19:-/liftover/hg38ToHg19.over.chain.gz}
       - LICENSE_PATH=/roche_nxt/license/license.json
       - MAX_CPUS=${MAX_CPUS:-0}

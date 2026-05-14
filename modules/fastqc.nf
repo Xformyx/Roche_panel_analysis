@@ -1,7 +1,7 @@
 process FASTQC {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/fastqc", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/fastqc" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(fastq_1), path(fastq_2)

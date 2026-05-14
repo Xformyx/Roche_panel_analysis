@@ -22,7 +22,7 @@ process BED_TO_INTERVAL_LIST {
 process COLLECT_HS_METRICS {
     tag "${sample_id} - ${bam_label}"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/QC_report", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), val(bam_label), path(input_bam), path(interval_list)

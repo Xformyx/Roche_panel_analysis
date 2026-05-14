@@ -1,7 +1,7 @@
 process SELECT_REPORTERS {
     tag "$sample_id"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/output/select_report", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/output/select_report" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(reporters), path(germline_bam), path(germline_bai), path(followup_bam), path(followup_bai)

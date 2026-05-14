@@ -9,7 +9,7 @@
 process RNASEQ_QC_SUMMARY {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(star_log)

@@ -61,6 +61,10 @@ params.fastp_options   = '-g -W 5 -q 20 -u 40 -x -3 -l 50 -c'
 // Skip flags
 params.skip_rseqc      = false
 params.skip_plots      = false
+params.skip_fusion     = false
+
+// CTAT genome library for STAR-Fusion (null = skip fusion step)
+params.ctat_lib        = null
 
 // ── Module includes ──────────────────────────────────────────
 include { FASTQC }              from '../modules/fastqc'
@@ -76,9 +80,21 @@ include { RSEQC_INFER_EXPERIMENT;
           RSEQC_TIN }           from '../modules/rseqc'
 include { RNASEQ_PLOTS }        from '../modules/rnaseq_plots'
 include { RNASEQ_QC_SUMMARY }   from '../modules/rnaseq_qc_summary'
+include { STAR_FUSION }         from '../modules/star_fusion'
 
-// ── Log pipeline info ────────────────────────────────────────
-log.info """
+// ── Validation ───────────────────────────────────────────────
+def validateRnaParams() {
+    if (!params.input)       error "ERROR: --input samplesheet.csv is required"
+    if (!params.star_index)  error "ERROR: --star_index (STAR genome index directory) is required"
+    if (!params.gtf)         error "ERROR: --gtf (genome annotation GTF) is required"
+}
+
+// ── Main workflow ────────────────────────────────────────────
+workflow {
+
+    validateRnaParams()
+
+    log.info """
 ╔══════════════════════════════════════════════════════════════╗
 ║        Roche_nxt: RNAseq Analysis Pipeline  v1.0.0          ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -93,26 +109,17 @@ log.info """
   Max Memory   : ${params.max_memory} GB
   Skip RSeQC   : ${params.skip_rseqc}
   Skip Plots   : ${params.skip_plots}
+  CTAT Lib     : ${params.ctat_lib ?: '(not provided — Fusion detection skipped)'}
 ──────────────────────────────────────────────────────────────
 """
 
-// ── Validation ───────────────────────────────────────────────
-def validateRnaParams() {
-    if (!params.input)       error "ERROR: --input samplesheet.csv is required"
-    if (!params.star_index)  error "ERROR: --star_index (STAR genome index directory) is required"
-    if (!params.gtf)         error "ERROR: --gtf (genome annotation GTF) is required"
-}
-
-// ── Main workflow ────────────────────────────────────────────
-workflow {
-
-    validateRnaParams()
-
     // ── Resolve reference paths ──────────────────────────────
-    def star_idx = file(params.star_index)
-    def gtf_file = file(params.gtf)
-    def bed12_file = params.bed12 ? file(params.bed12) : null
-    def run_rseqc = !params.skip_rseqc && (bed12_file != null)
+    def star_idx   = file(params.star_index)
+    def gtf_file   = file(params.gtf)
+    def bed12_file = params.bed12    ? file(params.bed12)    : null
+    def ctat_lib   = params.ctat_lib ? file(params.ctat_lib) : null
+    def run_rseqc  = !params.skip_rseqc  && (bed12_file != null)
+    def run_fusion = !params.skip_fusion && (ctat_lib   != null)
 
     // ── Parse samplesheet ────────────────────────────────────
     Channel
@@ -136,6 +143,11 @@ workflow {
 
     // ── Step 3: STAR alignment ───────────────────────────────
     STAR_ALIGN(FASTP.out.reads, star_idx)
+
+    // ── Step 3b: STAR-Fusion (optional, requires CTAT library) ──────────────
+    if (run_fusion) {
+        STAR_FUSION(STAR_ALIGN.out.chimeric_junction, ctat_lib)
+    }
 
     // ── Step 4: samtools stats ───────────────────────────────
     SAMTOOLS_FLAGSTAT(STAR_ALIGN.out.bam)
@@ -213,17 +225,4 @@ workflow {
     )
 
     MULTIQC(multiqc_input.collect())
-
-    // ── Completion summary ───────────────────────────────────
-    workflow.onComplete {
-        def status = workflow.success ? "SUCCESS" : "FAILED"
-        log.info """
-╔══════════════════════════════════════════════════════════════╗
-║  RNAseq Pipeline ${status}
-╚══════════════════════════════════════════════════════════════╝
-  Duration  : ${workflow.duration}
-  Output    : ${params.outdir}
-  MultiQC   : ${params.outdir}/MultiQC/multiqc_report.html
-"""
-    }
 }

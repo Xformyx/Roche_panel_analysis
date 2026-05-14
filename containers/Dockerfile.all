@@ -87,8 +87,42 @@ RUN mkdir -p /tools/snpsift && cd /tools/snpsift && \
     wget https://sourceforge.net/projects/snpeff/files/snpEff_latest_core.zip && \
     unzip snpEff_latest_core.zip && rm snpEff_latest_core.zip
 
+# 4-a) STAR (RNA-seq splice-aware aligner)
+RUN cd /tmp && \
+    wget -q https://github.com/alexdobin/STAR/releases/download/2.7.11b/STAR_2.7.11b.zip && \
+    unzip -q STAR_2.7.11b.zip && \
+    cp STAR_2.7.11b/Linux_x86_64_static/STAR /usr/local/bin/ && \
+    chmod +x /usr/local/bin/STAR && \
+    rm -rf STAR_2.7.11b STAR_2.7.11b.zip
+
+# 4-b) Subread (featureCounts)
+RUN cd /tmp && \
+    wget -q https://sourceforge.net/projects/subread/files/subread-2.0.6/subread-2.0.6-Linux-x86_64.tar.gz && \
+    tar xzf subread-2.0.6-Linux-x86_64.tar.gz && \
+    cp subread-2.0.6-Linux-x86_64/bin/featureCounts /usr/local/bin/ && \
+    cp subread-2.0.6-Linux-x86_64/bin/subread-align /usr/local/bin/ && \
+    chmod +x /usr/local/bin/featureCounts /usr/local/bin/subread-align && \
+    rm -rf subread-2.0.6-Linux-x86_64 subread-2.0.6-Linux-x86_64.tar.gz
+
+# 4-c) STAR-Fusion (fusion gene detection)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libdb-dev libgd-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN cpan -T App::cpanminus 2>/dev/null || curl -L https://cpanmin.us | perl - App::cpanminus && \
+    cpanm --notest DB_File Set::IntervalTree PerlIO::gzip URI::Escape Carp::Assert JSON::XS
+
+RUN mkdir -p /tools && cd /tools && \
+    wget -q https://github.com/STAR-Fusion/STAR-Fusion/releases/download/STAR-Fusion-v1.15.1/STAR-Fusion-v1.15.1.FULL.tar.gz && \
+    tar xzf STAR-Fusion-v1.15.1.FULL.tar.gz && \
+    rm STAR-Fusion-v1.15.1.FULL.tar.gz
+
+# Add STAR-Fusion dir to PATH so $FindBin::Bin resolves to the install dir (not /usr/local/bin)
+# This ensures PerlLib/ and PerlLibAdaptors/ are found correctly
+ENV PATH="/tools/STAR-Fusion-v1.15.1:${PATH}"
+
 # 4) Python requirements
-RUN pip3 install --no-cache-dir multiqc
+RUN pip3 install --no-cache-dir multiqc RSeQC
 
 # 5) R packages (CRAN + Bioc 3.21 + ctDNAtools)
 ENV R_REPOS=https://cran.r-project.org
@@ -96,7 +130,7 @@ RUN R -e "options(repos=c(CRAN='${R_REPOS}'), Ncpus=4L); invisible(TRUE)"
 
 RUN R -e "install.packages(c( \
     'magrittr','dplyr','tidyr','purrr','assertthat','rlang','furrr','ellipsis','optparse', \
-    'data.table','ggplot2','remotes' \
+    'data.table','ggplot2','scales','remotes' \
   ), repos='${R_REPOS}', Ncpus=4L)"
 
 RUN R -e "install.packages('BiocManager', repos='${R_REPOS}')" && \

@@ -1,7 +1,7 @@
 process MISMATCH_RATE {
     tag "$sample_id"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/QC_report", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
     errorStrategy 'ignore'
 
     input:

@@ -14,7 +14,7 @@
 process RNASEQ_PLOTS {
     tag "$sample_id"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/expression_plots", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/expression_plots" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(counts)
@@ -37,6 +37,32 @@ process RNASEQ_PLOTS {
 
     sample_id <- "${sample_id}"
 
+    # ── 0. Build ENSG → Gene Symbol map from GTF ─────────────────────────────
+    build_symbol_map <- function(gtf_path) {
+        con <- file(gtf_path, "r")
+        symbol_map <- list()
+        repeat {
+            lines <- readLines(con, n=50000, warn=FALSE)
+            if (length(lines) == 0) break
+            lines <- lines[!startsWith(lines, "#")]
+            for (line in lines) {
+                m_id  <- regmatches(line, regexpr('gene_id "([^"]+)"',  line))
+                m_sym <- regmatches(line, regexpr('gene_name "([^"]+)"', line))
+                if (length(m_id) > 0 && length(m_sym) > 0) {
+                    gid <- sub('gene_id "([^"]+)"', '\\\\1', m_id)
+                    sym <- sub('gene_name "([^"]+)"', '\\\\1', m_sym)
+                    if (!is.null(gid) && !is.null(sym) && nchar(gid) > 0)
+                        symbol_map[[gid]] <- sym
+                }
+            }
+        }
+        close(con)
+        return(symbol_map)
+    }
+    message("Building gene symbol map from GTF...")
+    sym_map <- build_symbol_map("${gtf}")
+    message("  -> ", length(sym_map), " gene symbols loaded")
+
     # ── 1. Load featureCounts output ──────────────────────────────────────────
     cnt_raw <- read.table("${counts}", header=TRUE, sep="\\t", comment.char="#",
                           stringsAsFactors=FALSE)
@@ -46,10 +72,19 @@ process RNASEQ_PLOTS {
     lengths   <- cnt_raw[["Length"]]
     count_col <- cnt_raw[, ncol(cnt_raw)]
 
+    # Strip version suffix for symbol lookup (ENSG00000115414.21 -> ENSG00000115414)
+    gene_ids_base <- sub("\\\\.[0-9]+\$", "", gene_ids)
+    gene_symbols  <- ifelse(
+        gene_ids %in% names(sym_map), unlist(sym_map[gene_ids]),
+        ifelse(gene_ids_base %in% names(sym_map), unlist(sym_map[gene_ids_base]),
+               gene_ids_base)
+    )
+
     counts_df <- data.frame(
-        gene_id = gene_ids,
-        length  = lengths,
-        count   = count_col,
+        gene_id     = gene_ids,
+        gene_symbol = gene_symbols,
+        length      = lengths,
+        count       = count_col,
         stringsAsFactors = FALSE
     )
 
@@ -64,7 +99,8 @@ process RNASEQ_PLOTS {
     counts_df\$log2CPM <- log2(counts_df\$CPM + 1)
 
     # ── 3. Summary table ─────────────────────────────────────────────────────
-    summary_df <- counts_df[order(-counts_df\$count), ]
+    summary_df <- counts_df[order(-counts_df\$count),
+                            c("gene_id","gene_symbol","length","count","CPM","TPM","log2CPM")]
     write.table(summary_df, file=paste0(sample_id, "_expression_summary.tsv"),
                 sep="\\t", row.names=FALSE, quote=FALSE)
 
@@ -84,8 +120,11 @@ process RNASEQ_PLOTS {
 
     # ── 5. Plot: Top 30 expressed genes (TPM) ────────────────────────────────
     top30 <- head(counts_df[order(-counts_df\$TPM), ], 30)
-    top30\$gene_id <- factor(top30\$gene_id, levels=rev(top30\$gene_id))
-    p_top <- ggplot(top30, aes(x=gene_id, y=TPM)) +
+    top30\$label <- ifelse(top30\$gene_symbol != top30\$gene_id,
+                          top30\$gene_symbol,
+                          sub("\\\\.[0-9]+\$", "", top30\$gene_id))
+    top30\$label <- factor(top30\$label, levels=rev(top30\$label))
+    p_top <- ggplot(top30, aes(x=label, y=TPM)) +
         geom_bar(stat="identity", fill="#ED7D31", alpha=0.9) +
         coord_flip() +
         labs(title=paste0(sample_id, " — Top 30 Expressed Genes (TPM)"),

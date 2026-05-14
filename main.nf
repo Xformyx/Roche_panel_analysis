@@ -46,8 +46,12 @@ def getBwaIndex(fasta) {
         .collect()
 }
 
-// ── Log pipeline info ────────────────────────────────────────
-log.info """
+// ── Main workflow ────────────────────────────────────────────
+workflow {
+
+    validateParams()
+
+    log.info """
 ╔══════════════════════════════════════════════════════════════╗
 ║        Roche_nxt: KAPA ctDNA Analysis Pipeline              ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -62,11 +66,6 @@ log.info """
   Output dir  : ${params.outdir}
 ──────────────────────────────────────────────────────────────
 """
-
-// ── Main workflow ────────────────────────────────────────────
-workflow {
-
-    validateParams()
 
     // Resolve genome config
     def genome = params.genomes[params.reference]

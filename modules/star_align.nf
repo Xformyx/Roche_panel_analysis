@@ -14,7 +14,7 @@
 process STAR_ALIGN {
     tag "$sample_id"
     label 'process_high'
-    publishDir "${params.outdir}/${sample_id}/star", mode: params.publish_dir_mode,
+    publishDir { "${params.outdir}/${sample_id}/star" }, mode: params.publish_dir_mode,
         saveAs: { fn ->
             if (fn.endsWith("_Log.final.out"))      return "log/${fn}"
             if (fn.endsWith("_Log.out"))             return "log/${fn}"
@@ -37,6 +37,7 @@ process STAR_ALIGN {
     tuple val(sample_id), path("${sample_id}_Log.progress.out"),                   emit: log_progress
     tuple val(sample_id), path("${sample_id}_ReadsPerGene.out.tab"),               emit: reads_per_gene
     tuple val(sample_id), path("${sample_id}_SJ.out.tab"),                         emit: sj
+    tuple val(sample_id), path("${sample_id}_Chimeric.out.junction"),              emit: chimeric_junction
 
     script:
     """
@@ -61,7 +62,16 @@ process STAR_ALIGN {
         --quantMode GeneCounts \\
         --twopassMode Basic \\
         --outWigType bedGraph \\
-        --outWigStrand Stranded
+        --outWigStrand Stranded \\
+        --chimSegmentMin 12 \\
+        --chimJunctionOverhangMin 8 \\
+        --chimOutJunctionFormat 1 \\
+        --chimMultimapScoreRange 3 \\
+        --chimMultimapNmax 20 \\
+        --chimNonchimScoreDropMin 10 \\
+        --peOverlapNbasesMin 12 \\
+        --peOverlapMMp 0.1 \\
+        --alignSJstitchMismatchNmax 5 -1 5 5
 
     samtools index -@ ${task.cpus} ${sample_id}_Aligned.sortedByCoord.out.bam
     """

@@ -13,7 +13,7 @@
 process RSEQC_INFER_EXPERIMENT {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report/rseqc", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report/rseqc" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)
@@ -35,7 +35,7 @@ process RSEQC_INFER_EXPERIMENT {
 process RSEQC_INNER_DISTANCE {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report/rseqc", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report/rseqc" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)
@@ -57,7 +57,7 @@ process RSEQC_INNER_DISTANCE {
 process RSEQC_JUNCTION_SATURATION {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report/rseqc", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report/rseqc" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)
@@ -79,7 +79,7 @@ process RSEQC_JUNCTION_SATURATION {
 process RSEQC_READ_DISTRIBUTION {
     tag "$sample_id"
     label 'process_low'
-    publishDir "${params.outdir}/${sample_id}/QC_report/rseqc", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report/rseqc" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)
@@ -100,7 +100,7 @@ process RSEQC_READ_DISTRIBUTION {
 process RSEQC_TIN {
     tag "$sample_id"
     label 'process_medium'
-    publishDir "${params.outdir}/${sample_id}/QC_report/rseqc", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${sample_id}/QC_report/rseqc" }, mode: params.publish_dir_mode
 
     input:
     tuple val(sample_id), path(bam)

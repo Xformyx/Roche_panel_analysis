@@ -13,6 +13,7 @@ import csv
 import sqlite3
 import subprocess
 import time
+import threading
 import psutil
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, g, make_response, session, Response, abort
@@ -213,7 +214,8 @@ def init_db():
         started_at      TEXT,
         completed_at    TEXT,
         created_by_user_id   TEXT DEFAULT '',
-        analysis_by_user_id  TEXT DEFAULT ''
+        analysis_by_user_id  TEXT DEFAULT '',
+        container_name  TEXT DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS settings (
         key   TEXT PRIMARY KEY,
@@ -256,7 +258,8 @@ def init_db():
         ("analysis_by_user_id", "TEXT DEFAULT ''"),
         ("subsample_info", "TEXT DEFAULT ''"),
         ("use_umi",     "TEXT DEFAULT ''"),
-        ("panel_type",  "TEXT DEFAULT 'exome'"),
+        ("panel_type",      "TEXT DEFAULT 'exome'"),
+        ("container_name",  "TEXT DEFAULT ''"),
     ]:
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col} {coldef}")
@@ -443,30 +446,84 @@ def docker_container_exit_code(container_name):
     return None
 
 
-def sync_order_statuses():
-    """Reconcile DB order statuses with Docker container states."""
-    db = get_db()
+def _cleanup_nf_lock(order_id):
+    """Remove Nextflow session LOCK files left behind by abrupt container termination."""
+    nxf_home = os.path.join(BASE_DIR, "work", ".nxf_home", order_id)
+    pattern = os.path.join(nxf_home, ".nextflow", "cache", "*", "db", "LOCK")
+    for lock_file in glob.glob(pattern):
+        try:
+            os.remove(lock_file)
+        except Exception:
+            pass
+
+
+def _nf_log_succeeded(order_id, sample_name):
+    """Check Nextflow log to confirm successful pipeline completion.
+    Checks both the actual .nextflow.log (in NXF_HOME) and the Docker-cmd log.
+    Returns True only when a success marker is found."""
+    success_markers = ["Workflow complete", "Workflow completed", "completed successfully"]
+    error_markers   = ["ERROR ~", "Script compilation failed"]
+
+    # Primary: the real .nextflow.log written by Nextflow inside NXF_HOME
+    nxf_log = os.path.join(BASE_DIR, "work", ".nxf_home", order_id, ".nextflow.log")
+    # Fallback: the docker-cmd log (older format; usually only contains the run command)
+    cmd_log = os.path.join(LOG_DIR, f"{sample_name}_{order_id}_nf.log")
+
+    for log_path in [nxf_log, cmd_log]:
+        if not os.path.isfile(log_path):
+            continue
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                content = f.read()
+            if any(m in content for m in success_markers):
+                return True
+            if any(m in content for m in error_markers):
+                return False
+        except Exception:
+            continue
+    return False
+
+
+def _resolve_exited_status(db, order_id, sample_name, container_name, now, clear_error=False):
+    """Determine completed vs failed for an exited container."""
+    exit_code = docker_container_exit_code(container_name)
+    if exit_code == 0 and _nf_log_succeeded(order_id, sample_name):
+        extra = ", error_message=''" if clear_error else ""
+        db.execute(
+            f"UPDATE orders SET status='completed'{extra}, completed_at=?, updated_at=? WHERE id=?",
+            (now, now, order_id),
+        )
+    else:
+        reason = f"Container exited with code {exit_code}"
+        if exit_code == 0:
+            reason = "Container exited normally but pipeline incomplete (killed?)"
+        db.execute(
+            "UPDATE orders SET status='failed', error_message=?, updated_at=? WHERE id=?",
+            (reason, now, order_id),
+        )
+
+
+def sync_order_statuses(db=None):
+    """Reconcile DB order statuses with Docker container states.
+    Accepts an optional db connection; if None, uses the request-scoped one.
+    """
+    own_db = False
+    if db is None:
+        db = get_db()
     now = datetime.now().isoformat()
+
     running_orders = db.execute(
-        "SELECT id, sample_name, nf_run_name FROM orders WHERE status IN ('running', 'queued')"
+        "SELECT id, sample_name, nf_run_name, container_name FROM orders WHERE status IN ('running', 'queued')"
     ).fetchall()
     for order in running_orders:
-        container_name = f"nxt_{order['sample_name']}_{order['id'][:8]}"
+        # Use stored container_name if available; fall back to computed name
+        container_name = (order["container_name"] or "").strip() \
+            or f"nxt_{order['sample_name']}_{order['id'][:14]}"
         status = docker_container_status(container_name)
         if status == "running":
             continue
         elif status == "exited":
-            exit_code = docker_container_exit_code(container_name)
-            if exit_code == 0:
-                db.execute(
-                    "UPDATE orders SET status='completed', completed_at=?, updated_at=? WHERE id=?",
-                    (now, now, order["id"]),
-                )
-            else:
-                db.execute(
-                    "UPDATE orders SET status='failed', error_message=?, updated_at=? WHERE id=?",
-                    (f"Container exited with code {exit_code}", now, order["id"]),
-                )
+            _resolve_exited_status(db, order["id"], order["sample_name"], container_name, now)
         elif status is None:
             try:
                 r = subprocess.run(
@@ -475,6 +532,7 @@ def sync_order_statuses():
                 )
                 err = (r.stderr or "") + (r.stdout or "")
                 if r.returncode != 0 and "No such object" in err:
+                    _cleanup_nf_lock(order["id"])
                     db.execute(
                         "UPDATE orders SET status='failed', error_message='Container not found', updated_at=? WHERE id=?",
                         (now, order["id"]),
@@ -482,13 +540,14 @@ def sync_order_statuses():
             except Exception:
                 pass
 
-    # Recover false negatives: UI showed "Container not found" but container is still running
+    # Recover false negatives: container was briefly missing but may have reappeared
     recovered = db.execute(
-        """SELECT id, sample_name FROM orders
+        """SELECT id, sample_name, container_name FROM orders
            WHERE status='failed' AND error_message='Container not found'"""
     ).fetchall()
     for order in recovered:
-        cn = f"nxt_{order['sample_name']}_{order['id'][:8]}"
+        cn = (order["container_name"] or "").strip() \
+            or f"nxt_{order['sample_name']}_{order['id'][:14]}"
         st = docker_container_status(cn)
         if st == "running":
             db.execute(
@@ -496,19 +555,45 @@ def sync_order_statuses():
                 (now, order["id"]),
             )
         elif st == "exited":
-            exit_code = docker_container_exit_code(cn)
-            if exit_code == 0:
-                db.execute(
-                    "UPDATE orders SET status='completed', error_message='', completed_at=?, updated_at=? WHERE id=?",
-                    (now, now, order["id"]),
-                )
-            else:
-                db.execute(
-                    "UPDATE orders SET status='failed', error_message=?, updated_at=? WHERE id=?",
-                    (f"Container exited with code {exit_code}", now, order["id"]),
-                )
+            _resolve_exited_status(db, order["id"], order["sample_name"], cn, now, clear_error=True)
+
+    # Recover any 'failed' orders where container exited 0 and NF log shows success
+    # (handles the case where status was wrongly set before success detection was fixed)
+    possibly_succeeded = db.execute(
+        """SELECT id, sample_name, container_name FROM orders
+           WHERE status='failed' AND (error_message='' OR error_message IS NULL)"""
+    ).fetchall()
+    for order in possibly_succeeded:
+        cn = (order["container_name"] or "").strip() \
+            or f"nxt_{order['sample_name']}_{order['id'][:14]}"
+        if docker_container_exit_code(cn) == 0 and _nf_log_succeeded(order["id"], order["sample_name"]):
+            db.execute(
+                "UPDATE orders SET status='completed', updated_at=? WHERE id=?",
+                (now, order["id"]),
+            )
 
     db.commit()
+    if own_db:
+        db.close()
+
+
+def _background_sync_loop():
+    """Background thread: sync order statuses every 30 s without a Flask request context."""
+    while True:
+        time.sleep(30)
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            sync_order_statuses(db=conn)
+            conn.close()
+        except Exception:
+            pass
+
+
+# Start background sync thread once (daemon so it exits when the main process does)
+_sync_thread = threading.Thread(target=_background_sync_loop, daemon=True, name="order-sync")
+_sync_thread.start()
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +714,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
     cpus_per_sample = max_cpus // max(1, max_conc)
     mem_per_sample = max_mem // max(1, max_conc)
 
-    container_name = f"nxt_{sample}_{order_id[:8]}"
+    container_name = f"nxt_{sample}_{order_id[:14]}"
 
     if force:
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
@@ -643,7 +728,9 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
 
     host_root = HOST_DIR
     fastq_host_dir = FASTQ_HOST_DIR or os.path.join(host_root, "fastq")
-    data_host_dir = os.path.join(host_root, "data")
+    # DATA_HOST_DIR can point to a separate disk / NAS for reference data.
+    # Defaults to HOST_DIR/data so existing single-server setups work unchanged.
+    data_host_dir = os.environ.get("DATA_HOST_DIR", "") or os.path.join(host_root, "data")
     bed_host_dir = BED_HOST_DIR or os.path.join(data_host_dir, "bed")
 
     host_samplesheet_dir = os.path.join(host_root, "log", "samplesheets")
@@ -686,7 +773,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
     # Always generate a fresh timestamped run name to avoid "already used" collisions.
     # Nextflow -resume finds the cache from the work-dir, not from the run name.
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    run_name = f"run_{sample}_{order_id[:8]}_{ts}"
+    run_name = f"run_{sample}_{order_id[:14]}_{ts}"
 
     os.makedirs(os.path.join(BASE_DIR, work_dir_rel), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, nxf_home_rel), exist_ok=True)
@@ -759,10 +846,19 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
 
     if panel_type == "rna":
         # ── RNAseq pipeline ────────────────────────────────────────────────
-        # RNA-specific reference paths from settings (fallback to auto-resolve in nextflow.config)
-        rna_star_index = settings.get("rna_star_index", "").strip()
-        rna_gtf        = settings.get("rna_gtf", "").strip()
-        rna_bed12      = settings.get("rna_bed12", "").strip()
+        # RNA-specific reference paths: use settings value if explicitly set,
+        # otherwise fall back to the default container-side paths under /work_nxt_data
+        _rna_data = "/work_nxt_data"
+        _rna_defaults = {
+            "star_index": f"{_rna_data}/refs/{ref}/star_index",
+            "gtf":        f"{_rna_data}/refs/{ref}/gencode.v44.annotation.gtf",
+            "bed12":      f"{_rna_data}/refs/{ref}/genes.bed12",
+            "ctat_lib":   f"{_rna_data}/refs/{ref}/ctat_lib/ctat_genome_lib_build_dir",
+        }
+        rna_star_index = settings.get("rna_star_index", "").strip() or _rna_defaults["star_index"]
+        rna_gtf        = settings.get("rna_gtf",        "").strip() or _rna_defaults["gtf"]
+        rna_bed12      = settings.get("rna_bed12",      "").strip() or _rna_defaults["bed12"]
+        rna_ctat_lib   = settings.get("rna_ctat_lib",   "").strip() or _rna_defaults["ctat_lib"]
         rna_fastp_opts = settings.get("rna_fastp_options", "-g -W 5 -q 20 -u 40 -x -3 -l 50 -c").strip()
         nf_cmd = [
             "nextflow", "run", "/work_nxt/workflows/rnaseq.nf",
@@ -776,14 +872,11 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
             "--max_cpus",   str(cpus_per_sample),
             "--max_memory", str(mem_per_sample),
             "--fastp_options", rna_fastp_opts,
+            "--star_index", rna_star_index,
+            "--gtf",        rna_gtf,
+            "--bed12",      rna_bed12,
+            "--ctat_lib",   rna_ctat_lib,
         ]
-        # Optional: override reference paths if explicitly set in settings
-        if rna_star_index:
-            nf_cmd.extend(["--star_index", rna_star_index])
-        if rna_gtf:
-            nf_cmd.extend(["--gtf", rna_gtf])
-        if rna_bed12:
-            nf_cmd.extend(["--bed12", rna_bed12])
     else:
         # ── Exome (ctDNA) pipeline — existing logic ────────────────────────
         nf_cmd = [
@@ -929,8 +1022,8 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
 
     analyst = started_by_user_id if started_by_user_id else ""
     db.execute(
-        "UPDATE orders SET status='running', nf_run_name=?, nf_work_dir=?, pid=0, started_at=?, updated_at=?, analysis_by_user_id=? WHERE id=?",
-        (run_name, os.path.join(BASE_DIR, work_dir_rel), now, now, analyst, order_id),
+        "UPDATE orders SET status='running', nf_run_name=?, nf_work_dir=?, container_name=?, pid=0, started_at=?, updated_at=?, analysis_by_user_id=? WHERE id=?",
+        (run_name, os.path.join(BASE_DIR, work_dir_rel), container_name, now, now, analyst, order_id),
     )
     db.commit()
     return container_id
@@ -1277,7 +1370,7 @@ def api_dashboard():
     registered = db.execute("SELECT COUNT(*) c FROM orders WHERE status='registered'").fetchone()["c"]
 
     recent = db.execute(
-        "SELECT id, order_name, sample_name, status, updated_at FROM orders ORDER BY updated_at DESC LIMIT 10"
+        "SELECT id, order_name, sample_name, status, updated_at, panel_type FROM orders ORDER BY updated_at DESC LIMIT 10"
     ).fetchall()
 
     return jsonify({
@@ -1532,9 +1625,10 @@ def api_stop_order(order_id):
     if not row:
         return jsonify({"success": False, "error": "Order not found"}), 404
     now = datetime.now().isoformat()
-    container_name = f"nxt_{row['sample_name']}_{order_id[:8]}"
+    container_name = (row["container_name"] or "").strip() or f"nxt_{row['sample_name']}_{order_id[:14]}"
     subprocess.run(["docker", "stop", container_name], capture_output=True, timeout=30)
-    subprocess.run(["docker", "rm", container_name], capture_output=True, timeout=10)
+    subprocess.run(["docker", "rm",  container_name], capture_output=True, timeout=10)
+    _cleanup_nf_lock(order_id)
     db.execute("UPDATE orders SET status='cancelled', updated_at=? WHERE id=?", (now, order_id))
     db.commit()
     return jsonify({"success": True})
@@ -1548,8 +1642,9 @@ def api_rerun_order(order_id):
     if not row:
         return jsonify({"success": False, "error": "Order not found"}), 404
     order = dict_from_row(row)
-    container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
+    container_name = (order.get("container_name") or "").strip() or f"nxt_{order['sample_name']}_{order_id[:14]}"
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
+    _cleanup_nf_lock(order_id)
     try:
         cid = start_analysis(
             order, force=False, resume=True, started_by_user_id=session.get("user_id") or "",
@@ -1572,8 +1667,9 @@ def api_force_order(order_id):
             "success": False,
             "error": "완료 오더 work 재사용(Longitudinal) 모드에서는 강제 재실행을 사용할 수 없습니다. 재실행(Rerun)으로 이어서 실행하세요.",
         }), 400
-    container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
+    container_name = (order.get("container_name") or "").strip() or f"nxt_{order['sample_name']}_{order_id[:14]}"
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
+    _cleanup_nf_lock(order_id)
     if order.get("nf_work_dir") and os.path.isdir(order["nf_work_dir"]):
         shutil.rmtree(order["nf_work_dir"], ignore_errors=True)
     result_dir = os.path.join(RESULTS_DIR, order["sample_name"])
@@ -1720,8 +1816,9 @@ def api_promote_to_longitudinal(order_id):
 
     # Re-fetch with updated columns and trigger a resume run.
     order = dict_from_row(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
-    container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
+    container_name = (order.get("container_name") or "").strip() or f"nxt_{order['sample_name']}_{order_id[:14]}"
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
+    _cleanup_nf_lock(order_id)
 
     # ── Bypass mode: use published BAM + annotated TXT when work dir is sparse ──
     # When delete_intermediate=Y cleaned the work dir, we can skip the heavy
@@ -1812,8 +1909,9 @@ def api_delete_order(order_id):
         return jsonify({"success": False, "error": "Order not found"}), 404
     order = dict_from_row(row)
     if order["status"] == "running":
-        container_name = f"nxt_{order['sample_name']}_{order_id[:8]}"
+        container_name = (order.get("container_name") or "").strip() or f"nxt_{order['sample_name']}_{order_id[:14]}"
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=10)
+        _cleanup_nf_lock(order_id)
     purge_order_disk_assets(order)
     db.execute("DELETE FROM orders WHERE id=?", (order_id,))
     db.commit()
@@ -1882,7 +1980,9 @@ def api_order_logs(order_id):
     sample = row["sample_name"]
     tail = int(request.args.get("tail", "500"))
 
-    container_name = f"nxt_{sample}_{order_id[:8]}"
+    # Use stored container_name; fall back to computed name
+    container_name = (row["container_name"] or "").strip() \
+        or f"nxt_{sample}_{order_id[:14]}"
     raw = ""
     try:
         r = subprocess.run(
@@ -1934,6 +2034,24 @@ def api_bed_files():
     return jsonify(browse_bed(request.args.get("path", "")))
 
 
+@app.route("/api/results_image/<path:rel_path>")
+def api_results_image(rel_path):
+    """Serve result image files (e.g. expression plots) by relative path under RESULTS_DIR."""
+    _require_auth()
+    # Prevent directory traversal
+    safe_path = os.path.normpath(os.path.join(RESULTS_DIR, rel_path))
+    if not safe_path.startswith(os.path.normpath(RESULTS_DIR)):
+        return jsonify({"error": "forbidden"}), 403
+    if not os.path.isfile(safe_path):
+        return jsonify({"error": "not found"}), 404
+    mime = "image/png"
+    if safe_path.endswith(".jpg") or safe_path.endswith(".jpeg"):
+        mime = "image/jpeg"
+    elif safe_path.endswith(".svg"):
+        mime = "image/svg+xml"
+    return send_file(safe_path, mimetype=mime)
+
+
 @app.route("/api/download/<sample_name>/<file_type>")
 def api_download(sample_name, file_type):
     try:
@@ -1963,6 +2081,18 @@ def api_download(sample_name, file_type):
             # RNA QC JSON
             candidates = glob.glob(os.path.join(RESULTS_DIR, sample_name, "QC_report", f"{sample_name}_rna_qc.json"))
             fp = candidates[0] if candidates else ""
+        elif file_type == "fusion":
+            # STAR-Fusion results (prefer coding_effect abridged)
+            fusion_dir = os.path.join(RESULTS_DIR, sample_name, "star_fusion")
+            fp = ""
+            for pat in [
+                f"{sample_name}_star-fusion.fusion_predictions.abridged.coding_effect.tsv",
+                f"{sample_name}_star-fusion.fusion_predictions.abridged.tsv",
+            ]:
+                candidate = os.path.join(fusion_dir, pat)
+                if os.path.isfile(candidate):
+                    fp = candidate
+                    break
         else:
             return jsonify({"error": "Invalid file type"}), 400
         if fp and os.path.isfile(fp):
@@ -2232,6 +2362,38 @@ def api_qc_data(order_id):
             os.path.relpath(p, RESULTS_DIR) for p in sorted(plot_files)
         ]
 
+    # ── 11. STAR-Fusion results ───────────────────────────────────────────────
+    fusion_dir = os.path.join(RESULTS_DIR, sample, "star_fusion")
+    # Prefer coding_effect abridged file; fall back to plain abridged
+    for fusion_pattern in [
+        f"{sample}_star-fusion.fusion_predictions.abridged.coding_effect.tsv",
+        f"{sample}_star-fusion.fusion_predictions.abridged.tsv",
+    ]:
+        fusion_path = os.path.join(fusion_dir, fusion_pattern)
+        if os.path.isfile(fusion_path):
+            try:
+                fusions = []
+                with open(fusion_path) as fh:
+                    header = None
+                    for line in fh:
+                        line = line.rstrip("\n")
+                        if line.startswith("#"):
+                            header = line.lstrip("#").split("\t")
+                            continue
+                        if header is None:
+                            continue
+                        parts = line.split("\t")
+                        row = dict(zip(header, parts))
+                        fusions.append(row)
+                result["rna_fusion"] = {
+                    "fusions": fusions,
+                    "count": len(fusions),
+                    "source_file": fusion_pattern,
+                }
+            except Exception:
+                pass
+            break
+
     # Check which QC files exist
     result["has_qc"] = os.path.isdir(qc_dir) and bool(os.listdir(qc_dir))
     result["panel_type"] = order.get("panel_type", "exome")
@@ -2448,7 +2610,7 @@ def api_vcf_data(order_id):
         return gene, effect, impact, transcript, hgvs_c, hgvs_p
 
     try:
-        by_position, by_cnumber = _build_list_lookup()
+        by_position, by_cnumber, by_gene = _build_list_lookup()
         rows_out = []
         blacklisted = 0
         with open(fp, "r") as fh:
@@ -2495,7 +2657,9 @@ def api_vcf_data(order_id):
                     rec.get("REF", ""),
                     rec.get("ALT", ""),
                     rec.get("ID", ""),
-                    by_position, by_cnumber,
+                    by_position, by_cnumber, by_gene,
+                    gene=rec.get("GENE", ""),
+                    hgvs_c=rec.get("HGVS.C", ""),
                 )
                 if tag == "blacklist":
                     blacklisted += 1
@@ -3052,6 +3216,12 @@ def api_get_settings():
         settings.setdefault(k, v)
     settings.setdefault("longitudinal_enabled", "true")
     settings.setdefault("panels_enabled", "exome")
+    # RNA pipeline reference paths (empty = auto-resolve from nextflow.config genomes block)
+    settings.setdefault("rna_star_index", "")
+    settings.setdefault("rna_gtf", "")
+    settings.setdefault("rna_bed12", "")
+    settings.setdefault("rna_fastp_options", "-g -W 5 -q 20 -u 40 -x -3 -l 50 -c")
+    settings.setdefault("rna_ctat_lib", "")
 
     return jsonify(settings)
 
@@ -3129,66 +3299,89 @@ def _norm_chrom(c):
 
 
 def _build_list_lookup():
-    """Return (by_position, by_cnumber) lookup dicts for fast matching."""
+    """Return (by_position, by_cnumber, by_gene) lookup dicts for fast matching."""
     db = get_db()
     rows = db.execute(
-        "SELECT list_type, entry_type, cnumber, chrom, pos, ref, alt FROM variant_lists"
+        "SELECT list_type, entry_type, cnumber, chrom, pos, ref, alt, gene FROM variant_lists"
     ).fetchall()
 
     by_position = {}  # (chrom_norm, pos, ref_u, alt_u) or (chrom_norm, pos, '', '') -> list_type
-    by_cnumber = {}   # cnumber_lower -> list_type
+    by_cnumber  = {}  # cnumber_lower -> list_type
+    by_gene     = {}  # GENE_UPPER -> list_type  (gene-level entries)
 
     for r in rows:
         r = dict_from_row(r)
         lt = r["list_type"]
-        p = _VL_PRIORITY.get(lt, 0)
-        if r["entry_type"] == "cnumber" and (r.get("cnumber") or "").strip():
+        p  = _VL_PRIORITY.get(lt, 0)
+        et = r.get("entry_type", "")
+
+        if et == "gene":
+            gene_u = (r.get("gene") or "").strip().upper()
+            if gene_u:
+                if gene_u not in by_gene or p > _VL_PRIORITY.get(by_gene[gene_u], 0):
+                    by_gene[gene_u] = lt
+        elif et == "cnumber" and (r.get("cnumber") or "").strip():
             key = r["cnumber"].strip().lower()
             if key not in by_cnumber or p > _VL_PRIORITY.get(by_cnumber[key], 0):
                 by_cnumber[key] = lt
         else:
             chrom = _norm_chrom(r.get("chrom") or "")
-            pos = int(r.get("pos") or 0)
+            pos   = int(r.get("pos") or 0)
             if not chrom or not pos:
                 continue
             ref_u = (r.get("ref") or "").strip().upper()
             alt_u = (r.get("alt") or "").strip().upper()
-            # Specific key (with ref/alt) takes priority over position-only
             for key in [(chrom, pos, ref_u, alt_u), (chrom, pos, "", "")]:
                 if key not in by_position or p > _VL_PRIORITY.get(by_position[key], 0):
                     by_position[key] = lt
 
-    return by_position, by_cnumber
+    return by_position, by_cnumber, by_gene
 
 
-def _get_list_tag(chrom, pos_str, ref, alt, vcf_id, by_position, by_cnumber):
-    """Return 'blacklist', 'whitelist', 'onhold', or '' for this variant."""
+def _get_list_tag(chrom, pos_str, ref, alt, vcf_id, by_position, by_cnumber, by_gene=None, gene="", hgvs_c=""):
+    """Return 'blacklist', 'whitelist', 'onhold', or '' for this variant.
+
+    Matching (highest priority wins):
+      1. Genomic position  (CHR + POS [+ REF + ALT])
+      2. HGVS.c            (c.Number from annotation, or VCF ID)
+      3. Gene-level        (all variants of a gene)
+    """
     best = ""
     best_p = 0
+    by_gene = by_gene or {}
 
     chrom_n = _norm_chrom(chrom)
     pos = int(pos_str or 0)
     ref_u = (ref or "").strip().upper()
     alt_u = (alt or "").strip().upper()
 
-    # Position match (specific first, then position-only)
+    # 1. Position match
     for key in [(chrom_n, pos, ref_u, alt_u), (chrom_n, pos, "", "")]:
         lt = by_position.get(key)
         if lt:
             p = _VL_PRIORITY.get(lt, 0)
             if p > best_p:
-                best = lt
-                best_p = p
+                best, best_p = lt, p
 
-    # cNumber match (against VCF ID field — may be semicolon-separated)
-    if vcf_id and vcf_id not in (".", ""):
-        for vid in str(vcf_id).split(";"):
-            vid = vid.strip().lower()
-            if vid and vid in by_cnumber:
-                p = _VL_PRIORITY.get(by_cnumber[vid], 0)
+    # 2. HGVS.c / VCF-ID match
+    for cand in [hgvs_c, vcf_id]:
+        if not cand or cand in (".", ""):
+            continue
+        for tok in str(cand).split(";"):
+            tok = tok.strip().lower()
+            if tok and tok in by_cnumber:
+                p = _VL_PRIORITY.get(by_cnumber[tok], 0)
                 if p > best_p:
-                    best = by_cnumber[vid]
-                    best_p = p
+                    best, best_p = by_cnumber[tok], p
+
+    # 3. Gene-level match
+    if by_gene and gene:
+        gene_u = gene.strip().upper()
+        lt = by_gene.get(gene_u)
+        if lt:
+            p = _VL_PRIORITY.get(lt, 0)
+            if p > best_p:
+                best, best_p = lt, p
 
     return best
 
@@ -3361,6 +3554,16 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
                     "category": cat, "ratio": rat or freq,
                     "created_at": now, "updated_at": now,
                 })
+            elif gene:
+                # Gene-only row: match all variants from this gene
+                entries.append({
+                    "id": str(uuid.uuid4()), "list_type": list_type,
+                    "entry_type": "gene", "cnumber": "",
+                    "chrom": "", "pos": 0, "ref": "", "alt": "",
+                    "gene": gene, "note": note,
+                    "category": cat, "ratio": rat or freq,
+                    "created_at": now, "updated_at": now,
+                })
             else:
                 skipped_rows.append({"row": row_idx, "values": [v for v in row[:6]]})
     else:
@@ -3382,6 +3585,64 @@ def _parse_variant_list_file(file_bytes, filename, list_type, skip_header=False)
 
 
 # ── API: Variant Lists CRUD ──────────────────────────────────────────────────
+
+@app.route("/api/variant-lists/download/<list_type>")
+def api_vl_download(list_type):
+    """Download a variant list as xlsx in the standard upload format:
+    Columns: Gene, Variant, 분류, 빈도, 비율
+    """
+    _require_auth()
+    if list_type not in ("blacklist", "whitelist", "onhold"):
+        return jsonify({"error": "invalid list_type"}), 400
+    db = get_db()
+    rows = db.execute(
+        "SELECT entry_type, cnumber, chrom, pos, ref, alt, gene, category, ratio, note FROM variant_lists WHERE list_type=? ORDER BY created_at DESC",
+        (list_type,)
+    ).fetchall()
+
+    try:
+        import openpyxl
+        from io import BytesIO
+    except ImportError:
+        return jsonify({"error": "openpyxl not installed"}), 500
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = list_type.capitalize()
+    headers = ["Gene", "Variant", "분류", "빈도", "비율", "비고"]
+    ws.append(headers)
+
+    for r in rows:
+        r = dict_from_row(r)
+        et = r.get("entry_type", "")
+        gene = r.get("gene", "") or ""
+        cat  = r.get("category", "") or ""
+        ratio = r.get("ratio", "") or ""
+        note = r.get("note", "") or ""
+
+        if et == "gene":
+            variant = ""
+        elif et == "position":
+            chrom = (r.get("chrom") or "").replace("chr", "")
+            pos   = r.get("pos") or ""
+            ref   = r.get("ref") or ""
+            alt   = r.get("alt") or ""
+            if chrom and pos:
+                variant = f"{chrom}-{pos}-{ref}-{alt}" if ref and alt else f"{chrom}-{pos}"
+            else:
+                variant = r.get("cnumber") or ""
+        else:  # cnumber
+            variant = r.get("cnumber") or ""
+
+        ws.append([gene, variant, cat, ratio, "", note])
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"{list_type}.xlsx"
+    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=filename)
+
 
 @app.route("/api/variant-lists")
 def api_vl_list():
