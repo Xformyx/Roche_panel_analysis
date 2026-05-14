@@ -3849,10 +3849,10 @@ function buildQCTabContent(tabId, d) {
     // ── RNA-seq tabs ─────────────────────────────────────────────────────────────────────────
     case 'rna_alignment': return buildRnaAlignmentTab(d);
     case 'rna_featurecounts': return buildRnaFeatureCountsTab(d);
-    case 'rna_expression': return buildRnaExpressionTab(d);
+       case 'rna_expression': return buildRnaExpressionTab(d);
     case 'rna_plots': return buildRnaPlotsTab(d);
-    case 'rna_flagstat': return buildRnaFlagstatTab(d);
-    case 'rna_fusion':   return buildRnaFusionTab(d);
+    case 'rna_interactive_plots': return buildRnaInteractivePlotsTab(d);
+    case 'rna_fusion': return buildRnaFusionTab(d);
     default: return '';
   }
 }
@@ -3973,12 +3973,17 @@ function buildRnaExpressionTab(d) {
   var expr = d.rna_expression || {};
   var genes = expr.top_genes || [];
   var total = expr.total_genes || 0;
-  var html = '<div style="margin-bottom:8px;font-size:.8rem;color:var(--text-muted)">'
-    + '전체 유전자 ' + fmtNum(total) + '개 · 상위 ' + genes.length + '개 표시 (TPM 내림차순)';
-  if (d.sample_name) {
-    html += ' &nbsp;<a href="/api/download/' + d.sample_name + '/expression" style="font-size:.72rem;color:var(--primary)" download>TSV 다운로드</a>';
-  }
+  var sample = d.sample_name || '';
+
+  // Gene Search Box
+  var html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">';
+  html += '<input type="text" id="rna-gene-search" placeholder="Gene 검색 (Symbol 또는 Ensembl ID)"
+    style="flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:.82rem"
+    oninput="rnaGeneSearch(this.value, \'' + sample + '\')">';
+  html += '<a href="/api/download/' + sample + '/expression" style="font-size:.78rem;color:var(--primary);white-space:nowrap" download>TSV 다운로드</a>';
   html += '</div>';
+  html += '<div id="rna-gene-search-result" style="display:none;margin-bottom:10px;padding:10px 14px;background:rgba(68,114,196,0.08);border:1px solid rgba(68,114,196,0.25);border-radius:8px"></div>';
+  html += '<div style="margin-bottom:8px;font-size:.78rem;color:var(--text-muted)">전체 유전자 ' + fmtNum(total) + '개 &middot; 상위 ' + genes.length + '개 표시 (TPM 내림차순) &middot; 행 클릭 시 인터랙티브 플롯에서 하이라이트</div>';
   html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.78rem">';
   html += '<thead><tr style="background:var(--bg-secondary)">';
   html += '<th style="padding:5px 8px;text-align:left;font-weight:600">Gene Symbol</th>';
@@ -3987,15 +3992,16 @@ function buildRnaExpressionTab(d) {
   html += '<th style="padding:5px 8px;text-align:right;font-weight:600">CPM</th>';
   html += '<th style="padding:5px 8px;text-align:right;font-weight:600">TPM</th>';
   html += '<th style="padding:5px 8px;text-align:right;font-weight:600">Length (bp)</th>';
-  html += '</tr></thead><tbody>';
+  html += '</tr></thead><tbody id="rna-expr-tbody">';
   genes.forEach(function(g, i) {
     var bg = i % 2 === 0 ? '' : 'background:var(--bg-secondary)';
     var tpm = parseFloat(g.TPM);
     var tpmColor = tpm > 100 ? 'var(--red)' : tpm > 10 ? 'var(--orange,#eb9700)' : tpm > 1 ? 'var(--green)' : 'var(--text-muted)';
     var sym = g.gene_symbol || g.gene_id || '';
-    html += '<tr style="' + bg + '">';
-    html += '<td style="padding:4px 8px;font-weight:600">' + sym + '</td>';
-    html += '<td style="padding:4px 8px;font-family:monospace;font-size:.72rem;color:var(--text-muted)">' + (g.gene_id || '') + '</td>';
+    var geneId = g.gene_id || '';
+    html += '<tr style="' + bg + ';cursor:pointer" onclick="rnaGeneClickHighlight(\'' + sym + '\', \'' + geneId + '\', \'' + sample + '\')" title="클릭하면 인터랙티브 플롯에서 하이라이트">';
+    html += '<td style="padding:4px 8px;font-weight:600;color:var(--primary)">' + sym + '</td>';
+    html += '<td style="padding:4px 8px;font-family:monospace;font-size:.72rem;color:var(--text-muted)">' + geneId + '</td>';
     html += '<td style="padding:4px 8px;text-align:right">' + fmtNum(parseInt(g.count)) + '</td>';
     html += '<td style="padding:4px 8px;text-align:right">' + (parseFloat(g.CPM) || 0).toFixed(2) + '</td>';
     html += '<td style="padding:4px 8px;text-align:right;color:' + tpmColor + ';font-weight:600">' + (tpm || 0).toFixed(2) + '</td>';
@@ -4003,6 +4009,64 @@ function buildRnaExpressionTab(d) {
     html += '</tr>';
   });
   html += '</tbody></table></div>';
+  return html;
+}
+
+function rnaGeneSearch(query, sample) {
+  var resultDiv = document.getElementById('rna-gene-search-result');
+  if (!query || query.length < 2) {
+    if (resultDiv) resultDiv.style.display = 'none';
+    return;
+  }
+  apiFetch('/api/rna/gene_search?sample=' + encodeURIComponent(sample) + '&q=' + encodeURIComponent(query))
+    .then(function(r) {
+      if (!resultDiv) return;
+      if (r.error) { resultDiv.style.display = 'none'; return; }
+      var results = r.results || [];
+      if (results.length === 0) {
+        resultDiv.innerHTML = '<span style="color:var(--text-muted)">검색 결과 없음</span>';
+        resultDiv.style.display = 'block';
+        return;
+      }
+      var html = '<div style="font-size:.75rem;font-weight:600;margin-bottom:6px">검색 결과 (' + results.length + '개)</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      results.slice(0, 10).forEach(function(g) {
+        var sym = g.gene_symbol || g.gene_id;
+        html += '<span style="padding:3px 8px;background:var(--primary);color:white;border-radius:12px;font-size:.72rem;cursor:pointer"
+          onclick="rnaGeneClickHighlight(\'' + sym + '\', \'' + g.gene_id + '\', \'' + sample + '\')">' + sym + ' <span style="opacity:.8">(TPM: ' + (g.TPM||0).toFixed(1) + ')</span></span>';
+      });
+      html += '</div>';
+      resultDiv.innerHTML = html;
+      resultDiv.style.display = 'block';
+    }).catch(function() {});
+}
+
+function rnaGeneClickHighlight(symbol, geneId, sample) {
+  // Switch to interactive plots tab and highlight the gene
+  var interactiveTab = document.querySelector('.qc-tab[data-tab="rna_interactive_plots"]');
+  if (interactiveTab) {
+    switchQCTab('rna_interactive_plots');
+    // Try to set the gene in the iframe
+    var iframe = document.querySelector('#qc-content-rna_interactive_plots iframe');
+    if (iframe) {
+      // Update iframe src with gene parameter
+      var currentSrc = iframe.src;
+      var url = new URL(currentSrc, window.location.origin);
+      url.searchParams.set('gene', symbol || geneId);
+      iframe.src = url.toString();
+    }
+  }
+  // Also show a toast notification
+  showToast(symbol + ' 하이라이트 - 인터랙티브 플롯 탭으로 이동했습니다.', 'info');
+}
+
+// ── RNA Interactive Plots tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaInteractivePlotsTab(d) {
+  var sample = d.sample_name || '';
+  var html = '<div style="display:flex;flex-direction:column;gap:16px;padding:4px 0;height:800px;">';
+  html += '<div style="font-size:.78rem;font-weight:600;color:var(--text);margin-bottom:8px">Interactive Plotly Analysis</div>';
+  html += '<iframe src="/interactive/?sample=' + encodeURIComponent(sample) + '" style="width:100%;height:100%;border:none;background:white;border-radius:4px"></iframe>';
+  html += '</div>';
   return html;
 }
 
@@ -4071,10 +4135,10 @@ function openRnaReview(orderId) {
   document.getElementById('rnaReviewTabContents').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">데이터를 불러오는 중...</div>';
   apiFetch('/api/orders/' + orderId + '/qc_data').then(function(d) {
     document.getElementById('rnaReviewTitle').textContent = (d.order_name || d.sample_name || '') + ' — RNA 분석 결과';
-    var tabs = [];
-    if (d.rna_expression) tabs.push({ id: 'rev_expression', label: 'Expression' });
-    if (d.rna_plots && d.rna_plots.length > 0) tabs.push({ id: 'rev_plots', label: 'Expression Plots' });
-    if (d.rna_fusion) tabs.push({ id: 'rev_fusion', label: 'Fusion (' + (d.rna_fusion.count || 0) + ')' });
+    var tabs = [];    if (d.rna_expression) tabs.push({ id: 'rna_expression', label: 'Expression' });
+    if (d.rna_plots && d.rna_plots.length > 0) tabs.push({ id: 'rna_plots', label: 'Expression Plots' });
+    if (d.rna_interactive_plots && d.rna_interactive_plots.length > 0) tabs.push({ id: 'rna_interactive_plots', label: 'Interactive Plots' });
+    if (d.rna_fusion && d.rna_fusion.length > 0) tabs.push({ id: 'rna_fusion', label: 'Fusion' }); + ')' });
     if (tabs.length === 0) {
       document.getElementById('rnaReviewTabContents').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">분석 결과 데이터가 없습니다.</div>';
       return;

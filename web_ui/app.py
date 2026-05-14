@@ -20,6 +20,15 @@ from flask import Flask, render_template, request, jsonify, send_file, g, make_r
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
+
+# ── Interactive Dash App Integration ──────────────────────────────────────────
+try:
+    import interactive_app
+    dash_app = interactive_app.create_dash_app(app)
+except ImportError as e:
+    print(f"Warning: Could not initialize interactive Dash app: {e}")
+except Exception as e:
+    print(f"Warning: Error initializing interactive Dash app: {e}")
 # Host-mounted templates (docker) must be picked up without restarting the process
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -2049,6 +2058,8 @@ def api_results_image(rel_path):
         mime = "image/jpeg"
     elif safe_path.endswith(".svg"):
         mime = "image/svg+xml"
+    elif safe_path.endswith(".html"):
+        mime = "text/html"
     return send_file(safe_path, mimetype=mime)
 
 
@@ -2360,6 +2371,10 @@ def api_qc_data(order_id):
         plot_files = glob.glob(os.path.join(expr_dir, f"{sample}_*.png"))
         result["rna_plots"] = [
             os.path.relpath(p, RESULTS_DIR) for p in sorted(plot_files)
+        ]
+        interactive_files = glob.glob(os.path.join(expr_dir, f"{sample}_interactive_*.html"))
+        result["rna_interactive_plots"] = [
+            os.path.relpath(p, RESULTS_DIR) for p in sorted(interactive_files)
         ]
 
     # ── 11. STAR-Fusion results ───────────────────────────────────────────────
@@ -3775,6 +3790,130 @@ def api_vl_upload():
     )
     db.commit()
     return jsonify({"success": True, "inserted": len(entries), "skipped": skipped})
+
+
+# ---------------------------------------------------------------------------
+# RNA-seq Interactive Analysis API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/rna/gene_search")
+def api_rna_gene_search():
+    """Search for a gene in the expression summary of a sample."""
+    sample = request.args.get("sample", "").strip()
+    query = request.args.get("q", "").strip().upper()
+    if not sample or not query:
+        return jsonify({"error": "sample and q parameters required"}), 400
+
+    expr_dir = os.path.join(RESULTS_DIR, sample, "expression_plots")
+    summary_path = os.path.join(expr_dir, f"{sample}_expression_summary.tsv")
+    if not os.path.isfile(summary_path):
+        return jsonify({"error": "Expression summary not found"}), 404
+
+    try:
+        import csv as _csv
+        results = []
+        with open(summary_path, "r") as fh:
+            reader = _csv.DictReader(fh, delimiter="\t")
+            for row in reader:
+                gene_id = (row.get("gene_id") or "").upper()
+                gene_sym = (row.get("gene_symbol") or "").upper()
+                if query in gene_id or query in gene_sym:
+                    results.append({
+                        "gene_id": row.get("gene_id", ""),
+                        "gene_symbol": row.get("gene_symbol", ""),
+                        "count": float(row.get("count", 0)),
+                        "CPM": float(row.get("CPM", 0)),
+                        "TPM": float(row.get("TPM", 0)),
+                        "log2CPM": float(row.get("log2CPM", 0)),
+                    })
+                    if len(results) >= 50:
+                        break
+        return jsonify({"results": results, "total": len(results)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/rna/expression_data")
+def api_rna_expression_data():
+    """Return expression data for a specific gene across all samples or for a single sample."""
+    sample = request.args.get("sample", "").strip()
+    gene_id = request.args.get("gene_id", "").strip()
+    gene_symbol = request.args.get("gene_symbol", "").strip()
+    if not sample:
+        return jsonify({"error": "sample parameter required"}), 400
+    if not gene_id and not gene_symbol:
+        return jsonify({"error": "gene_id or gene_symbol parameter required"}), 400
+
+    expr_dir = os.path.join(RESULTS_DIR, sample, "expression_plots")
+    summary_path = os.path.join(expr_dir, f"{sample}_expression_summary.tsv")
+    if not os.path.isfile(summary_path):
+        return jsonify({"error": "Expression summary not found"}), 404
+
+    try:
+        import csv as _csv
+        gene_data = None
+        with open(summary_path, "r") as fh:
+            reader = _csv.DictReader(fh, delimiter="\t")
+            for row in reader:
+                row_gene_id = (row.get("gene_id") or "").upper()
+                row_gene_sym = (row.get("gene_symbol") or "").upper()
+                if (gene_id and gene_id.upper() in row_gene_id) or \
+                   (gene_symbol and gene_symbol.upper() == row_gene_sym):
+                    gene_data = {
+                        "gene_id": row.get("gene_id", ""),
+                        "gene_symbol": row.get("gene_symbol", ""),
+                        "count": float(row.get("count", 0)),
+                        "CPM": float(row.get("CPM", 0)),
+                        "TPM": float(row.get("TPM", 0)),
+                        "log2CPM": float(row.get("log2CPM", 0)),
+                        "length": int(row.get("length", 0)),
+                    }
+                    break
+        if gene_data is None:
+            return jsonify({"error": "Gene not found"}), 404
+        return jsonify({"gene": gene_data, "sample": sample})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/rna/rseqc_data")
+def api_rna_rseqc_data():
+    """Return parsed RSeQC results for a sample."""
+    sample = request.args.get("sample", "").strip()
+    if not sample:
+        return jsonify({"error": "sample parameter required"}), 400
+
+    rseqc_dir = os.path.join(RESULTS_DIR, sample, "QC_report", "rseqc")
+    result = {"sample": sample}
+
+    # infer_experiment
+    infer_path = os.path.join(rseqc_dir, f"{sample}_infer_experiment.txt")
+    if os.path.isfile(infer_path):
+        try:
+            with open(infer_path, "r") as fh:
+                result["infer_experiment"] = fh.read()
+        except Exception:
+            pass
+
+    # read_distribution
+    read_dist_path = os.path.join(rseqc_dir, f"{sample}_read_distribution.txt")
+    if os.path.isfile(read_dist_path):
+        try:
+            with open(read_dist_path, "r") as fh:
+                result["read_distribution"] = fh.read()
+        except Exception:
+            pass
+
+    # TIN summary
+    tin_candidates = glob.glob(os.path.join(rseqc_dir, "*.summary.txt"))
+    if tin_candidates:
+        try:
+            with open(tin_candidates[0], "r") as fh:
+                result["tin_summary"] = fh.read()
+        except Exception:
+            pass
+
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------

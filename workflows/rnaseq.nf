@@ -79,6 +79,7 @@ include { RSEQC_INFER_EXPERIMENT;
           RSEQC_JUNCTION_SATURATION;
           RSEQC_TIN }           from '../modules/rseqc'
 include { RNASEQ_PLOTS }        from '../modules/rnaseq_plots'
+include { RNASEQ_INTERACTIVE_PLOTS } from '../modules/rnaseq_interactive_plots'
 include { RNASEQ_QC_SUMMARY }   from '../modules/rnaseq_qc_summary'
 include { STAR_FUSION }         from '../modules/star_fusion'
 
@@ -182,6 +183,7 @@ workflow {
     // ── Step 7: Expression visualization plots ───────────────
     if (!params.skip_plots) {
         RNASEQ_PLOTS(FEATURECOUNTS.out.counts, gtf_file)
+        RNASEQ_INTERACTIVE_PLOTS(RNASEQ_PLOTS.out.summary)
     }
 
     // ── Step 8: QC summary JSON (for web UI) ─────────────────
