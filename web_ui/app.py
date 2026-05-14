@@ -4049,6 +4049,187 @@ def api_rna_rseqc_data():
 
 
 # ---------------------------------------------------------------------------
+# RNA-seq DESeq2 & Pathway Analysis API
+# ---------------------------------------------------------------------------
+
+DEG_DIR = os.path.join(RESULTS_DIR, "..", "Differential_Expression")  # relative to RESULTS_DIR
+PATHWAY_DIR = os.path.join(RESULTS_DIR, "..", "Pathway_Analysis")
+
+
+@app.route("/api/rna/deseq2_results")
+def api_rna_deseq2_results():
+    """Return DESeq2 differential expression results."""
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 100))
+    sig_only = request.args.get("sig_only", "false").lower() == "true"
+    sort_by = request.args.get("sort_by", "padj")  # padj | log2FoldChange | baseMean
+
+    # Search in RESULTS_DIR parent (pipeline outdir)
+    outdir = RESULTS_DIR
+    deg_candidates = [
+        os.path.join(outdir, "Differential_Expression", "deseq2_results.tsv"),
+        os.path.join(os.path.dirname(outdir), "Differential_Expression", "deseq2_results.tsv"),
+    ]
+    results_path = next((p for p in deg_candidates if os.path.isfile(p)), None)
+
+    if not results_path:
+        return jsonify({"error": "DESeq2 results not found. Run pipeline with >= 2 samples."}), 404
+
+    try:
+        import csv as _csv
+        rows = []
+        with open(results_path, "r") as fh:
+            reader = _csv.DictReader(fh, delimiter="\t")
+            for row in reader:
+                try:
+                    row["padj"] = float(row.get("padj") or "nan")
+                    row["log2FoldChange"] = float(row.get("log2FoldChange") or "nan")
+                    row["baseMean"] = float(row.get("baseMean") or "nan")
+                    row["pvalue"] = float(row.get("pvalue") or "nan")
+                except ValueError:
+                    pass
+                rows.append(row)
+
+        if sig_only:
+            rows = [r for r in rows if isinstance(r.get("padj"), float)
+                    and r["padj"] < 0.05
+                    and abs(r.get("log2FoldChange", 0)) > 1]
+
+        # Sort
+        import math
+        rows.sort(key=lambda r: (math.isnan(r.get(sort_by, float("nan"))) if isinstance(r.get(sort_by), float) else True,
+                                  r.get(sort_by, float("inf"))))
+
+        total = len(rows)
+        start = (page - 1) * per_page
+        end = start + per_page
+        page_rows = rows[start:end]
+
+        return jsonify({
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "results": page_rows,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/rna/deseq2_plots")
+def api_rna_deseq2_plots():
+    """Return available DESeq2 plot file paths."""
+    outdir = RESULTS_DIR
+    deg_dir_candidates = [
+        os.path.join(outdir, "Differential_Expression"),
+        os.path.join(os.path.dirname(outdir), "Differential_Expression"),
+    ]
+    deg_dir = next((d for d in deg_dir_candidates if os.path.isdir(d)), None)
+    if not deg_dir:
+        return jsonify({"plots": [], "has_interactive": False})
+
+    png_files = glob.glob(os.path.join(deg_dir, "*.png"))
+    html_files = glob.glob(os.path.join(deg_dir, "*.html"))
+
+    plots = [os.path.relpath(p, RESULTS_DIR) for p in sorted(png_files)]
+    interactive = [os.path.relpath(p, RESULTS_DIR) for p in sorted(html_files)]
+
+    return jsonify({
+        "plots": plots,
+        "interactive": interactive,
+        "has_interactive": len(interactive) > 0,
+        "deg_dir": deg_dir,
+    })
+
+
+@app.route("/api/rna/pathway_results")
+def api_rna_pathway_results():
+    """Return GO/KEGG pathway enrichment results."""
+    pathway_type = request.args.get("type", "go")  # go | kegg
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 50))
+
+    outdir = RESULTS_DIR
+    pw_dir_candidates = [
+        os.path.join(outdir, "Pathway_Analysis"),
+        os.path.join(os.path.dirname(outdir), "Pathway_Analysis"),
+    ]
+    pw_dir = next((d for d in pw_dir_candidates if os.path.isdir(d)), None)
+
+    if not pw_dir:
+        return jsonify({"error": "Pathway analysis results not found."}), 404
+
+    fname = "go_enrichment.tsv" if pathway_type == "go" else "kegg_enrichment.tsv"
+    fpath = os.path.join(pw_dir, fname)
+
+    if not os.path.isfile(fpath) or os.path.getsize(fpath) == 0:
+        return jsonify({"results": [], "total": 0, "message": f"No {pathway_type.upper()} enrichment results."})
+
+    try:
+        import csv as _csv
+        rows = []
+        with open(fpath, "r") as fh:
+            reader = _csv.DictReader(fh, delimiter="\t")
+            for row in reader:
+                try:
+                    row["pvalue"] = float(row.get("pvalue") or "nan")
+                    row["p.adjust"] = float(row.get("p.adjust") or "nan")
+                    row["qvalue"] = float(row.get("qvalue") or "nan")
+                except ValueError:
+                    pass
+                rows.append(row)
+
+        total = len(rows)
+        start = (page - 1) * per_page
+        page_rows = rows[start:start + per_page]
+
+        return jsonify({"total": total, "page": page, "per_page": per_page, "results": page_rows})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/rna/pathway_plots")
+def api_rna_pathway_plots():
+    """Return available pathway analysis plot file paths."""
+    outdir = RESULTS_DIR
+    pw_dir_candidates = [
+        os.path.join(outdir, "Pathway_Analysis"),
+        os.path.join(os.path.dirname(outdir), "Pathway_Analysis"),
+    ]
+    pw_dir = next((d for d in pw_dir_candidates if os.path.isdir(d)), None)
+    if not pw_dir:
+        return jsonify({"plots": []})
+
+    png_files = glob.glob(os.path.join(pw_dir, "*.png"))
+    plots = [os.path.relpath(p, RESULTS_DIR) for p in sorted(png_files)]
+    return jsonify({"plots": plots})
+
+
+@app.route("/api/rna/upload_design", methods=["POST"])
+def api_rna_upload_design():
+    """
+    Upload a sample design CSV for DESeq2 group comparison.
+    Format: sample,condition (header required)
+    Saves to RESULTS_DIR/design.csv
+    """
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No file provided"}), 400
+    f = request.files["file"]
+    if not f.filename.endswith(".csv"):
+        return jsonify({"success": False, "error": "Only CSV files accepted"}), 400
+    try:
+        content = f.read().decode("utf-8")
+        lines = [l.strip() for l in content.splitlines() if l.strip()]
+        if not lines or "sample" not in lines[0].lower():
+            return jsonify({"success": False, "error": "CSV must have header: sample,condition"}), 400
+        dest = os.path.join(RESULTS_DIR, "design.csv")
+        with open(dest, "w") as fh:
+            fh.write(content)
+        return jsonify({"success": True, "message": f"Design saved to {dest}", "rows": len(lines) - 1})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 init_db()

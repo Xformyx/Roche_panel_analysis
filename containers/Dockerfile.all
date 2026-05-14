@@ -124,13 +124,14 @@ ENV PATH="/tools/STAR-Fusion-v1.15.1:${PATH}"
 # 4) Python requirements
 RUN pip3 install --no-cache-dir multiqc RSeQC
 
-# 5) R packages (CRAN + Bioc 3.21 + ctDNAtools)
+# 5) R packages (CRAN + Bioc 3.21 + ctDNAtools + RNA-seq analysis)
 ENV R_REPOS=https://cran.r-project.org
 RUN R -e "options(repos=c(CRAN='${R_REPOS}'), Ncpus=4L); invisible(TRUE)"
 
 RUN R -e "install.packages(c( \
     'magrittr','dplyr','tidyr','purrr','assertthat','rlang','furrr','ellipsis','optparse', \
-    'data.table','ggplot2','scales','remotes' \
+    'data.table','ggplot2','scales','remotes', \
+    'pheatmap','RColorBrewer','plotly','htmlwidgets' \
   ), repos='${R_REPOS}', Ncpus=4L)"
 
 RUN R -e "install.packages('BiocManager', repos='${R_REPOS}')" && \
@@ -142,6 +143,21 @@ RUN R -e "BiocManager::install(c( \
       'GenomicAlignments', 'Biostrings', 'VariantAnnotation', 'GenomeInfoDbData', \
       'Rhtslib', 'SummarizedExperiment' \
     ), ask=FALSE, update=FALSE, Ncpus=4L)"
+
+# 5-b) RNA-seq specific R packages: DESeq2, edgeR, clusterProfiler
+RUN R -e "BiocManager::install(c( \
+      'DESeq2', 'edgeR', 'limma', \
+      'clusterProfiler', 'enrichplot', 'pathview', \
+      'org.Hs.eg.db', 'org.Mm.eg.db', \
+      'DOSE', 'ReactomePA', \
+      'AnnotationDbi', 'GO.db', \
+      'tximport', 'tximeta' \
+    ), ask=FALSE, update=FALSE, Ncpus=4L)"
+
+# Verify RNA-seq R packages
+RUN R -e "library(DESeq2); library(clusterProfiler); library(org.Hs.eg.db); \
+          cat('DESeq2:', as.character(packageVersion('DESeq2')), '\\n'); \
+          cat('clusterProfiler:', as.character(packageVersion('clusterProfiler')), '\\n')"
 
 RUN echo "=== Installing ctDNAtools from GitHub ===" && \
     INSTALLED=0 && \

@@ -62,6 +62,7 @@ params.fastp_options   = '-g -W 5 -q 20 -u 40 -x -3 -l 50 -c'
 params.skip_rseqc      = false
 params.skip_plots      = false
 params.skip_fusion     = false
+params.skip_deseq2     = false
 
 // CTAT genome library for STAR-Fusion (null = skip fusion step)
 params.ctat_lib        = null
@@ -81,6 +82,8 @@ include { RSEQC_INFER_EXPERIMENT;
 include { RNASEQ_PLOTS }        from '../modules/rnaseq_plots'
 include { RNASEQ_INTERACTIVE_PLOTS } from '../modules/rnaseq_interactive_plots'
 include { RNASEQ_MULTI_SAMPLE_PLOTS } from '../modules/rnaseq_multi_sample_plots'
+include { RNASEQ_DESEQ2 }       from '../modules/rnaseq_deseq2'
+include { RNASEQ_PATHWAY }      from '../modules/rnaseq_pathway'
 include { RNASEQ_QC_SUMMARY }   from '../modules/rnaseq_qc_summary'
 include { STAR_FUSION }         from '../modules/star_fusion'
 
@@ -188,6 +191,20 @@ workflow {
         
         // Multi-sample plots (collect all featureCounts outputs)
         RNASEQ_MULTI_SAMPLE_PLOTS(FEATURECOUNTS.out.counts.map { sid, counts -> counts }.collect())
+        
+        // ── Step 7b: DESeq2 Differential Expression & Pathway Analysis ────────
+        if (!params.skip_deseq2) {
+            // Check if design.csv exists in outdir, else pass a dummy
+            def design_csv = file("${params.outdir}/design.csv")
+            def design_input = design_csv.exists() ? design_csv : file("dummy_design.csv")
+            if (!design_csv.exists()) {
+                // Create a dummy file to avoid nextflow missing file error
+                file("dummy_design.csv").text = ""
+            }
+            
+            RNASEQ_DESEQ2(RNASEQ_MULTI_SAMPLE_PLOTS.out.combined_counts, design_input)
+            RNASEQ_PATHWAY(RNASEQ_DESEQ2.out.sig_genes)
+        }
     }
 
     // ── Step 8: QC summary JSON (for web UI) ─────────────────

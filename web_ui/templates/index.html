@@ -3810,6 +3810,9 @@ function renderQCTabs(d) {
     if (d.rna_plots && d.rna_plots.length > 0) tabs.push({ id: 'rna_plots', label: 'Expression Plots' });
     // Gene Expression Viewer tab is always shown for RNA samples
     tabs.push({ id: 'rna_gene_viewer', label: '🔬 Gene Expression Viewer' });
+    // DESeq2 & Pathway tabs (always shown for RNA — data loaded on demand)
+    tabs.push({ id: 'rna_deseq2', label: '📉 DESeq2 (DE Analysis)' });
+    tabs.push({ id: 'rna_pathway', label: '🧬 GO/KEGG Pathway' });
     if (d.rna_interactive_plots && d.rna_interactive_plots.length > 0) tabs.push({ id: 'rna_interactive_plots', label: 'Interactive Plots' });
     if (d.rna_flagstat) tabs.push({ id: 'rna_flagstat', label: 'Flagstat' });
     if (d.rna_fusion && d.rna_fusion.length > 0) tabs.push({ id: 'rna_fusion', label: 'Fusion' });
@@ -3857,6 +3860,8 @@ function buildQCTabContent(tabId, d) {
     case 'rna_expression': return buildRnaExpressionTab(d);
     case 'rna_plots': return buildRnaPlotsTab(d);
     case 'rna_gene_viewer': return buildRnaGeneViewerTab(d);
+    case 'rna_deseq2': return buildRnaDeseq2Tab(d);
+    case 'rna_pathway': return buildRnaPathwayTab(d);
     case 'rna_interactive_plots': return buildRnaInteractivePlotsTab(d);
     case 'rna_fusion': return buildRnaFusionTab(d);
     default: return '';
@@ -4391,13 +4396,172 @@ function switchRnaReviewTab(tabId) {
   document.querySelectorAll('.rna-review-tab-content').forEach(function(c) { c.classList.toggle('active', c.id === 'rna-rev-content-' + tabId); });
 }
 
-// ── RNA Fusion tab (STAR-Fusion results) ─────────────────────────────────────────────────────
-function buildRnaFusionTab(d) {
-  var fdata = d.rna_fusion || {};
-  var fusions = fdata.fusions || [];
+// ── DESeq2 Differential Expression tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaDeseq2Tab(d) {
   var html = '';
 
-  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  html += '<div style="background:rgba(68,114,196,0.06);border:1px solid rgba(68,114,196,0.2);border-radius:8px;padding:12px;margin-bottom:14px">';
+  html += '<div style="font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:8px">📝 샘플 그룹 설계 (design.csv)</div>';
+  html += '<div style="font-size:.75rem;color:var(--text-muted);margin-bottom:8px">';
+  html += 'DESeq2는 샘플 그룹 정보(design.csv)가 필요합니다. 파일 형식: <code>sample,condition</code> (header 필수)<br>';
+  html += '예) <code>sample1,Control</code> / <code>sample2,Treatment</code>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  html += '<label style="cursor:pointer;padding:5px 12px;background:var(--primary);color:white;border-radius:5px;font-size:.78rem">';
+  html += '파일 선택 (CSV) <input type="file" accept=".csv" style="display:none" onchange="deseq2UploadDesign(this)">';
+  html += '</label>';
+  html += '<span id="deseq2-design-status" style="font-size:.75rem;color:var(--text-muted)"></span>';
+  html += '</div></div>';
+
+  html += '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">';
+  html += '<button onclick="deseq2LoadResults(false)" style="padding:6px 14px;background:var(--primary);color:white;border:none;border-radius:5px;font-size:.8rem;cursor:pointer;font-weight:600">전체 결과 조회</button>';
+  html += '<button onclick="deseq2LoadResults(true)" style="padding:6px 14px;background:#C00000;color:white;border:none;border-radius:5px;font-size:.8rem;cursor:pointer;font-weight:600">유의 유전자만 (padj<0.05, |LFC|>1)</button>';
+  html += '<button onclick="deseq2LoadPlots()" style="padding:6px 14px;background:#7030A0;color:white;border:none;border-radius:5px;font-size:.8rem;cursor:pointer;font-weight:600">Volcano / MA / Heatmap</button>';
+  html += '</div>';
+
+  html += '<div id="deseq2-results-container" style="min-height:200px">';
+  html += '<div style="color:var(--text-muted);font-size:.8rem;padding:30px;text-align:center">조회 버튼을 눌러 DESeq2 결과를 확인하세요.<br><span style="font-size:.72rem">⚠️ 다중 샘플(2개 이상) 및 샘플 그룹 설계 파일이 필요합니다.</span></div>';
+  html += '</div>';
+  html += '<div id="deseq2-plots-container" style="display:none;margin-top:14px"></div>';
+  return html;
+}
+
+function deseq2UploadDesign(input) {
+  var statusEl = document.getElementById('deseq2-design-status');
+  if (!input.files || !input.files[0]) return;
+  var fd = new FormData();
+  fd.append('file', input.files[0]);
+  if (statusEl) statusEl.textContent = '업로드 중...';
+  fetch('/api/rna/upload_design', { method: 'POST', body: fd })
+    .then(function(r) { return r.json(); })
+    .then(function(r) { if (statusEl) statusEl.textContent = r.success ? ('✅ ' + r.message) : ('❌ ' + r.error); })
+    .catch(function() { if (statusEl) statusEl.textContent = '❌ 업로드 실패'; });
+}
+
+function deseq2LoadResults(sigOnly) {
+  var container = document.getElementById('deseq2-results-container');
+  if (container) container.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)">조회 중...</div>';
+  var url = '/api/rna/deseq2_results?per_page=200' + (sigOnly ? '&sig_only=true' : '');
+  apiFetch(url).then(function(r) {
+    if (r.error) { if (container) container.innerHTML = '<div style="color:var(--red);padding:20px">' + r.error + '</div>'; return; }
+    var rows = r.results || []; var total = r.total || 0;
+    var html = '<div style="font-size:.75rem;color:var(--text-muted);margin-bottom:8px">전체 ' + fmtNum(total) + '개 유전자' + (sigOnly ? ' (padj<0.05, |LFC|>1 필터)' : '') + ' &middot; 상위 ' + rows.length + '개 표시</div>';
+    html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.76rem">';
+    html += '<thead><tr style="background:var(--bg-secondary)">';
+    ['Gene ID','baseMean','log2FC','p-value','padj','Sig'].forEach(function(h) { html += '<th style="padding:4px 8px;text-align:right;font-weight:600">' + h + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function(g, i) {
+      var lfc = parseFloat(g.log2FoldChange); var padj = parseFloat(g.padj);
+      var isSig = !isNaN(padj) && padj < 0.05 && Math.abs(lfc) > 1;
+      var sigLabel = isSig ? (lfc > 0 ? '<span style="color:#C00000;font-weight:700">↑Up</span>' : '<span style="color:#4472C4;font-weight:700">↓Down</span>') : '<span style="color:var(--text-muted)">NS</span>';
+      var bg = i % 2 === 0 ? '' : 'background:rgba(0,0,0,.03)';
+      html += '<tr style="' + bg + '">';
+      html += '<td style="padding:3px 8px;font-family:monospace;font-size:.72rem">' + (g.Geneid || '') + '</td>';
+      html += '<td style="padding:3px 8px;text-align:right">' + (isNaN(parseFloat(g.baseMean)) ? '-' : parseFloat(g.baseMean).toFixed(1)) + '</td>';
+      html += '<td style="padding:3px 8px;text-align:right;color:' + (lfc > 0 ? '#C00000' : '#4472C4') + ';font-weight:600">' + (isNaN(lfc) ? '-' : lfc.toFixed(3)) + '</td>';
+      html += '<td style="padding:3px 8px;text-align:right">' + (isNaN(parseFloat(g.pvalue)) ? '-' : parseFloat(g.pvalue).toExponential(2)) + '</td>';
+      html += '<td style="padding:3px 8px;text-align:right">' + (isNaN(padj) ? '-' : padj.toExponential(2)) + '</td>';
+      html += '<td style="padding:3px 8px;text-align:center">' + sigLabel + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    if (container) container.innerHTML = html;
+  }).catch(function() { if (container) container.innerHTML = '<div style="color:var(--red);padding:20px">조회 실패</div>'; });
+}
+
+function deseq2LoadPlots() {
+  var pc = document.getElementById('deseq2-plots-container');
+  if (!pc) return;
+  pc.style.display = 'block';
+  pc.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">로드 중...</div>';
+  apiFetch('/api/rna/deseq2_plots').then(function(r) {
+    var plots = r.plots || []; var interactive = r.interactive || [];
+    var html = '';
+    if (interactive.length > 0) {
+      html += '<div style="margin-bottom:12px"><div style="font-size:.8rem;font-weight:700;margin-bottom:8px">📊 Interactive Volcano Plot</div>';
+      interactive.forEach(function(p) { html += '<iframe src="/api/results_image/' + encodeURIComponent(p) + '" style="width:100%;height:500px;border:none;background:white;border-radius:6px"></iframe>'; });
+      html += '</div>';
+    }
+    if (plots.length > 0) {
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">';
+      var pLabels = { 'volcano': 'Volcano Plot', 'ma_plot': 'MA Plot', 'sample_heatmap': 'Sample Distance Heatmap', 'sig_genes_heatmap': 'Significant Genes Heatmap' };
+      plots.forEach(function(p) {
+        var fname = p.split('/').pop().replace('.png','');
+        var key = Object.keys(pLabels).find(function(k) { return fname.indexOf(k) >= 0; });
+        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px"><div style="font-size:.75rem;font-weight:600;margin-bottom:6px">' + (key ? pLabels[key] : fname) + '</div><img src="/api/results_image/' + encodeURIComponent(p) + '" style="width:100%;border-radius:4px" loading="lazy"></div>';
+      });
+      html += '</div>';
+    }
+    if (!html) html = '<div style="color:var(--text-muted);padding:20px">플롯 파일을 찾을 수 없습니다.</div>';
+    pc.innerHTML = html;
+  }).catch(function() { pc.innerHTML = '<div style="color:var(--red);padding:20px">로드 실패</div>'; });
+}
+
+// ── GO/KEGG Pathway tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaPathwayTab(d) {
+  var html = '';
+  html += '<div style="display:flex;gap:8px;margin-bottom:12px">';
+  html += '<button onclick="pathwayLoad(\'go\')" style="padding:6px 16px;background:var(--primary);color:white;border:none;border-radius:5px;font-size:.8rem;cursor:pointer;font-weight:600">GO (Biological Process)</button>';
+  html += '<button onclick="pathwayLoad(\'kegg\')" style="padding:6px 16px;background:#ED7D31;color:white;border:none;border-radius:5px;font-size:.8rem;cursor:pointer;font-weight:600">KEGG Pathway</button>';
+  html += '<button onclick="pathwayLoadPlots()" style="padding:6px 16px;background:#7030A0;color:white;border:none;border-radius:5px;font-size:.8rem;cursor:pointer;font-weight:600">플롯 보기</button>';
+  html += '</div>';
+  html += '<div style="font-size:.75rem;color:var(--text-muted);margin-bottom:10px">⚠️ DESeq2 차등 발현 분석이 완료된 후 유의 유전자를 기반으로 GO/KEGG 분석이 자동 실행됩니다.</div>';
+  html += '<div id="pathway-results-container" style="min-height:200px"><div style="color:var(--text-muted);font-size:.8rem;padding:30px;text-align:center">위 버튼을 눌러 GO 또는 KEGG 결과를 확인하세요.</div></div>';
+  html += '<div id="pathway-plots-container" style="display:none;margin-top:14px"></div>';
+  return html;
+}
+
+function pathwayLoad(type) {
+  var container = document.getElementById('pathway-results-container');
+  if (container) container.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)">조회 중...</div>';
+  apiFetch('/api/rna/pathway_results?type=' + type + '&per_page=100').then(function(r) {
+    if (r.error) { if (container) container.innerHTML = '<div style="color:var(--red);padding:20px">' + r.error + '</div>'; return; }
+    var rows = r.results || []; var total = r.total || 0;
+    if (rows.length === 0) { if (container) container.innerHTML = '<div style="color:var(--text-muted);padding:20px">' + (r.message || '결과 없음') + '</div>'; return; }
+    var typeLabel = type === 'go' ? 'GO Biological Process' : 'KEGG Pathway';
+    var html = '<div style="font-size:.75rem;color:var(--text-muted);margin-bottom:8px">' + typeLabel + ' 분석 결과 · 전체 ' + fmtNum(total) + '개</div>';
+    html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.76rem">';
+    html += '<thead><tr style="background:var(--bg-secondary)"><th style="padding:4px 8px">ID</th><th style="padding:4px 8px">Description</th><th style="padding:4px 8px;text-align:center">GeneRatio</th><th style="padding:4px 8px;text-align:right">p.adjust</th><th style="padding:4px 8px;text-align:center">Count</th><th style="padding:4px 8px">Genes</th></tr></thead><tbody>';
+    rows.forEach(function(row, i) {
+      var padj = parseFloat(row['p.adjust']);
+      var padjColor = !isNaN(padj) && padj < 0.001 ? '#C00000' : !isNaN(padj) && padj < 0.01 ? '#ED7D31' : 'var(--text)';
+      var bg = i % 2 === 0 ? '' : 'background:rgba(0,0,0,.03)';
+      var genes = (row.geneID || '').split('/'); var geneStr = genes.slice(0,5).join(', ') + (genes.length > 5 ? '...' : '');
+      html += '<tr style="' + bg + '"><td style="padding:3px 8px;font-family:monospace;font-size:.7rem">' + (row.ID || '') + '</td>';
+      html += '<td style="padding:3px 8px;font-weight:600">' + (row.Description || '') + '</td>';
+      html += '<td style="padding:3px 8px;text-align:center">' + (row.GeneRatio || '') + '</td>';
+      html += '<td style="padding:3px 8px;text-align:right;color:' + padjColor + ';font-weight:600">' + (isNaN(padj) ? '-' : padj.toExponential(2)) + '</td>';
+      html += '<td style="padding:3px 8px;text-align:center">' + (row.Count || '') + '</td>';
+      html += '<td style="padding:3px 8px;font-size:.7rem;color:var(--text-muted)">' + geneStr + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    if (container) container.innerHTML = html;
+  }).catch(function() { if (container) container.innerHTML = '<div style="color:var(--red);padding:20px">조회 실패</div>'; });
+}
+
+function pathwayLoadPlots() {
+  var pc = document.getElementById('pathway-plots-container');
+  if (!pc) return;
+  pc.style.display = 'block';
+  pc.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">로드 중...</div>';
+  apiFetch('/api/rna/pathway_plots').then(function(r) {
+    var plots = r.plots || [];
+    if (plots.length === 0) { pc.innerHTML = '<div style="color:var(--text-muted);padding:20px">플롯 파일을 찾을 수 없습니다.</div>'; return; }
+    var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">';
+    var pLabels = { 'go_dotplot': 'GO Enrichment Dotplot', 'kegg_dotplot': 'KEGG Pathway Dotplot' };
+    plots.forEach(function(p) {
+      var fname = p.split('/').pop().replace('.png','');
+      var key = Object.keys(pLabels).find(function(k) { return fname.indexOf(k) >= 0; });
+      html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px"><div style="font-size:.75rem;font-weight:600;margin-bottom:6px">' + (key ? pLabels[key] : fname) + '</div><img src="/api/results_image/' + encodeURIComponent(p) + '" style="width:100%;border-radius:4px" loading="lazy"></div>';
+    });
+    html += '</div>';
+    pc.innerHTML = html;
+  }).catch(function() { pc.innerHTML = '<div style="color:var(--red);padding:20px">로드 실패</div>'; });
+}
+
+// ── RNA Fusion tab (STAR-Fusion results) ────────────────────────────────────────────────────────────────────────────────────────────
+function buildRnaFusionTab(d) {
+  var fdata = d.rna_fusion || {};
+  var fusions = fdata.fusions || [];e="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
   html += '<div style="font-size:.82rem;font-weight:700;color:var(--text)">STAR-Fusion 검출 결과</div>';
   if (fdata.count !== undefined) {
     var badgeColor = fdata.count > 0 ? 'var(--red)' : 'var(--green)';
