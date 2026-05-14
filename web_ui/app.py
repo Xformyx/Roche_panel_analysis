@@ -3876,6 +3876,138 @@ def api_rna_expression_data():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/rna/gene_expression_across_samples")
+def api_rna_gene_expression_across_samples():
+    """
+    Return expression values (TPM, CPM, count) for a specific gene
+    across ALL completed RNA samples, enabling cross-sample comparison.
+    """
+    gene_query = request.args.get("gene", "").strip().upper()
+    metric = request.args.get("metric", "TPM")  # TPM | CPM | count | log2CPM
+    if not gene_query:
+        return jsonify({"error": "gene parameter required"}), 400
+    if metric not in ("TPM", "CPM", "count", "log2CPM"):
+        metric = "TPM"
+
+    # Find all expression summary files across all samples
+    pattern = os.path.join(RESULTS_DIR, "*", "expression_plots", "*_expression_summary.tsv")
+    summary_files = sorted(glob.glob(pattern))
+
+    results = []
+    for fpath in summary_files:
+        parts = fpath.replace("\\", "/").split("/")
+        # path: RESULTS_DIR / <sample> / expression_plots / <sample>_expression_summary.tsv
+        sample_name = parts[-3]
+        try:
+            import csv as _csv
+            with open(fpath, "r") as fh:
+                reader = _csv.DictReader(fh, delimiter="\t")
+                for row in reader:
+                    gid = (row.get("gene_id") or "").upper()
+                    gsym = (row.get("gene_symbol") or "").upper()
+                    # Match by symbol (exact) or ID (contains)
+                    if gene_query == gsym or gene_query in gid:
+                        results.append({
+                            "sample": sample_name,
+                            "gene_id": row.get("gene_id", ""),
+                            "gene_symbol": row.get("gene_symbol", ""),
+                            "count": float(row.get("count", 0) or 0),
+                            "CPM": float(row.get("CPM", 0) or 0),
+                            "TPM": float(row.get("TPM", 0) or 0),
+                            "log2CPM": float(row.get("log2CPM", 0) or 0),
+                            "length": int(row.get("length", 0) or 0),
+                        })
+                        break  # one match per sample
+        except Exception:
+            continue
+
+    if not results:
+        return jsonify({"error": f"Gene '{gene_query}' not found in any sample", "samples": []}), 404
+
+    # Sort by sample name
+    results.sort(key=lambda x: x["sample"])
+    return jsonify({
+        "gene": results[0]["gene_symbol"] or results[0]["gene_id"],
+        "gene_id": results[0]["gene_id"],
+        "metric": metric,
+        "samples": results,
+        "total_samples": len(results),
+    })
+
+
+@app.route("/api/rna/multi_gene_expression")
+def api_rna_multi_gene_expression():
+    """
+    Return expression values for multiple genes in a single sample.
+    Used for gene group / pathway comparison.
+    Query params:
+      sample  : sample name
+      genes   : comma-separated gene symbols or IDs
+      metric  : TPM | CPM | count | log2CPM (default TPM)
+    """
+    sample = request.args.get("sample", "").strip()
+    genes_raw = request.args.get("genes", "").strip()
+    metric = request.args.get("metric", "TPM")
+    if not sample or not genes_raw:
+        return jsonify({"error": "sample and genes parameters required"}), 400
+    if metric not in ("TPM", "CPM", "count", "log2CPM"):
+        metric = "TPM"
+
+    gene_list = [g.strip().upper() for g in genes_raw.split(",") if g.strip()]
+
+    summary_path = os.path.join(RESULTS_DIR, sample, "expression_plots", f"{sample}_expression_summary.tsv")
+    if not os.path.isfile(summary_path):
+        return jsonify({"error": "Expression summary not found"}), 404
+
+    try:
+        import csv as _csv
+        found = {}
+        with open(summary_path, "r") as fh:
+            reader = _csv.DictReader(fh, delimiter="\t")
+            for row in reader:
+                gid = (row.get("gene_id") or "").upper()
+                gsym = (row.get("gene_symbol") or "").upper()
+                for q in gene_list:
+                    if q == gsym or q in gid:
+                        found[q] = {
+                            "query": q,
+                            "gene_id": row.get("gene_id", ""),
+                            "gene_symbol": row.get("gene_symbol", ""),
+                            "count": float(row.get("count", 0) or 0),
+                            "CPM": float(row.get("CPM", 0) or 0),
+                            "TPM": float(row.get("TPM", 0) or 0),
+                            "log2CPM": float(row.get("log2CPM", 0) or 0),
+                        }
+                        break
+
+        # Fill missing genes with zeros
+        results = []
+        for q in gene_list:
+            if q in found:
+                results.append(found[q])
+            else:
+                results.append({"query": q, "gene_id": "", "gene_symbol": q,
+                                 "count": 0, "CPM": 0, "TPM": 0, "log2CPM": 0})
+
+        return jsonify({"sample": sample, "metric": metric, "genes": results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/rna/all_samples")
+def api_rna_all_samples():
+    """Return list of all RNA samples that have expression summary files."""
+    pattern = os.path.join(RESULTS_DIR, "*", "expression_plots", "*_expression_summary.tsv")
+    files = sorted(glob.glob(pattern))
+    samples = []
+    for f in files:
+        parts = f.replace("\\", "/").split("/")
+        if len(parts) >= 3:
+            sample_name = parts[-3]
+            samples.append(sample_name)
+    return jsonify({"samples": samples, "total": len(samples)})
+
+
 @app.route("/api/rna/rseqc_data")
 def api_rna_rseqc_data():
     """Return parsed RSeQC results for a sample."""

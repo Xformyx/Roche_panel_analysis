@@ -3803,11 +3803,16 @@ function renderQCTabs(d) {
   var tabs = [];
   var isRna = (d.panel_type === 'rna') || !!d.rna_star;
   if (isRna) {
-    // RNA-seq QC-only tabs (Expression / Plots / Fusion moved to RNA Review modal)
     if (d.rna_star) tabs.push({ id: 'rna_alignment', label: 'STAR Alignment' });
     if (d.fastp || (d.rna_qc && d.rna_qc.fastp)) tabs.push({ id: 'trimming', label: 'Trimming (fastp)' });
     if (d.rna_featurecounts) tabs.push({ id: 'rna_featurecounts', label: 'featureCounts' });
+    if (d.rna_expression) tabs.push({ id: 'rna_expression', label: 'Expression Table' });
+    if (d.rna_plots && d.rna_plots.length > 0) tabs.push({ id: 'rna_plots', label: 'Expression Plots' });
+    // Gene Expression Viewer tab is always shown for RNA samples
+    tabs.push({ id: 'rna_gene_viewer', label: '🔬 Gene Expression Viewer' });
+    if (d.rna_interactive_plots && d.rna_interactive_plots.length > 0) tabs.push({ id: 'rna_interactive_plots', label: 'Interactive Plots' });
     if (d.rna_flagstat) tabs.push({ id: 'rna_flagstat', label: 'Flagstat' });
+    if (d.rna_fusion && d.rna_fusion.length > 0) tabs.push({ id: 'rna_fusion', label: 'Fusion' });
   } else {
     // ctDNA (Exome) tabs
     if (d.hs_metrics_umi_deduped || d.hs_metrics_aligned) tabs.push({ id: 'coverage', label: 'Coverage' });
@@ -3849,8 +3854,9 @@ function buildQCTabContent(tabId, d) {
     // ── RNA-seq tabs ─────────────────────────────────────────────────────────────────────────
     case 'rna_alignment': return buildRnaAlignmentTab(d);
     case 'rna_featurecounts': return buildRnaFeatureCountsTab(d);
-       case 'rna_expression': return buildRnaExpressionTab(d);
+    case 'rna_expression': return buildRnaExpressionTab(d);
     case 'rna_plots': return buildRnaPlotsTab(d);
+    case 'rna_gene_viewer': return buildRnaGeneViewerTab(d);
     case 'rna_interactive_plots': return buildRnaInteractivePlotsTab(d);
     case 'rna_fusion': return buildRnaFusionTab(d);
     default: return '';
@@ -4058,6 +4064,218 @@ function rnaGeneClickHighlight(symbol, geneId, sample) {
   }
   // Also show a toast notification
   showToast(symbol + ' 하이라이트 - 인터랙티브 플롯 탭으로 이동했습니다.', 'info');
+}
+
+// ── RNA Gene Expression Viewer tab ─────────────────────────────────────────────────────────────────────────
+function buildRnaGeneViewerTab(d) {
+  var sample = d.sample_name || '';
+  var html = '';
+
+  // ── Section 1: Single Gene Cross-Sample Comparison ─────────────────────────────────────────────────────────────────────────
+  html += '<div style="background:var(--bg-secondary);border-radius:10px;padding:16px;margin-bottom:16px">';
+  html += '<div style="font-size:.88rem;font-weight:700;color:var(--text);margin-bottom:12px">';
+  html += '🦲 유전자 발현량 변화 시각화 (다중 샘플 비교)';
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">';
+  html += '<input type="text" id="gv-gene-input" placeholder="유전자 입력 (Symbol 또는 ID, 예: TP53)" '
+    + 'style="flex:1;min-width:180px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.83rem">';
+  html += '<select id="gv-metric-select" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.83rem">';
+  html += '<option value="TPM">TPM</option><option value="CPM">CPM</option>';
+  html += '<option value="count">Raw Count</option><option value="log2CPM">log2(CPM+1)</option>';
+  html += '</select>';
+  html += '<button onclick="gvSearchGene(\'' + sample + '\')" style="padding:7px 16px;background:var(--primary);color:white;border:none;border-radius:6px;font-size:.83rem;cursor:pointer;font-weight:600">조회</button>';
+  html += '</div>';
+  html += '<div id="gv-chart-container" style="min-height:320px"><div style="color:var(--text-muted);font-size:.8rem;padding:40px;text-align:center">유전자명을 입력하고 조회하세요.</div></div>';
+  html += '</div>';
+
+  // ── Section 2: Multi-Gene Group Comparison (single sample) ─────────────────────────────────────────────────────────────────────────
+  html += '<div style="background:var(--bg-secondary);border-radius:10px;padding:16px;margin-bottom:16px">';
+  html += '<div style="font-size:.88rem;font-weight:700;color:var(--text);margin-bottom:12px">';
+  html += '📊 유전자 그룹 발현량 비교 (단일 샘플)';
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">';
+  html += '<input type="text" id="gv-multi-genes" placeholder="콤마 구분 입력 (TP53, BRCA1, MYC, EGFR, ...)" '
+    + 'style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.83rem">';
+  html += '<select id="gv-multi-metric" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.83rem">';
+  html += '<option value="TPM">TPM</option><option value="CPM">CPM</option>';
+  html += '<option value="count">Raw Count</option><option value="log2CPM">log2(CPM+1)</option>';
+  html += '</select>';
+  html += '<button onclick="gvSearchMultiGenes(\'' + sample + '\')" style="padding:7px 16px;background:var(--primary);color:white;border:none;border-radius:6px;font-size:.83rem;cursor:pointer;font-weight:600">조회</button>';
+  html += '</div>';
+  // Preset gene sets
+  html += '<div style="margin-bottom:8px;font-size:.75rem;color:var(--text-muted)">빠른 선택: ';
+  var presets = [
+    { label: 'Oncogenes', genes: 'MYC,KRAS,EGFR,BRAF,PIK3CA,AKT1,ERBB2' },
+    { label: 'Tumor Suppressors', genes: 'TP53,BRCA1,BRCA2,RB1,PTEN,APC,VHL' },
+    { label: 'Cell Cycle', genes: 'CCND1,CDK4,CDK6,CDKN2A,CDKN1A,E2F1,RB1' },
+    { label: 'Apoptosis', genes: 'BCL2,BAX,CASP3,CASP9,PARP1,MCL1,BCL2L1' },
+    { label: 'Immune Checkpoint', genes: 'PDCD1,CD274,CTLA4,LAG3,TIGIT,HAVCR2,CD276' },
+  ];
+  presets.forEach(function(p) {
+    html += '<span style="cursor:pointer;color:var(--primary);text-decoration:underline;margin-right:8px" '
+      + 'onclick="document.getElementById(\x27gv-multi-genes\x27).value=\x27' + p.genes + '\x27">' + p.label + '</span>';
+  });
+  html += '</div>';
+  html += '<div id="gv-multi-chart-container" style="min-height:320px"><div style="color:var(--text-muted);font-size:.8rem;padding:40px;text-align:center">유전자를 입력하고 조회하세요.</div></div>';
+  html += '</div>';
+
+  return html;
+}
+
+// Gene Viewer: single gene cross-sample bar chart
+function gvSearchGene(currentSample) {
+  var gene = (document.getElementById('gv-gene-input') || {}).value;
+  var metric = (document.getElementById('gv-metric-select') || {}).value || 'TPM';
+  if (!gene || !gene.trim()) { showToast('유전자명을 입력하세요.', 'error'); return; }
+  gene = gene.trim();
+  var container = document.getElementById('gv-chart-container');
+  if (container) container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">조회 중...</div>';
+
+  apiFetch('/api/rna/gene_expression_across_samples?gene=' + encodeURIComponent(gene) + '&metric=' + metric)
+    .then(function(r) {
+      if (r.error || !r.samples || r.samples.length === 0) {
+        if (container) container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--red)">유전자 \'' + gene + '\'를 찾을 수 없습니다.</div>';
+        return;
+      }
+      var samples = r.samples;
+      var geneLabel = r.gene || gene;
+      var values = samples.map(function(s) { return s[metric] || 0; });
+      var labels = samples.map(function(s) { return s.sample; });
+      var maxVal = Math.max.apply(null, values);
+
+      // Build bar chart with SVG
+      var chartW = 600, chartH = 300, padL = 60, padB = 80, padT = 40, padR = 20;
+      var plotW = chartW - padL - padR;
+      var plotH = chartH - padT - padB;
+      var barW = Math.max(20, Math.min(60, plotW / labels.length - 8));
+      var barSpacing = plotW / labels.length;
+      var colors = ['#4472C4','#ED7D31','#A9D18E','#FF0000','#7030A0','#00B0F0','#FFC000'];
+
+      var svg = '<svg viewBox="0 0 ' + chartW + ' ' + chartH + '" style="width:100%;max-height:320px">';
+      // Y axis
+      svg += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + plotH) + '" stroke="#ccc" stroke-width="1"/>';
+      // X axis
+      svg += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (padL + plotW) + '" y2="' + (padT + plotH) + '" stroke="#ccc" stroke-width="1"/>';
+      // Y ticks
+      for (var yi = 0; yi <= 4; yi++) {
+        var yv = maxVal * yi / 4;
+        var yp = padT + plotH - (plotH * yi / 4);
+        svg += '<line x1="' + (padL - 4) + '" y1="' + yp + '" x2="' + padL + '" y2="' + yp + '" stroke="#999" stroke-width="1"/>';
+        svg += '<text x="' + (padL - 6) + '" y="' + (yp + 4) + '" text-anchor="end" font-size="10" fill="#666">' + (yv >= 1000 ? (yv/1000).toFixed(1)+'k' : yv.toFixed(1)) + '</text>';
+      }
+      // Bars
+      labels.forEach(function(lbl, i) {
+        var val = values[i];
+        var bh = maxVal > 0 ? (val / maxVal) * plotH : 0;
+        var bx = padL + i * barSpacing + (barSpacing - barW) / 2;
+        var by = padT + plotH - bh;
+        var col = currentSample === lbl ? '#C00000' : colors[i % colors.length];
+        svg += '<rect x="' + bx + '" y="' + by + '" width="' + barW + '" height="' + bh + '" fill="' + col + '" opacity="0.85" rx="3"/>';
+        svg += '<title>' + lbl + ': ' + val.toFixed(2) + ' ' + metric + '</title>';
+        // Value label on bar
+        if (bh > 16) {
+          svg += '<text x="' + (bx + barW/2) + '" y="' + (by + 14) + '" text-anchor="middle" font-size="9" fill="white" font-weight="bold">' + (val >= 1000 ? (val/1000).toFixed(1)+'k' : val.toFixed(1)) + '</text>';
+        }
+        // X label
+        var lblShort = lbl.length > 10 ? lbl.substring(0, 9) + '…' : lbl;
+        svg += '<text x="' + (bx + barW/2) + '" y="' + (padT + plotH + 14) + '" text-anchor="end" font-size="9" fill="#555" transform="rotate(-35,' + (bx + barW/2) + ',' + (padT + plotH + 14) + ')">' + lblShort + '</text>';
+      });
+      // Title
+      svg += '<text x="' + (chartW/2) + '" y="22" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">' + geneLabel + ' 발현량 (' + metric + ')</text>';
+      svg += '</svg>';
+
+      // Table
+      var tbl = '<div style="overflow-x:auto;margin-top:12px"><table style="width:100%;border-collapse:collapse;font-size:.78rem">';
+      tbl += '<thead><tr style="background:var(--bg-secondary)"><th style="padding:4px 8px;text-align:left">Sample</th><th style="padding:4px 8px;text-align:right">' + metric + '</th></tr></thead><tbody>';
+      samples.forEach(function(s, i) {
+        var bg = i % 2 === 0 ? '' : 'background:rgba(0,0,0,.03)';
+        var bold = s.sample === currentSample ? 'font-weight:700;color:var(--red)' : '';
+        tbl += '<tr style="' + bg + '"><td style="padding:3px 8px;' + bold + '">' + s.sample + '</td><td style="padding:3px 8px;text-align:right;' + bold + '">' + (s[metric]||0).toFixed(3) + '</td></tr>';
+      });
+      tbl += '</tbody></table></div>';
+
+      if (container) container.innerHTML = svg + tbl;
+    }).catch(function() {
+      if (container) container.innerHTML = '<div style="color:var(--red);padding:20px">조회 실패</div>';
+    });
+}
+
+// Gene Viewer: multi-gene bar chart for single sample
+function gvSearchMultiGenes(sample) {
+  var genesRaw = (document.getElementById('gv-multi-genes') || {}).value;
+  var metric = (document.getElementById('gv-multi-metric') || {}).value || 'TPM';
+  if (!genesRaw || !genesRaw.trim()) { showToast('유전자를 입력하세요.', 'error'); return; }
+  var container = document.getElementById('gv-multi-chart-container');
+  if (container) container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">조회 중...</div>';
+
+  apiFetch('/api/rna/multi_gene_expression?sample=' + encodeURIComponent(sample)
+    + '&genes=' + encodeURIComponent(genesRaw.trim())
+    + '&metric=' + metric)
+    .then(function(r) {
+      if (r.error) {
+        if (container) container.innerHTML = '<div style="color:var(--red);padding:20px">' + r.error + '</div>';
+        return;
+      }
+      var genes = r.genes || [];
+      if (genes.length === 0) {
+        if (container) container.innerHTML = '<div style="color:var(--text-muted);padding:20px">유전자를 찾을 수 없습니다.</div>';
+        return;
+      }
+
+      var values = genes.map(function(g) { return g[metric] || 0; });
+      var labels = genes.map(function(g) { return g.gene_symbol || g.query; });
+      var maxVal = Math.max.apply(null, values);
+      var colors = ['#4472C4','#ED7D31','#A9D18E','#FF0000','#7030A0','#00B0F0','#FFC000','#C00000','#70AD47','#FF7F00'];
+
+      var chartW = 700, chartH = 320, padL = 70, padB = 80, padT = 50, padR = 20;
+      var plotW = chartW - padL - padR;
+      var plotH = chartH - padT - padB;
+      var barW = Math.max(18, Math.min(55, plotW / labels.length - 10));
+      var barSpacing = plotW / labels.length;
+
+      var svg = '<svg viewBox="0 0 ' + chartW + ' ' + chartH + '" style="width:100%;max-height:340px">';
+      svg += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + plotH) + '" stroke="#ccc" stroke-width="1"/>';
+      svg += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (padL + plotW) + '" y2="' + (padT + plotH) + '" stroke="#ccc" stroke-width="1"/>';
+      for (var yi = 0; yi <= 4; yi++) {
+        var yv = maxVal * yi / 4;
+        var yp = padT + plotH - (plotH * yi / 4);
+        svg += '<line x1="' + (padL - 4) + '" y1="' + yp + '" x2="' + padL + '" y2="' + yp + '" stroke="#ddd" stroke-width="1"/>';
+        svg += '<text x="' + (padL - 6) + '" y="' + (yp + 4) + '" text-anchor="end" font-size="10" fill="#666">' + (yv >= 1000 ? (yv/1000).toFixed(1)+'k' : yv.toFixed(1)) + '</text>';
+      }
+      labels.forEach(function(lbl, i) {
+        var val = values[i];
+        var bh = maxVal > 0 ? (val / maxVal) * plotH : 2;
+        var bx = padL + i * barSpacing + (barSpacing - barW) / 2;
+        var by = padT + plotH - bh;
+        var col = colors[i % colors.length];
+        svg += '<rect x="' + bx + '" y="' + by + '" width="' + barW + '" height="' + bh + '" fill="' + col + '" opacity="0.85" rx="3"/>';
+        svg += '<title>' + lbl + ': ' + val.toFixed(2) + ' ' + metric + '</title>';
+        if (bh > 16) {
+          svg += '<text x="' + (bx + barW/2) + '" y="' + (by + 14) + '" text-anchor="middle" font-size="9" fill="white" font-weight="bold">' + (val >= 1000 ? (val/1000).toFixed(1)+'k' : val.toFixed(1)) + '</text>';
+        }
+        var lblShort = lbl.length > 8 ? lbl.substring(0, 7) + '…' : lbl;
+        svg += '<text x="' + (bx + barW/2) + '" y="' + (padT + plotH + 14) + '" text-anchor="end" font-size="9" fill="#555" transform="rotate(-40,' + (bx + barW/2) + ',' + (padT + plotH + 14) + ')">' + lblShort + '</text>';
+      });
+      svg += '<text x="' + (chartW/2) + '" y="28" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">' + sample + ' 유전자 그룹 발현량 (' + metric + ')</text>';
+      svg += '</svg>';
+
+      // Table
+      var tbl = '<div style="overflow-x:auto;margin-top:12px"><table style="width:100%;border-collapse:collapse;font-size:.78rem">';
+      tbl += '<thead><tr style="background:var(--bg-secondary)"><th style="padding:4px 8px;text-align:left">Gene</th><th style="padding:4px 8px;text-align:left">Ensembl ID</th><th style="padding:4px 8px;text-align:right">' + metric + '</th></tr></thead><tbody>';
+      genes.forEach(function(g, i) {
+        var bg = i % 2 === 0 ? '' : 'background:rgba(0,0,0,.03)';
+        var notFound = g.TPM === 0 && g.count === 0;
+        var style = notFound ? 'color:var(--text-muted);font-style:italic' : '';
+        tbl += '<tr style="' + bg + '"><td style="padding:3px 8px;font-weight:600;' + style + '">' + (g.gene_symbol || g.query) + '</td>';
+        tbl += '<td style="padding:3px 8px;font-family:monospace;font-size:.72rem;color:var(--text-muted)">' + (g.gene_id || (notFound ? '미검색' : '')) + '</td>';
+        tbl += '<td style="padding:3px 8px;text-align:right;' + style + '">' + (notFound ? '-' : (g[metric]||0).toFixed(3)) + '</td></tr>';
+      });
+      tbl += '</tbody></table></div>';
+
+      if (container) container.innerHTML = svg + tbl;
+    }).catch(function() {
+      if (container) container.innerHTML = '<div style="color:var(--red);padding:20px">조회 실패</div>';
+    });
 }
 
 // ── RNA Interactive Plots tab ─────────────────────────────────────────────────────────────────────────

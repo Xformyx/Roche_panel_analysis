@@ -80,6 +80,7 @@ include { RSEQC_INFER_EXPERIMENT;
           RSEQC_TIN }           from '../modules/rseqc'
 include { RNASEQ_PLOTS }        from '../modules/rnaseq_plots'
 include { RNASEQ_INTERACTIVE_PLOTS } from '../modules/rnaseq_interactive_plots'
+include { RNASEQ_MULTI_SAMPLE_PLOTS } from '../modules/rnaseq_multi_sample_plots'
 include { RNASEQ_QC_SUMMARY }   from '../modules/rnaseq_qc_summary'
 include { STAR_FUSION }         from '../modules/star_fusion'
 
@@ -184,6 +185,9 @@ workflow {
     if (!params.skip_plots) {
         RNASEQ_PLOTS(FEATURECOUNTS.out.counts, gtf_file)
         RNASEQ_INTERACTIVE_PLOTS(RNASEQ_PLOTS.out.summary)
+        
+        // Multi-sample plots (collect all featureCounts outputs)
+        RNASEQ_MULTI_SAMPLE_PLOTS(FEATURECOUNTS.out.counts.map { sid, counts -> counts }.collect())
     }
 
     // ── Step 8: QC summary JSON (for web UI) ─────────────────
