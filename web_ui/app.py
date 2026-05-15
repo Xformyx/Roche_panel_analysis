@@ -22,13 +22,17 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app = Flask(__name__)
 
 # ── Interactive Dash App Integration ──────────────────────────────────────────
-try:
-    import interactive_app
-    dash_app = interactive_app.create_dash_app(app)
-except ImportError as e:
-    print(f"Warning: Could not initialize interactive Dash app: {e}")
-except Exception as e:
-    print(f"Warning: Error initializing interactive Dash app: {e}")
+# Dash is mounted at /interactive/ — disabled by default to prevent Flask conflicts.
+# Enable by setting env var ENABLE_DASH=1.
+if os.environ.get("ENABLE_DASH", "0") == "1":
+    try:
+        import interactive_app
+        dash_app = interactive_app.create_dash_app(app)
+        print("Interactive Dash app mounted at /interactive/")
+    except ImportError as e:
+        print(f"Warning: Could not initialize interactive Dash app: {e}")
+    except Exception as e:
+        print(f"Warning: Error initializing interactive Dash app: {e}")
 # Host-mounted templates (docker) must be picked up without restarting the process
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -1427,6 +1431,8 @@ def api_orders():
         o["has_log"] = bool(glob.glob(os.path.join(LOG_DIR, f"{sample}_*_nf.log")))
         qc_dir = os.path.join(RESULTS_DIR, sample, "QC_report")
         o["has_qc"] = os.path.isdir(qc_dir) and bool(os.listdir(qc_dir))
+        o["has_expression"] = bool(glob.glob(os.path.join(
+            RESULTS_DIR, sample, "expression_plots", f"{sample}_expression_summary.tsv")))
         result.append(o)
     return jsonify(result)
 
@@ -2104,6 +2110,35 @@ def api_download(sample_name, file_type):
                 if os.path.isfile(candidate):
                     fp = candidate
                     break
+        elif file_type == "expression_xlsx":
+            # Expression summary TSV → Excel (expressed genes only, count > 0)
+            import io
+            tsv_candidates = glob.glob(os.path.join(
+                RESULTS_DIR, sample_name, "expression_plots",
+                f"{sample_name}_expression_summary.tsv"))
+            if not tsv_candidates or not os.path.isfile(tsv_candidates[0]):
+                return jsonify({"error": "Expression file not found"}), 404
+            import pandas as pd
+            df = pd.read_csv(tsv_candidates[0], sep="\t")
+            # Only include expressed genes (count > 0) — reduces ~62k rows to ~15-20k
+            df = df[df["count"] > 0].copy()
+            df.sort_values("TPM", ascending=False, inplace=True)
+            col_map = {"gene_id": "Gene ID", "gene_symbol": "Gene Symbol",
+                       "length": "Length (bp)", "count": "Raw Count",
+                       "CPM": "CPM", "TPM": "TPM", "log2CPM": "log2(CPM+1)"}
+            df.rename(columns={k: v for k, v in col_map.items() if k in df.columns}, inplace=True)
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Expression")
+                ws = writer.sheets["Expression"]
+                for col in ws.columns:
+                    max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+                    ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+            buf.seek(0)
+            resp = make_response(buf.read())
+            resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            resp.headers["Content-Disposition"] = f'attachment; filename="{sample_name}_expression.xlsx"'
+            return resp
         else:
             return jsonify({"error": "Invalid file type"}), 400
         if fp and os.path.isfile(fp):
@@ -4237,4 +4272,4 @@ init_db()
 if __name__ == "__main__":
     for d in [FASTQ_DIR, RESULTS_DIR, LOG_DIR]:
         os.makedirs(d, exist_ok=True)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)

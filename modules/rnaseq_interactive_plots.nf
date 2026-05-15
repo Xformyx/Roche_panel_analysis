@@ -30,6 +30,9 @@ process RNASEQ_INTERACTIVE_PLOTS {
     sample_id = "${sample_id}"
     df = pd.read_csv("${summary_tsv}", sep="\\t")
 
+    # Pre-compute log columns on the full dataframe before subsetting
+    df['log2TPM'] = np.log2(df['TPM'] + 1)
+
     # 1. Count Distribution (Interactive)
     df_expr = df[df['count'] > 0].copy()
     fig1 = px.histogram(df_expr, x="log2CPM", nbins=80, 
@@ -53,7 +56,6 @@ process RNASEQ_INTERACTIVE_PLOTS {
     fig2.write_html(f"{sample_id}_interactive_top30_genes.html")
 
     # 3. MA-like Plot (log2(TPM+1) vs log2(CPM+1)) (Interactive)
-    df['log2TPM'] = np.log2(df['TPM'] + 1)
     fig3 = px.scatter(df_expr, x="log2CPM", y="log2TPM", 
                       hover_name="gene_symbol", hover_data=["gene_id", "count", "TPM"],
                       title=f"{sample_id} — Expression MA-like Plot",

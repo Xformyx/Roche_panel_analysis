@@ -2950,15 +2950,27 @@ function buildActionButtons(order) {
 function buildResultIcons(order) {
   var sample = encodeURIComponent(order.sample_name);
   var id = order.id;
-  var vcfSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2l1 3 2-6 1 3h2"/></svg>';
-  var logSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>';
-  var qcSvg  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  var isRna = (order.panel_type === 'rna');
+  var vcfSvg  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2l1 3 2-6 1 3h2"/></svg>';
+  var xlsxSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="10" y2="17"/><line x1="10" y1="13" x2="8" y2="17"/><line x1="12" y1="13" x2="12" y2="17"/><line x1="14" y1="13" x2="16" y2="13"/><line x1="14" y1="15" x2="16" y2="15"/><line x1="14" y1="17" x2="16" y2="17"/></svg>';
+  var logSvg  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>';
+  var qcSvg   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   var icons = '';
 
-  if (order.has_vcf) {
-    icons += '<button class="dl-btn dl-vcf" data-tip="VCF 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/vcf\',\'_blank\')">' + vcfSvg + '</button>';
+  if (isRna) {
+    // RNA panel: first icon = Expression Table XLSX download (fetch + blob, no new tab)
+    if (order.has_expression) {
+      icons += '<button class="dl-btn" id="expr-dl-' + id + '" style="color:#1D6F42" data-tip="Expression 다운로드 (Excel)" onclick="event.stopPropagation();downloadExpressionXlsx(\'' + sample + '\',\'' + id + '\')">' + xlsxSvg + '</button>';
+    } else {
+      icons += '<button class="dl-btn disabled" data-tip="Expression 미생성">' + xlsxSvg + '</button>';
+    }
   } else {
-    icons += '<button class="dl-btn dl-vcf disabled" data-tip="VCF 미생성">' + vcfSvg + '</button>';
+    // Exome panel: first icon = VCF download
+    if (order.has_vcf) {
+      icons += '<button class="dl-btn dl-vcf" data-tip="VCF 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/vcf\',\'_blank\')">' + vcfSvg + '</button>';
+    } else {
+      icons += '<button class="dl-btn dl-vcf disabled" data-tip="VCF 미생성">' + vcfSvg + '</button>';
+    }
   }
 
   if (order.has_qc) {
@@ -2974,6 +2986,44 @@ function buildResultIcons(order) {
   }
 
   return icons;
+}
+
+function downloadExpressionXlsx(sample, orderId) {
+  var btn = document.getElementById('expr-dl-' + orderId);
+  if (!btn || btn.dataset.loading) return;
+
+  var originalInner = btn.innerHTML;
+  var originalColor = btn.style.color;
+
+  btn.dataset.loading = '1';
+  btn.style.color = 'var(--text-muted)';
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
+  btn.setAttribute('data-tip', '변환 중...');
+
+  fetch('/api/download/' + sample + '/expression_xlsx')
+    .then(function(res) {
+      if (!res.ok) throw new Error('서버 오류 ' + res.status);
+      return res.blob();
+    })
+    .then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = decodeURIComponent(sample) + '_expression.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    })
+    .catch(function(err) {
+      showToast('다운로드 실패: ' + err.message, 'error');
+    })
+    .finally(function() {
+      btn.innerHTML = originalInner;
+      btn.style.color = originalColor;
+      btn.setAttribute('data-tip', 'Expression 다운로드 (Excel)');
+      delete btn.dataset.loading;
+    });
 }
 
 /* ================================================================
@@ -3803,19 +3853,12 @@ function renderQCTabs(d) {
   var tabs = [];
   var isRna = (d.panel_type === 'rna') || !!d.rna_star;
   if (isRna) {
+    // QC modal: only QC/stats tabs. Analysis result tabs (Plots, Gene Viewer, DESeq2, etc.)
+    // are shown in the separate "결과 Review" modal (openRnaReview).
     if (d.rna_star) tabs.push({ id: 'rna_alignment', label: 'STAR Alignment' });
     if (d.fastp || (d.rna_qc && d.rna_qc.fastp)) tabs.push({ id: 'trimming', label: 'Trimming (fastp)' });
     if (d.rna_featurecounts) tabs.push({ id: 'rna_featurecounts', label: 'featureCounts' });
-    if (d.rna_expression) tabs.push({ id: 'rna_expression', label: 'Expression Table' });
-    if (d.rna_plots && d.rna_plots.length > 0) tabs.push({ id: 'rna_plots', label: 'Expression Plots' });
-    // Gene Expression Viewer tab is always shown for RNA samples
-    tabs.push({ id: 'rna_gene_viewer', label: '🔬 Gene Expression Viewer' });
-    // DESeq2 & Pathway tabs (always shown for RNA — data loaded on demand)
-    tabs.push({ id: 'rna_deseq2', label: '📉 DESeq2 (DE Analysis)' });
-    tabs.push({ id: 'rna_pathway', label: '🧬 GO/KEGG Pathway' });
-    if (d.rna_interactive_plots && d.rna_interactive_plots.length > 0) tabs.push({ id: 'rna_interactive_plots', label: 'Interactive Plots' });
     if (d.rna_flagstat) tabs.push({ id: 'rna_flagstat', label: 'Flagstat' });
-    if (d.rna_fusion && d.rna_fusion.length > 0) tabs.push({ id: 'rna_fusion', label: 'Fusion' });
   } else {
     // ctDNA (Exome) tabs
     if (d.hs_metrics_umi_deduped || d.hs_metrics_aligned) tabs.push({ id: 'coverage', label: 'Coverage' });
@@ -3988,9 +4031,7 @@ function buildRnaExpressionTab(d) {
 
   // Gene Search Box
   var html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">';
-  html += '<input type="text" id="rna-gene-search" placeholder="Gene 검색 (Symbol 또는 Ensembl ID)"
-    style="flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:.82rem"
-    oninput="rnaGeneSearch(this.value, \'' + sample + '\')">';
+  html += '<input type="text" id="rna-gene-search" placeholder="Gene 검색 (Symbol 또는 Ensembl ID)" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:.82rem" oninput="rnaGeneSearch(this.value, \'' + sample + '\')">';
   html += '<a href="/api/download/' + sample + '/expression" style="font-size:.78rem;color:var(--primary);white-space:nowrap" download>TSV 다운로드</a>';
   html += '</div>';
   html += '<div id="rna-gene-search-result" style="display:none;margin-bottom:10px;padding:10px 14px;background:rgba(68,114,196,0.08);border:1px solid rgba(68,114,196,0.25);border-radius:8px"></div>';
@@ -4043,8 +4084,7 @@ function rnaGeneSearch(query, sample) {
       html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
       results.slice(0, 10).forEach(function(g) {
         var sym = g.gene_symbol || g.gene_id;
-        html += '<span style="padding:3px 8px;background:var(--primary);color:white;border-radius:12px;font-size:.72rem;cursor:pointer"
-          onclick="rnaGeneClickHighlight(\'' + sym + '\', \'' + g.gene_id + '\', \'' + sample + '\')">' + sym + ' <span style="opacity:.8">(TPM: ' + (g.TPM||0).toFixed(1) + ')</span></span>';
+        html += '<span style="padding:3px 8px;background:var(--primary);color:white;border-radius:12px;font-size:.72rem;cursor:pointer" onclick="rnaGeneClickHighlight(\'' + sym + '\', \'' + g.gene_id + '\', \'' + sample + '\')">' + sym + ' <span style="opacity:.8">(TPM: ' + (g.TPM||0).toFixed(1) + ')</span></span>';
       });
       html += '</div>';
       resultDiv.innerHTML = html;
@@ -4362,10 +4402,14 @@ function openRnaReview(orderId) {
   document.getElementById('rnaReviewTabContents').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">데이터를 불러오는 중...</div>';
   apiFetch('/api/orders/' + orderId + '/qc_data').then(function(d) {
     document.getElementById('rnaReviewTitle').textContent = (d.order_name || d.sample_name || '') + ' — RNA 분석 결과';
-    var tabs = [];    if (d.rna_expression) tabs.push({ id: 'rna_expression', label: 'Expression' });
+    var tabs = [];
+    if (d.rna_expression) tabs.push({ id: 'rna_expression', label: 'Expression' });
     if (d.rna_plots && d.rna_plots.length > 0) tabs.push({ id: 'rna_plots', label: 'Expression Plots' });
     if (d.rna_interactive_plots && d.rna_interactive_plots.length > 0) tabs.push({ id: 'rna_interactive_plots', label: 'Interactive Plots' });
-    if (d.rna_fusion && d.rna_fusion.length > 0) tabs.push({ id: 'rna_fusion', label: 'Fusion' }); + ')' });
+    tabs.push({ id: 'rna_gene_viewer', label: '🔬 Gene Expression Viewer' });
+    tabs.push({ id: 'rna_deseq2', label: '📉 DESeq2 (DE Analysis)' });
+    tabs.push({ id: 'rna_pathway', label: '🧬 GO/KEGG Pathway' });
+    if (d.rna_fusion && d.rna_fusion.length > 0) tabs.push({ id: 'rna_fusion', label: 'Fusion' });
     if (tabs.length === 0) {
       document.getElementById('rnaReviewTabContents').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">분석 결과 데이터가 없습니다.</div>';
       return;
@@ -4378,9 +4422,7 @@ function openRnaReview(orderId) {
     var contentHtml = '';
     tabs.forEach(function(t, i) {
       contentHtml += '<div class="rna-review-tab-content' + (i === 0 ? ' active' : '') + '" id="rna-rev-content-' + t.id + '">';
-      if (t.id === 'rev_expression') contentHtml += buildRnaExpressionTab(d);
-      else if (t.id === 'rev_plots')  contentHtml += buildRnaPlotsTab(d);
-      else if (t.id === 'rev_fusion') contentHtml += buildRnaFusionTab(d);
+      contentHtml += buildRnaReviewTabContent(t.id, d);
       contentHtml += '</div>';
     });
     document.getElementById('rnaReviewTabContents').innerHTML = contentHtml;
@@ -4394,6 +4436,19 @@ function closeRnaReview() {
 function switchRnaReviewTab(tabId) {
   document.querySelectorAll('.rna-review-tab').forEach(function(t) { t.classList.toggle('active', t.getAttribute('data-tab') === tabId); });
   document.querySelectorAll('.rna-review-tab-content').forEach(function(c) { c.classList.toggle('active', c.id === 'rna-rev-content-' + tabId); });
+}
+
+function buildRnaReviewTabContent(tabId, d) {
+  switch (tabId) {
+    case 'rna_expression':       return buildRnaExpressionTab(d);
+    case 'rna_plots':            return buildRnaPlotsTab(d);
+    case 'rna_interactive_plots':return buildRnaInteractivePlotsTab(d);
+    case 'rna_gene_viewer':      return buildRnaGeneViewerTab(d);
+    case 'rna_deseq2':           return buildRnaDeseq2Tab(d);
+    case 'rna_pathway':          return buildRnaPathwayTab(d);
+    case 'rna_fusion':           return buildRnaFusionTab(d);
+    default: return '';
+  }
 }
 
 // ── DESeq2 Differential Expression tab ─────────────────────────────────────────────────────────────────────────
@@ -4561,7 +4616,8 @@ function pathwayLoadPlots() {
 // ── RNA Fusion tab (STAR-Fusion results) ────────────────────────────────────────────────────────────────────────────────────────────
 function buildRnaFusionTab(d) {
   var fdata = d.rna_fusion || {};
-  var fusions = fdata.fusions || [];e="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  var fusions = fdata.fusions || [];
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
   html += '<div style="font-size:.82rem;font-weight:700;color:var(--text)">STAR-Fusion 검출 결과</div>';
   if (fdata.count !== undefined) {
     var badgeColor = fdata.count > 0 ? 'var(--red)' : 'var(--green)';

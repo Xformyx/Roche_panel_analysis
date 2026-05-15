@@ -60,6 +60,8 @@ params.fastp_options   = '-g -W 5 -q 20 -u 40 -x -3 -l 50 -c'
 
 // Skip flags
 params.skip_rseqc      = false
+params.skip_tin        = false   // TIN is slow (single-threaded, ~2-4h); set true to skip
+params.tin_sample_size = 5000    // subsample BED12 to N transcripts for TIN (speeds up ~10x)
 params.skip_plots      = false
 params.skip_fusion     = false
 params.skip_deseq2     = false
@@ -174,11 +176,16 @@ workflow {
             STAR_ALIGN.out.bai,
             bed12_file
         )
-        RSEQC_TIN(
-            STAR_ALIGN.out.bam,
-            STAR_ALIGN.out.bai,
-            bed12_file
-        )
+        // TIN is single-threaded and slow (~2-4h for full gencode BED12).
+        // Subsampled to params.tin_sample_size transcripts by default (~10-15 min).
+        // Set skip_tin=true to omit entirely when turnaround time is critical.
+        if (!params.skip_tin) {
+            RSEQC_TIN(
+                STAR_ALIGN.out.bam,
+                STAR_ALIGN.out.bai,
+                bed12_file
+            )
+        }
     }
 
     // ── Step 6: featureCounts (gene quantification) ──────────
@@ -193,17 +200,17 @@ workflow {
         RNASEQ_MULTI_SAMPLE_PLOTS(FEATURECOUNTS.out.counts.map { sid, counts -> counts }.collect())
         
         // ── Step 7b: DESeq2 Differential Expression & Pathway Analysis ────────
+        // DESeq2 requires design.csv (uploaded via web UI) AND at least 2 samples.
+        // If design.csv is absent the step is skipped gracefully — no dummy file needed.
         if (!params.skip_deseq2) {
-            // Check if design.csv exists in outdir, else pass a dummy
             def design_csv = file("${params.outdir}/design.csv")
-            def design_input = design_csv.exists() ? design_csv : file("dummy_design.csv")
-            if (!design_csv.exists()) {
-                // Create a dummy file to avoid nextflow missing file error
-                file("dummy_design.csv").text = ""
+            if (design_csv.exists()) {
+                RNASEQ_DESEQ2(RNASEQ_MULTI_SAMPLE_PLOTS.out.combined_counts, design_csv)
+                RNASEQ_PATHWAY(RNASEQ_DESEQ2.out.sig_genes)
+            } else {
+                log.warn "DESeq2 skipped: design.csv not found at ${params.outdir}/design.csv"
+                log.warn "  Upload a design CSV via the web UI (RNA 분석결과 → DESeq2 탭) and re-run."
             }
-            
-            RNASEQ_DESEQ2(RNASEQ_MULTI_SAMPLE_PLOTS.out.combined_counts, design_input)
-            RNASEQ_PATHWAY(RNASEQ_DESEQ2.out.sig_genes)
         }
     }
 

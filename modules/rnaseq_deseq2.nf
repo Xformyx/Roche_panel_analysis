@@ -47,10 +47,33 @@ process RNASEQ_DESEQ2 {
 
     # 1. Load Data
     counts <- read.table("${combined_counts}", header=TRUE, row.names=1, sep="\\t", check.names=FALSE)
-    
+
+    # Guard: need at least 2 samples for DESeq2
+    make_empty_outputs <- function(reason) {
+        message("DESeq2 skipped: ", reason)
+        empty_df <- data.frame(
+            Geneid=character(), baseMean=numeric(), log2FoldChange=numeric(),
+            lfcSE=numeric(), stat=numeric(), pvalue=numeric(), padj=numeric()
+        )
+        write.table(empty_df, "deseq2_results.tsv",          sep="\\t", row.names=FALSE, quote=FALSE)
+        write.table(empty_df, "deseq2_significant_genes.tsv", sep="\\t", row.names=FALSE, quote=FALSE)
+        for (f in c("deseq2_ma_plot.png","deseq2_volcano.png","deseq2_sample_heatmap.png","deseq2_sig_genes_heatmap.png")) {
+            png(f, width=800, height=600, res=120)
+            plot.new()
+            title(paste0("DESeq2\\n(", reason, ")"))
+            dev.off()
+        }
+        write('{"skipped":true}', "deseq2_volcano_interactive.html")
+        quit(save="no", status=0)
+    }
+
+    if (ncol(counts) < 2) {
+        make_empty_outputs(paste0("only ", ncol(counts), " sample(s); need ≥ 2"))
+    }
+
     # 2. Setup Design
     design_path <- "${design_file}"
-    if (file.exists(design_path) && file.size(design_path) > 0 && design_path != "dummy_design.csv") {
+    if (file.exists(design_path) && file.size(design_path) > 0) {
         colData <- read.csv(design_path, row.names=1, stringsAsFactors=TRUE)
         # Ensure sample names match
         common <- intersect(colnames(counts), rownames(colData))
@@ -58,20 +81,20 @@ process RNASEQ_DESEQ2 {
         colData <- colData[common, , drop=FALSE]
         condition_col <- colnames(colData)[1]
     } else {
-        # Auto-guess groups from sample names (e.g., split by last underscore)
+        # Auto-guess groups from sample names (e.g., WT_1 / WT_2 / KO_1 / KO_2)
         samples <- colnames(counts)
         groups <- sapply(strsplit(samples, "_[0-9]+\$"), `[`, 1)
         if (length(unique(groups)) < 2) {
             # Fallback: split in half
-            groups <- c(rep("GroupA", floor(length(samples)/2)), 
-                       rep("GroupB", ceiling(length(samples)/2)))
+            n <- length(samples)
+            groups <- c(rep("GroupA", floor(n / 2)), rep("GroupB", ceiling(n / 2)))
         }
         colData <- data.frame(condition = factor(groups), row.names = samples)
         condition_col <- "condition"
     }
 
     if (length(unique(colData[[condition_col]])) < 2) {
-        stop("DESeq2 requires at least 2 conditions/groups to compare.")
+        make_empty_outputs("fewer than 2 distinct groups after design resolution")
     }
 
     # 3. Run DESeq2

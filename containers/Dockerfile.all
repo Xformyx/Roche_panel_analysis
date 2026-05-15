@@ -15,9 +15,10 @@ ENV TZ=Asia/Seoul
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     wget curl git ca-certificates gnupg \
-    build-essential zlib1g-dev libbz2-dev liblzma-dev libncurses5-dev \
+    build-essential gfortran zlib1g-dev libbz2-dev liblzma-dev libncurses5-dev \
     libcurl4-openssl-dev libssl-dev autoconf automake pkg-config unzip bzip2 \
     libxml2-dev libcairo2-dev libpango1.0-dev libharfbuzz-dev libfribidi-dev \
+    libgmp-dev libglpk-dev libmpfr-dev libuv1-dev \
     fastp fastqc default-jre default-jdk perl \
     python3.8 python3-pip \
     tzdata \
@@ -144,20 +145,59 @@ RUN R -e "BiocManager::install(c( \
       'Rhtslib', 'SummarizedExperiment' \
     ), ask=FALSE, update=FALSE, Ncpus=4L)"
 
-# 5-b) RNA-seq specific R packages: DESeq2, edgeR, clusterProfiler
-RUN R -e "BiocManager::install(c( \
-      'DESeq2', 'edgeR', 'limma', \
-      'clusterProfiler', 'enrichplot', 'pathview', \
-      'org.Hs.eg.db', 'org.Mm.eg.db', \
-      'DOSE', 'ReactomePA', \
-      'AnnotationDbi', 'GO.db', \
-      'tximport', 'tximeta' \
-    ), ask=FALSE, update=FALSE, Ncpus=4L)"
+# 5-b) RNA-seq core: DESeq2, edgeR, limma (install separately to isolate failures)
+RUN R -e " \
+    pkgs <- c('DESeq2', 'edgeR', 'limma', 'tximport', 'tximeta'); \
+    BiocManager::install(pkgs, ask=FALSE, update=FALSE, Ncpus=4L); \
+    missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly=TRUE)]; \
+    if (length(missing) > 0) stop('Failed to install: ', paste(missing, collapse=', '))"
 
-# Verify RNA-seq R packages
-RUN R -e "library(DESeq2); library(clusterProfiler); library(org.Hs.eg.db); \
-          cat('DESeq2:', as.character(packageVersion('DESeq2')), '\\n'); \
-          cat('clusterProfiler:', as.character(packageVersion('clusterProfiler')), '\\n')"
+# 5-c) Pathway analysis: clusterProfiler and dependencies
+#      igraph must be installed first (compiled from source — needs gfortran, glpk, gmp)
+RUN R -e " \
+    pkgs <- c('igraph'); \
+    install.packages(pkgs, repos='https://cloud.r-project.org', Ncpus=4L); \
+    missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly=TRUE)]; \
+    if (length(missing) > 0) stop('Failed to install igraph: ', paste(missing, collapse=', ')); \
+    cat('igraph', as.character(packageVersion('igraph')), 'OK\n')"
+
+# DOSE, enrichplot and their deps (small packages, normal timeout)
+RUN R -e " \
+    pkgs <- c('DOSE', 'enrichplot', 'AnnotationDbi'); \
+    BiocManager::install(pkgs, ask=FALSE, update=FALSE, Ncpus=4L); \
+    missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly=TRUE)]; \
+    if (length(missing) > 0) stop('Failed to install: ', paste(missing, collapse=', '))"
+
+# Large annotation DBs: GO.db and org.Hs.eg.db (~170 MB each) — needs longer timeout
+RUN R -e " \
+    options(timeout=900); \
+    pkgs <- c('GO.db', 'org.Hs.eg.db'); \
+    BiocManager::install(pkgs, ask=FALSE, update=FALSE, Ncpus=2L); \
+    missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly=TRUE)]; \
+    if (length(missing) > 0) stop('Failed to install: ', paste(missing, collapse=', '))"
+
+RUN R -e " \
+    pkgs <- c('clusterProfiler'); \
+    BiocManager::install(pkgs, ask=FALSE, update=FALSE, Ncpus=4L); \
+    missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly=TRUE)]; \
+    if (length(missing) > 0) stop('Failed to install: ', paste(missing, collapse=', '))"
+
+# 5-d) Optional: pathview (KEGG pathway maps) — skip on failure
+RUN R -e " \
+    tryCatch({ \
+        BiocManager::install(c('pathview', 'ReactomePA', 'org.Mm.eg.db'), \
+            ask=FALSE, update=FALSE, Ncpus=4L); \
+        cat('pathview installed OK\n') \
+    }, error=function(e) cat('pathview skipped:', conditionMessage(e), '\n'))"
+
+# Verify critical RNA-seq R packages
+RUN R -e " \
+    pkgs <- c('DESeq2', 'clusterProfiler', 'org.Hs.eg.db', 'enrichplot', 'DOSE'); \
+    missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly=TRUE)]; \
+    if (length(missing) > 0) stop('Verification failed — missing: ', paste(missing, collapse=', ')); \
+    cat('DESeq2:', as.character(packageVersion('DESeq2')), '\n'); \
+    cat('clusterProfiler:', as.character(packageVersion('clusterProfiler')), '\n'); \
+    cat('All RNA-seq R packages OK\n')"
 
 RUN echo "=== Installing ctDNAtools from GitHub ===" && \
     INSTALLED=0 && \

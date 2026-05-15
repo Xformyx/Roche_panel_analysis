@@ -1,5 +1,5 @@
 .PHONY: build build-analysis build-web up down restart logs status clean rebuild help save test \
-        keygen license prod-up prod-down prod-logs prod-save usb-bundle
+        keygen license prod-up prod-down prod-logs prod-save usb-bundle rna-refs check-js
 
 help:
 	@echo "Roche_nxt - Nextflow ctDNA Analysis Pipeline"
@@ -16,6 +16,7 @@ help:
 	@echo "make clean          - Remove images"
 	@echo "make save           - Save images for offline deployment"
 	@echo "make test           - Run test pipeline (dry-run)"
+	@echo "make check-js       - Validate JavaScript in index.html (requires node + jinja2)"
 	@echo ""
 	@echo "---- Licensing ----"
 	@echo "make keygen         - Generate new Ed25519 signing keypair (run ONCE)"
@@ -31,6 +32,11 @@ help:
 	@echo "                    - Build USB bundle. DOCKER_FOR auto-downloads Docker pkgs."
 	@echo "                      Single, comma-list, or 'all' (ubuntu-22.04|ubuntu-24.04|debian-12|rhel-8|rhel-9)."
 	@echo "                      Example: DOCKER_FOR=ubuntu-22.04,ubuntu-24.04,rhel-9"
+	@echo "make rna-refs [OUT=path/to/rna_refs.tar.gz] [DATA_DIR=/path/to/roche_data]"
+	@echo "                    - Pack RNA Panel reference data into a separate tarball."
+	@echo "                      Includes: star_index, ctat_lib, gencode GTF, genes.bed12"
+	@echo "                      Default output: deploy/rna_refs.tar.gz"
+	@echo "                      Install on target: tar xzf rna_refs.tar.gz -C \$$DATA_HOST_DIR"
 	@echo ""
 	@echo "Web UI: http://localhost:$${WEB_PORT:-8080}"
 
@@ -208,3 +214,70 @@ usb-bundle:
 	    --customer "$(CUSTOMER)" \
 	    --license  "$(LICENSE)" \
 	    $$extra
+
+# ---------------------------------------------------------------------------
+# RNA Panel reference data bundle (separate from the main USB bundle)
+#   make rna-refs
+#   make rna-refs RNA_REFS_OUT=/media/usb/rna_refs.tar.gz
+#   make rna-refs DATA_DIR=/custom/path/to/roche_data
+#
+# Output tarball structure (extract with: tar xzf rna_refs.tar.gz -C $DATA_HOST_DIR):
+#   refs/hg38/star_index/
+#   refs/hg38/ctat_lib/
+#   refs/hg38/gencode.v44.annotation.gtf
+#   refs/hg38/genes.bed12
+# ---------------------------------------------------------------------------
+RNA_REFS_OUT ?= deploy/rna_refs.tar.gz
+
+# Resolve DATA_DIR: honour explicit override, else follow the data/ symlink
+_rna_data_dir := $(if $(DATA_DIR),$(DATA_DIR),$(shell \
+    if [ -L "$(CURDIR)/data" ]; then readlink -f "$(CURDIR)/data"; \
+    elif [ -d "$(CURDIR)/data" ]; then echo "$(CURDIR)/data"; fi))
+
+rna-refs:
+	@if [ -z "$(_rna_data_dir)" ] || [ ! -d "$(_rna_data_dir)" ]; then \
+	    echo "ERROR: Reference data directory not found."; \
+	    echo "       Set DATA_DIR=/path/to/roche_data or ensure data/ symlink exists."; \
+	    exit 1; \
+	fi
+	@HG38="$(_rna_data_dir)/refs/hg38"; \
+	missing=""; \
+	[ -d "$$HG38/star_index" ]                 || missing="$$missing\n  - refs/hg38/star_index/"; \
+	[ -d "$$HG38/ctat_lib" ]                   || missing="$$missing\n  - refs/hg38/ctat_lib/"; \
+	[ -f "$$HG38/gencode.v44.annotation.gtf" ] || missing="$$missing\n  - refs/hg38/gencode.v44.annotation.gtf"; \
+	[ -f "$$HG38/genes.bed12" ]                || missing="$$missing\n  - refs/hg38/genes.bed12"; \
+	if [ -n "$$missing" ]; then \
+	    echo "ERROR: The following RNA reference files are missing from $(_rna_data_dir):"; \
+	    printf "$$missing\n"; \
+	    exit 1; \
+	fi
+	@echo "Packing RNA Panel reference data..."
+	@echo "  Source : $(_rna_data_dir)/refs/hg38/"
+	@echo "  Output : $(RNA_REFS_OUT)"
+	@echo ""
+	@HG38="$(_rna_data_dir)/refs/hg38"; \
+	echo "  Sizes:"; \
+	du -sh "$$HG38/star_index" "$$HG38/ctat_lib" "$$HG38/gencode.v44.annotation.gtf" "$$HG38/genes.bed12" \
+	    | sed 's/^/    /'; \
+	echo ""; \
+	mkdir -p "$$(dirname "$(RNA_REFS_OUT)")"; \
+	tar czf "$(RNA_REFS_OUT)" \
+	    -C "$(_rna_data_dir)" \
+	    refs/hg38/star_index \
+	    refs/hg38/ctat_lib \
+	    refs/hg38/gencode.v44.annotation.gtf \
+	    refs/hg38/genes.bed12; \
+	echo "Done: $(RNA_REFS_OUT) ($$(du -sh "$(RNA_REFS_OUT)" | cut -f1))"
+	@echo ""
+	@echo "Install on target server:"
+	@echo "  tar xzf $$(basename $(RNA_REFS_OUT)) -C \$$DATA_HOST_DIR"
+
+# ── JS syntax validation ──────────────────────────────────────────────────────
+# Extracts all <script> blocks from index.html (Jinja2-rendered), then runs:
+#   1) Python checks: mangled statements, missing var declarations
+#   2) Node.js --check for full syntax validation
+#
+# Use before building/deploying to catch JS errors early.
+# --watch mode requires inotifywait (apt install inotify-tools)
+check-js:
+	@bash tools/check_js.sh
