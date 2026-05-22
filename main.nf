@@ -32,22 +32,17 @@ def validateParams() {
     if (!params.input) {
         error "ERROR: --input samplesheet.csv is required"
     }
-    if (!file(params.genome_fasta).exists()) {
-        log.warn "Reference genome not found at: ${params.genome_fasta}"
-    }
-}
-
-// ── Helper: collect BWA index files alongside the FASTA ──────
-def getBwaIndex(fasta) {
-    def fasta_file = file(fasta)
-    def parent = fasta_file.parent
-    def base = fasta_file.name
-    return Channel.fromPath("${parent}/${base}.*")
-        .collect()
 }
 
 // ── Main workflow ────────────────────────────────────────────
 workflow {
+
+    // Resolve genome-specific params (moved from config for v2 parser compatibility)
+    def genome = params.genomes[params.reference] ?: params.genomes['hg38']
+    def resolved_fasta  = params.genome_fasta ?: genome.fasta
+    def resolved_dict   = params.genome_dict  ?: genome.dict
+    def resolved_dbsnp  = params.dbsnp_vcf    ?: genome.dbsnp
+    def resolved_bed    = params.target_bed   ?: genome.bed_capture
 
     validateParams()
 
@@ -58,8 +53,8 @@ workflow {
 
   Input       : ${params.input}
   Reference   : ${params.reference}
-  Genome      : ${params.genome_fasta}
-  Target BED  : ${params.target_bed}
+  Genome      : ${resolved_fasta}
+  Target BED  : ${resolved_bed}
   AF threshold: ${params.af_threshold}
   UMI mode    : ${params.use_umi}
   Subsample   : ${params.subsample}${params.subsample.toString() == 'true' ? " (threshold: ${params.subsample_threshold_gb}GB → target: ${params.seqtk_sample_size} reads)" : ""}
@@ -67,18 +62,15 @@ workflow {
 ──────────────────────────────────────────────────────────────
 """
 
-    // Resolve genome config
-    def genome = params.genomes[params.reference]
-
     // Reference files
-    genome_fasta  = file(params.genome_fasta)
-    genome_dict   = file(params.genome_dict)
-    genome_fai    = file("${params.genome_fasta}.fai")
-    target_bed    = file(params.target_bed)
-    dbsnp_vcf     = file(params.dbsnp_vcf)
-    blocklist     = file(genome.blocklist)
-    snpeff_db     = genome.snpeff_db
-    bsgenome_ref  = genome.bsgenome
+    def genome_fasta  = file(resolved_fasta)
+    def genome_dict   = file(resolved_dict)
+    def genome_fai    = file("${resolved_fasta}.fai")
+    def target_bed    = file(resolved_bed)
+    def dbsnp_vcf     = file(resolved_dbsnp)
+    def blocklist     = file(genome.blocklist)
+    def snpeff_db     = genome.snpeff_db
+    def bsgenome_ref  = genome.bsgenome
 
     // ── Reannotation mode: re-run SnpEff/SnpSift/VariantsToTable only ────
     // Activated when --reannotate_vcf is supplied (path to published *_vardict.vcf).
@@ -88,7 +80,7 @@ workflow {
 
     if (reannotate) {
 
-        def sid = Channel.fromPath(params.input)
+        def sid = channel.fromPath(params.input)
             .splitCsv(header: true)
             .map { row -> row.sample_id }
             .first()
@@ -96,7 +88,7 @@ workflow {
         def vcf_path = file(params.reannotate_vcf)
         def output_subdir = params.output_subdir ?: ''
 
-        log.info "🔁 Reannotation mode: SnpEff → SnpSift → VariantsToTable only"
+        log.info "Reannotation mode: SnpEff -> SnpSift -> VariantsToTable only"
         log.info "   VarDict VCF : ${vcf_path}"
 
         def vardict_ch = sid.map { s -> tuple(s, vcf_path) }
@@ -123,7 +115,7 @@ workflow {
         }
 
         // Derive sample_id from the samplesheet (we still need it)
-        def sid = Channel.fromPath(params.input)
+        def sid = channel.fromPath(params.input)
             .splitCsv(header: true)
             .map { row -> row.sample_id }
             .first()
@@ -137,7 +129,7 @@ workflow {
         final_bam_ch    = sid.map { s -> tuple(s, bam_path, bai_path) }
         annotated_txt_ch = sid.map { s -> tuple(s, ann_txt_path) }
 
-        log.info "⚡ Bypass mode: skipping FASTQC / UMI_PREPROCESSING / VARIANT_CALLING / QC_REPORT"
+        log.info "Bypass mode: skipping FASTQC / UMI_PREPROCESSING / VARIANT_CALLING / QC_REPORT"
         log.info "   Followup BAM : ${bam_path}"
         log.info "   Ann. TXT     : ${ann_txt_path}"
 
@@ -175,11 +167,11 @@ workflow {
     } else {
 
         // BWA index files (fasta.amb, .ann, .bwt, .pac, .sa)
-        genome_idx = Channel.fromPath("${genome_fasta}.*").collect()
+        def genome_idx = channel.fromPath("${genome_fasta}.*").collect()
 
         // Parse samplesheet
         // Format: sample_id,fastq_1,fastq_2[,reference,af_threshold]
-        samples_ch = Channel.fromPath(params.input)
+        def samples_ch = channel.fromPath(params.input)
             .splitCsv(header: true)
             .map { row ->
                 def sid = row.sample_id
@@ -196,13 +188,13 @@ workflow {
         // Both branches emit the same channel shapes (final_bam / aligned_bam / deduped_bam)
         // so downstream workflows are unchanged.
         if (params.use_umi.toString() == 'true') {
-            log.info "🧬 UMI mode: running UMI_PREPROCESSING (read structure: ${params.umi_read_structure})"
+            log.info "UMI mode: running UMI_PREPROCESSING (read structure: ${params.umi_read_structure})"
             UMI_PREPROCESSING(samples_ch, genome_fasta, genome_dict, genome_fai, genome_idx)
             final_bam_ch   = UMI_PREPROCESSING.out.final_bam
             aligned_bam_ch = UMI_PREPROCESSING.out.aligned_bam
             deduped_bam_ch = UMI_PREPROCESSING.out.deduped_bam
         } else {
-            log.info "🧬 Non-UMI mode: running STANDARD_PREPROCESSING (BWA + Picard MarkDuplicates)"
+            log.info "Non-UMI mode: running STANDARD_PREPROCESSING (BWA + Picard MarkDuplicates)"
             STANDARD_PREPROCESSING(samples_ch, genome_fasta, genome_dict, genome_fai, genome_idx)
             final_bam_ch   = STANDARD_PREPROCESSING.out.final_bam
             aligned_bam_ch = STANDARD_PREPROCESSING.out.aligned_bam
@@ -277,11 +269,10 @@ workflow {
         }
 
     }
-}
 
-// ── Completion handler ───────────────────────────────────────
-workflow.onComplete {
-    log.info """
+    // ── Completion handler ───────────────────────────────────
+    workflow.onComplete = {
+        log.info """
 ══════════════════════════════════════════════════════════════
   Pipeline completed at : ${workflow.complete}
   Duration              : ${workflow.duration}
@@ -290,4 +281,5 @@ workflow.onComplete {
   Exit status           : ${workflow.exitStatus}
 ══════════════════════════════════════════════════════════════
 """
+    }
 }

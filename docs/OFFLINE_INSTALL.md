@@ -258,23 +258,42 @@ cd deploy/usb && sha256sum -c SHA256SUMS
 
 ## 6. 설치자 측 — 설치 실행
 
+> **현재 배포 파일:** `usb_bundle_v2.tar` (USB 루트에 위치)
+
 ### 6.1 USB 마운트
 
 ```bash
-# USB 장치 식별 (예: /dev/sdb1)
+# USB 장치 확인 (보통 /dev/sdb1 또는 /dev/sdc1)
 lsblk
+
+# 마운트
 sudo mkdir -p /mnt/usb
-sudo mount /dev/sdb1 /mnt/usb
+sudo mount /dev/sdb1 /mnt/usb   # 장치명은 lsblk 결과에 맞게 변경
+
+# 번들 파일 확인
+ls /mnt/usb/usb_bundle_v2.tar
 ```
 
-### 6.2 부트스트랩 실행
+### 6.2 번들 압축 해제
 
 ```bash
-cd /mnt/usb           # 또는 /mnt/usb/roche_nxt_bundle
+# 작업 디렉터리 생성 후 압축 해제
+sudo mkdir -p /opt/roche_install
+sudo tar -xf /mnt/usb/usb_bundle_v2.tar -C /opt/roche_install
+
+# 압축 해제 결과 확인 — install.sh 가 보이면 정상
+ls /opt/roche_install/usb/
+#   install.sh  README.txt  SHA256SUMS  app/  data/  docker/  images/  license/  liftover/  scripts/
+```
+
+### 6.3 설치 실행
+
+```bash
+cd /opt/roche_install/usb
 sudo bash install.sh
 ```
 
-그게 전부입니다. 스크립트가 11단계로 진행하면서 각 단계마다 다음과 같이
+**그게 전부입니다.** 스크립트가 11단계로 진행하면서 각 단계마다 다음과 같이
 출력합니다:
 
 ```
@@ -332,6 +351,8 @@ sudo bash install.sh
 
 | 메시지                                         | 원인                                | 해결                                    |
 |------------------------------------------------|-------------------------------------|-----------------------------------------|
+| `ls: cannot access '...usb_bundle_v2.tar'`    | USB 마운트 실패 또는 파일 위치 오류 | `lsblk` 재확인 후 올바른 장치 마운트    |
+| `install.sh: No such file or directory`        | tar 해제 경로 오류                  | `ls /opt/roche_install/usb/` 로 구조 재확인 |
 | `Unsupported OS: ...`                          | 지원 OS 아님                        | 담당자에게 OS 버전 전달 → 재번들링       |
 | `No packages at docker/ubuntu-XX.XX/`          | 해당 OS 용 .deb 미포함              | 담당자에게 재번들링 요청                |
 | `dpkg dependencies failed`                     | OS 기본 패키지 누락                 | 의존성 .deb 추가 포함 필요              |
@@ -420,7 +441,10 @@ sudo apt-get purge -y docker-ce docker-ce-cli containerd.io \
 
 - [ ] `cat /etc/os-release` 로 OS 버전 담당자에 공유
 - [ ] 고객 서버에서 `sudo` 권한 확보
-- [ ] USB 마운트 확인 (`lsblk`, `mount`)
-- [ ] `sudo bash install.sh` 실행, 11 단계 모두 ✓
+- [ ] USB 마운트 확인 (`lsblk` → `sudo mount /dev/sdXn /mnt/usb`)
+- [ ] `ls /mnt/usb/usb_bundle_v2.tar` 로 번들 파일 존재 확인
+- [ ] `sudo tar -xf /mnt/usb/usb_bundle_v2.tar -C /opt/roche_install` 압축 해제
+- [ ] `ls /opt/roche_install/usb/install.sh` 로 해제 결과 확인
+- [ ] `cd /opt/roche_install/usb && sudo bash install.sh` 실행, 11 단계 모두 ✓
 - [ ] 웹 UI 접속 확인 (`http://<ip>:8080/`)
 - [ ] 테스트 FASTQ 1세트 업로드 후 파이프라인 완주 확인

@@ -129,7 +129,7 @@ workflow {
     def run_fusion = !params.skip_fusion && (ctat_lib   != null)
 
     // ── Parse samplesheet ────────────────────────────────────
-    Channel
+    def reads_ch = channel
         .fromPath(params.input)
         .splitCsv(header: true)
         .map { row ->
@@ -140,7 +140,6 @@ workflow {
             if (!r2.exists()) log.warn "WARNING: R2 FASTQ not found: ${r2}"
             tuple(sample_id, r1, r2)
         }
-        .set { reads_ch }
 
     // ── Step 1: FastQC (raw reads) ───────────────────────────
     FASTQC(reads_ch)
@@ -237,7 +236,7 @@ workflow {
     )
 
     // ── Step 9: MultiQC aggregate report ────────────────────
-    multiqc_input = Channel.empty()
+    def multiqc_input = channel.empty()
     multiqc_input = multiqc_input.mix(
         FASTQC.out.zip.map { sid, zip -> zip }
     )

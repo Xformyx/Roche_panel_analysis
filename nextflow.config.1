@@ -164,9 +164,9 @@ params {
     // -- SnpEff --
     snpeff_data_dir      = "${params.data_dir}/snpeff"
 
-    // -- Resource limits (web UI always overrides with actual values) --
-    max_cpus             = 8
-    max_memory           = 32
+    // -- Resource limits (0 = auto-detect by web UI) --
+    max_cpus             = 0
+    max_memory           = 0
 
     // -- Tool memory --
     gatk_memory          = '8g'
@@ -174,11 +174,28 @@ params {
     vardict_memory       = '8g'
 }
 
+// Resolve genome-specific params (inline — Nextflow config forbids `def` mixed with scope blocks)
+params.genome_fasta  = params.genome_fasta ?: (params.genomes[params.reference] ?: params.genomes['hg38']).fasta
+params.genome_dict   = params.genome_dict  ?: (params.genomes[params.reference] ?: params.genomes['hg38']).dict
+params.genome_file   = params.genome_file  ?: (params.genomes[params.reference] ?: params.genomes['hg38']).genome_file
+params.dbsnp_vcf     = params.dbsnp_vcf    ?: (params.genomes[params.reference] ?: params.genomes['hg38']).dbsnp
+params.target_bed    = params.target_bed   ?: (params.genomes[params.reference] ?: params.genomes['hg38']).bed_capture
+
+// Resolve RNAseq-specific reference paths (auto-set from genomes block)
+params.star_index    = params.star_index   ?: (params.genomes[params.reference] ?: params.genomes['hg38']).star_index
+params.gtf           = params.gtf          ?: (params.genomes[params.reference] ?: params.genomes['hg38']).gtf
+params.bed12         = params.bed12        ?: (params.genomes[params.reference] ?: params.genomes['hg38']).bed12
+params.ctat_lib      = params.ctat_lib     ?: null   // CTAT library for STAR-Fusion; null = skip fusion
+
+// Effective resource limits (must be params.* — NF 24+ forbids free bindings before scope blocks)
+params.effective_max_cpus = (params.max_cpus as int) > 0 ? (params.max_cpus as int) : Runtime.runtime.availableProcessors()
+params.effective_max_memory_gb = (params.max_memory as int) > 0 ? (params.max_memory as int) : (Runtime.runtime.maxMemory() / 1073741824).intValue()
+
 // Executor-level resource limits (controls total concurrency within one pipeline run)
 executor {
     name   = 'local'
-    cpus   = params.max_cpus
-    memory = "${params.max_memory} GB"
+    cpus   = params.effective_max_cpus
+    memory = "${params.effective_max_memory_gb} GB"
 }
 
 // Process defaults
@@ -187,16 +204,16 @@ process {
     maxRetries    = 1
 
     withLabel: 'process_low' {
-        cpus   = { [2, params.max_cpus as int].min() }
-        memory = { "${[4, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(2, params.effective_max_cpus)
+        memory = "${Math.min(4, params.effective_max_memory_gb)} GB"
     }
     withLabel: 'process_medium' {
-        cpus   = { [8, params.max_cpus as int].min() }
-        memory = { "${[16, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(8, params.effective_max_cpus)
+        memory = "${Math.min(16, params.effective_max_memory_gb)} GB"
     }
     withLabel: 'process_high' {
-        cpus   = { [16, params.max_cpus as int].min() }
-        memory = { "${[32, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(16, params.effective_max_cpus)
+        memory = "${Math.min(32, params.effective_max_memory_gb)} GB"
     }
     withLabel: 'process_long' {
         time   = '48.h'
@@ -204,44 +221,44 @@ process {
 
     // ── RNAseq-specific process resource overrides ──────────────────────────
     withName: 'STAR_ALIGN' {
-        cpus   = { [16, params.max_cpus as int].min() }
-        memory = { "${[48, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(16, params.effective_max_cpus)
+        memory = "${Math.min(48, params.effective_max_memory_gb)} GB"
     }
     withName: 'FEATURECOUNTS' {
-        cpus   = { [8, params.max_cpus as int].min() }
-        memory = { "${[16, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(8, params.effective_max_cpus)
+        memory = "${Math.min(16, params.effective_max_memory_gb)} GB"
     }
     withName: 'RNASEQ_PLOTS' {
-        cpus   = { [4, params.max_cpus as int].min() }
-        memory = { "${[8, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(4, params.effective_max_cpus)
+        memory = "${Math.min(8, params.effective_max_memory_gb)} GB"
     }
     withName: 'RNASEQ_INTERACTIVE_PLOTS' {
-        cpus   = { [2, params.max_cpus as int].min() }
-        memory = { "${[4, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(2, params.effective_max_cpus)
+        memory = "${Math.min(4, params.effective_max_memory_gb)} GB"
     }
     withName: 'RNASEQ_MULTI_SAMPLE_PLOTS' {
-        cpus   = { [4, params.max_cpus as int].min() }
-        memory = { "${[8, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(4, params.effective_max_cpus)
+        memory = "${Math.min(8, params.effective_max_memory_gb)} GB"
     }
     withName: 'RNASEQ_DESEQ2' {
-        cpus   = { [4, params.max_cpus as int].min() }
-        memory = { "${[16, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(4, params.effective_max_cpus)
+        memory = "${Math.min(16, params.effective_max_memory_gb)} GB"
     }
     withName: 'RNASEQ_PATHWAY' {
-        cpus   = { [4, params.max_cpus as int].min() }
-        memory = { "${[16, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(4, params.effective_max_cpus)
+        memory = "${Math.min(16, params.effective_max_memory_gb)} GB"
     }
     withName: 'RSEQC_TIN' {
-        cpus   = { [8, params.max_cpus as int].min() }
-        memory = { "${[16, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(8, params.effective_max_cpus)
+        memory = "${Math.min(16, params.effective_max_memory_gb)} GB"
     }
     withName: 'MULTIQC' {
-        cpus   = { [2, params.max_cpus as int].min() }
-        memory = { "${[8, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(2, params.effective_max_cpus)
+        memory = "${Math.min(8, params.effective_max_memory_gb)} GB"
     }
     withName: 'STAR_FUSION' {
-        cpus   = { [16, params.max_cpus as int].min() }
-        memory = { "${[32, params.max_memory as int].min()} GB" }
+        cpus   = Math.min(16, params.effective_max_cpus)
+        memory = "${Math.min(32, params.effective_max_memory_gb)} GB"
     }
 }
 
@@ -274,20 +291,18 @@ includeConfig 'conf/base.config'
 cleanup = params.delete_intermediate
 
 // Timeline, report, trace
+params.trace_timestamp = new java.util.Date().format('yyyy-MM-dd_HH-mm-ss')
 timeline {
-    enabled   = true
-    overwrite = true
-    file      = "${params.outdir}/pipeline_info/timeline.html"
+    enabled = true
+    file    = "${params.outdir}/pipeline_info/timeline_${params.trace_timestamp}.html"
 }
 report {
-    enabled   = true
-    overwrite = true
-    file      = "${params.outdir}/pipeline_info/report.html"
+    enabled = true
+    file    = "${params.outdir}/pipeline_info/report_${params.trace_timestamp}.html"
 }
 trace {
-    enabled   = true
-    overwrite = true
-    file      = "${params.outdir}/pipeline_info/trace.txt"
+    enabled = true
+    file    = "${params.outdir}/pipeline_info/trace_${params.trace_timestamp}.txt"
 }
 
 manifest {
@@ -295,6 +310,6 @@ manifest {
     author          = 'Kenneth Kwon'
     description     = 'Roche KAPA ctDNA Analysis Pipeline - Nextflow Edition'
     mainScript      = 'main.nf'
-    nextflowVersion = '>=25.04.0'
-    version         = '1.1.0'
+    nextflowVersion = '>=23.04.0'
+    version         = '1.0.0'
 }
