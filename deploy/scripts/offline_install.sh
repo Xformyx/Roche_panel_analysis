@@ -72,12 +72,14 @@ banner() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_DIR="/opt/roche_nxt"
+RUN_USER_OVERRIDE=""
 ASSUME_YES=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --bundle-root) BUNDLE_ROOT="$(cd "$2" && pwd)"; shift 2 ;;
         --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+        --run-user)    RUN_USER_OVERRIDE="$2"; shift 2 ;;
         -y|--yes)      ASSUME_YES=1; shift ;;
         -h|--help)
             cat <<USAGE
@@ -86,6 +88,7 @@ Usage: sudo bash $(basename "$0") [OPTIONS]
 Options:
   --bundle-root DIR   Path to the USB bundle root (auto-detected)
   --install-dir DIR   Target install directory (default: /opt/roche_nxt)
+  --run-user USER     Owner for .env, log/, and writable dirs (default: \$SUDO_USER)
   -y, --yes           Skip interactive confirmations
   -h, --help          Show this help
 
@@ -198,20 +201,27 @@ fi
 # ---------------------------------------------------------------------------
 step "Runtime user and docker group"
 
-# The user that will own data directories / be used inside containers.
-# When invoked via `sudo`, SUDO_USER is the calling human user.
-RUN_USER="${SUDO_USER:-root}"
-if [[ "$RUN_USER" == "root" ]]; then
-    warn "Installer invoked directly as root (no SUDO_USER)."
-    warn "The product will run as root unless you re-run with a regular user via sudo."
+# The user that will own .env, log/, and other writable paths.
+# Web container runs as UID/GID from .env — files must NOT stay root-owned.
+if [[ -n "${RUN_USER_OVERRIDE:-}" ]]; then
+    RUN_USER="$RUN_USER_OVERRIDE"
+elif [[ -n "${SUDO_USER:-}" ]]; then
+    RUN_USER="$SUDO_USER"
 else
-    ok "Runtime user: ${RUN_USER}"
-    if id -nG "$RUN_USER" | tr ' ' '\n' | grep -qx docker; then
-        ok "${RUN_USER} is already in the 'docker' group"
-    else
-        usermod -aG docker "$RUN_USER"
-        ok "Added ${RUN_USER} to 'docker' group (takes effect on next login)"
-    fi
+    die "Cannot determine runtime user. Run with: sudo bash install.sh (from a regular account), or pass --run-user USERNAME"
+fi
+
+if ! id "$RUN_USER" >/dev/null 2>&1; then
+    die "Runtime user '${RUN_USER}' does not exist on this system."
+fi
+
+ok "Runtime user: ${RUN_USER}"
+
+if id -nG "$RUN_USER" | tr ' ' '\n' | grep -qx docker; then
+    ok "${RUN_USER} is already in the 'docker' group"
+else
+    usermod -aG docker "$RUN_USER"
+    ok "Added ${RUN_USER} to 'docker' group (takes effect on next login)"
 fi
 
 RUN_UID="$(id -u "$RUN_USER")"
@@ -394,14 +404,7 @@ for d in results work log fastq bed data liftover; do
     fi
 done
 
-# Ownership: writable dirs must be owned by RUN_USER
-if [[ "$RUN_USER" != "root" ]]; then
-    chown -R "${RUN_UID}:${RUN_GID}" \
-        "${INSTALL_DIR}/results" \
-        "${INSTALL_DIR}/work" \
-        "${INSTALL_DIR}/log"
-    ok "Ownership: results/, work/, log/ → ${RUN_USER}"
-fi
+# Ownership is applied after .env is written (step 9) so UID/GID match the runtime user.
 
 # ---------------------------------------------------------------------------
 # Step 9 — Configure .env
@@ -443,6 +446,27 @@ sed -i -E '/^(DEV_MODE|ENABLE_LONGITUDINAL|ENABLE_IGV|ENABLE_HG19_VIEW)=/d' "$EN
 
 ok ".env updated (paths, UID/GID, runtime dirs)"
 ok "DEV_MODE and ENABLE_* entries removed (production hygiene)"
+
+# Web container runs as UID/GID from .env. Install steps above run as root,
+# so without chown the UI cannot write .env or the SQLite DB under log/.
+fix_runtime_ownership() {
+    chown "${RUN_UID}:${RUN_GID}" "${ENV_FILE}"
+    chown "${RUN_UID}:${RUN_GID}" "${INSTALL_DIR}/docker-compose.yml"
+    chown -R "${RUN_UID}:${RUN_GID}" \
+        "${INSTALL_DIR}/results" \
+        "${INSTALL_DIR}/work" \
+        "${INSTALL_DIR}/log" \
+        "${INSTALL_DIR}/fastq" \
+        "${INSTALL_DIR}/bed"
+    for f in main.nf nextflow.config; do
+        [[ -f "${INSTALL_DIR}/${f}" ]] && chown "${RUN_UID}:${RUN_GID}" "${INSTALL_DIR}/${f}"
+    done
+    for d in modules workflows conf; do
+        [[ -d "${INSTALL_DIR}/${d}" ]] && chown -R "${RUN_UID}:${RUN_GID}" "${INSTALL_DIR}/${d}"
+    done
+}
+fix_runtime_ownership
+ok "Ownership: .env, docker-compose.yml, log/, pipeline/ → ${RUN_USER} (${RUN_UID}:${RUN_GID})"
 
 # ---------------------------------------------------------------------------
 # Step 10 — Launch the stack

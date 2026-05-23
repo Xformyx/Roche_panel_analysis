@@ -248,7 +248,7 @@ RUN mkdir -p /opt/java && cd /opt/java && \
 
 ENV NXF_JAVA_HOME=/opt/java/jdk-17.0.13+11-jre
 
-ENV NXF_VER=25.10.4
+ENV NXF_VER=26.04.2
 RUN curl -s https://get.nextflow.io | bash && \
     mv nextflow /usr/local/bin/ && \
     chmod +x /usr/local/bin/nextflow && \

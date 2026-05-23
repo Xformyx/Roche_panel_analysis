@@ -875,6 +875,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
         rna_fastp_opts = settings.get("rna_fastp_options", "-g -W 5 -q 20 -u 40 -x -3 -l 50 -c").strip()
         nf_cmd = [
             "nextflow", "run", "/work_nxt/workflows/rnaseq.nf",
+            "-c", "/work_nxt/conf/rnaseq.config",
             "-profile", "local",
             "-name", run_name,
             "-work-dir", f"/work_nxt/{work_dir_rel}",
@@ -1397,16 +1398,29 @@ def api_dashboard():
 def api_resources():
     cpu = psutil.cpu_percent(interval=0.5)
     mem = psutil.virtual_memory()
-    disk = psutil.disk_usage(BASE_DIR if os.path.exists(BASE_DIR) else "/")
+
+    run_path = BASE_DIR if os.path.exists(BASE_DIR) else "/"
+    disk_run = psutil.disk_usage(run_path)
+
+    fastq_path = FASTQ_HOST_DIR if FASTQ_HOST_DIR and os.path.exists(FASTQ_HOST_DIR) else run_path
+    disk_fastq = psutil.disk_usage(fastq_path)
+
     return jsonify({
         "cpu_percent": cpu,
         "cpu_count": psutil.cpu_count(),
         "mem_total_gb": round(mem.total / 1e9, 1),
         "mem_used_gb": round(mem.used / 1e9, 1),
         "mem_percent": mem.percent,
-        "disk_total_gb": round(disk.total / 1e9, 1),
-        "disk_used_gb": round(disk.used / 1e9, 1),
-        "disk_percent": disk.percent,
+        # 실행환경 디스크
+        "disk_total_gb":   round(disk_run.total / 1e9, 1),
+        "disk_used_gb":    round(disk_run.used  / 1e9, 1),
+        "disk_percent":    disk_run.percent,
+        # Fastq 디스크 (실행환경과 같은 파티션이면 동일 값)
+        "disk_fastq_total_gb":  round(disk_fastq.total / 1e9, 1),
+        "disk_fastq_used_gb":   round(disk_fastq.used  / 1e9, 1),
+        "disk_fastq_percent":   disk_fastq.percent,
+        "disk_fastq_same":      os.path.realpath(fastq_path) == os.path.realpath(run_path)
+                                or disk_run.total == disk_fastq.total,
     })
 
 

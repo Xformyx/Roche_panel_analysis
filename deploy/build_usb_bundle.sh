@@ -187,11 +187,28 @@ cat > "${OUT_DIR}/install.sh" <<'BOOTSTRAP'
 # This wrapper resolves its own absolute path, then hands off to the real
 # installer that does the 11-step installation. If Docker isn't installed
 # yet, the real installer will call install_docker.sh first.
+#
+# IMPORTANT: run with sudo from a regular user account (not su - root):
+#   sudo bash install.sh
+# This ensures .env, log/, and other runtime files are owned by that user.
+# The web container runs as UID/GID from .env; root-owned files break settings save.
 set -Eeuo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ $EUID -ne 0 ]]; then
     echo "This installer must run with root privileges."
     echo "    sudo bash $(basename "$0")"
+    exit 1
+fi
+if [[ -z "${SUDO_USER:-}" ]]; then
+    echo ""
+    echo "ERROR: Run this installer with sudo from your regular account:"
+    echo "    sudo bash $(basename "$0")"
+    echo ""
+    echo "Do NOT run as root directly (su -). Otherwise .env and log/ stay"
+    echo "root-owned and the web UI cannot save settings."
+    echo ""
+    echo "If you must install as root, pass the target user explicitly:"
+    echo "    sudo bash $(basename "$0") --run-user <username>"
     exit 1
 fi
 exec bash "${SELF_DIR}/scripts/offline_install.sh" --bundle-root "${SELF_DIR}" "$@"

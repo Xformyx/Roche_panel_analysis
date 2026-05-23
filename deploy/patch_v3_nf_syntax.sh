@@ -107,13 +107,21 @@ if [[ -f "$ENV_FILE" ]]; then
     RUN_UID=$(grep -E '^UID=' "$ENV_FILE" | head -1 | cut -d= -f2)
     RUN_GID=$(grep -E '^GID=' "$ENV_FILE" | head -1 | cut -d= -f2)
     if [[ -n "$RUN_UID" && -n "$RUN_GID" ]]; then
+        chown "${RUN_UID}:${RUN_GID}" "${ENV_FILE}" "${INSTALL_DIR}/docker-compose.yml" 2>/dev/null || true
         chown -R "${RUN_UID}:${RUN_GID}" \
+            "${INSTALL_DIR}/log" \
+            "${INSTALL_DIR}/results" \
+            "${INSTALL_DIR}/work" \
+            "${INSTALL_DIR}/fastq" \
+            "${INSTALL_DIR}/bed" \
             "${INSTALL_DIR}/main.nf" \
             "${INSTALL_DIR}/nextflow.config" \
             "${INSTALL_DIR}/conf" \
             "${INSTALL_DIR}/modules" \
             "${INSTALL_DIR}/workflows" 2>/dev/null || true
-        echo "  Ownership set to ${RUN_UID}:${RUN_GID}"
+        echo "  Ownership set to ${RUN_UID}:${RUN_GID} (.env, log/, pipeline/)"
+    else
+        echo "  WARNING: UID/GID not found in .env — fix ownership manually"
     fi
 fi
 echo ""

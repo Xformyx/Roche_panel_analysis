@@ -719,8 +719,12 @@ tbody tr:hover{background:#F8FAFC}
               <div class="resource-bar-bg"><div class="resource-bar-fill green" id="memBar" style="width:0%"></div></div>
             </div>
             <div class="resource-item">
-              <div class="resource-label"><span>디스크</span><span id="diskDetail">-- / -- GB</span></div>
+              <div class="resource-label"><span>디스크 (실행환경)</span><span id="diskDetail">-- / -- GB</span></div>
               <div class="resource-bar-bg"><div class="resource-bar-fill green" id="diskBar" style="width:0%"></div></div>
+            </div>
+            <div class="resource-item">
+              <div class="resource-label"><span>디스크 (Fastq)</span><span id="diskFastqDetail">-- / -- GB</span></div>
+              <div class="resource-bar-bg"><div class="resource-bar-fill green" id="diskFastqBar" style="width:0%"></div></div>
             </div>
             <div class="resource-item">
               <div class="resource-label"><span>파이프라인 슬롯</span><span id="slotDetail">-- / --</span></div>
@@ -2108,6 +2112,7 @@ var editingOrderId = null;
 var selectedLogOrderId = null;
 var selectedLogSample = null;
 var logRefreshTimer = null;
+var logPollingOrderId = null;   // order being polled (independent of panel open/closed)
 var dashboardTimer = null;
 var resourceTimer = null;
 var ordersTimer = null;
@@ -2186,6 +2191,7 @@ function stopAllTimers() {
   if (resourceTimer) { clearInterval(resourceTimer); resourceTimer = null; }
   if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
   if (ordersTimer) { clearInterval(ordersTimer); ordersTimer = null; }
+  logPollingOrderId = null;
 }
 
 function startDashboardTimers() {
@@ -2666,6 +2672,11 @@ function loadResources() {
     document.getElementById('diskBar').style.width = diskPct + '%';
     document.getElementById('diskBar').className = 'resource-bar-fill ' + resourceBarClass(diskPct);
     document.getElementById('diskDetail').textContent = d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB';
+
+    var diskFastqPct = d.disk_fastq_percent || 0;
+    document.getElementById('diskFastqBar').style.width = diskFastqPct + '%';
+    document.getElementById('diskFastqBar').className = 'resource-bar-fill ' + resourceBarClass(diskFastqPct);
+    document.getElementById('diskFastqDetail').textContent = d.disk_fastq_used_gb + ' / ' + d.disk_fastq_total_gb + ' GB';
 
     document.getElementById('resourceLastUpdate').textContent = '마지막 업데이트: ' + new Date().toLocaleTimeString('ko-KR');
   }).catch(function() {});
@@ -4835,15 +4846,57 @@ function buildMismatchTab(d) {
 /* ================================================================
    LOG PANEL
    ================================================================ */
+var LOG_ACTIVE_STATUSES   = ['starting', 'queued', 'running', 'cancelling'];
+var LOG_TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
+
+function _isActiveLogStatus(status) {
+  return LOG_ACTIVE_STATUSES.indexOf(status) >= 0;
+}
+function _getOrderStatus(orderId) {
+  for (var i = 0; i < cachedOrders.length; i++) {
+    if (cachedOrders[i].id === orderId) return cachedOrders[i].status;
+  }
+  return null;
+}
+
+/* Start/restart log polling for orderId regardless of whether the panel is open.
+   Panel-open state is handled inside _pollLog / loadLog. */
+function _startLogPolling(orderId) {
+  logPollingOrderId = orderId;
+  if (logRefreshTimer) clearInterval(logRefreshTimer);
+  logRefreshTimer = setInterval(function() { _pollLog(orderId); }, 3000);
+}
+
+/* Called every 3 s. Updates UI if panel is open, stops when status is terminal. */
+function _pollLog(orderId) {
+  if (logPollingOrderId !== orderId) return;
+
+  var status = _getOrderStatus(orderId);
+
+  if (selectedLogOrderId === orderId && !logRefreshPaused) {
+    loadLog(orderId);
+  }
+
+  if (status && LOG_TERMINAL_STATUSES.indexOf(status) >= 0) {
+    clearInterval(logRefreshTimer);
+    logRefreshTimer = null;
+    logPollingOrderId = null;
+    // One final UI update so the completion message is never missed
+    if (selectedLogOrderId === orderId) loadLog(orderId);
+  }
+}
+
+/* Called by forceOrder / startOrder / resumeOrder on success.
+   Always starts polling; also resets UI if the panel happens to be open. */
 function resetLogForOrder(orderId) {
   if (selectedLogOrderId === orderId) {
     document.getElementById('logSnapshot').textContent = '';
     document.getElementById('logBody').textContent = '새 분석이 시작되었습니다. 로그를 기다리는 중...';
-    if (logRefreshTimer) clearInterval(logRefreshTimer);
-    logRefreshTimer = setInterval(function() { loadLog(orderId); }, 3000);
   }
+  _startLogPolling(orderId);
 }
 
+/* status arg kept for API compatibility but never used for polling decision. */
 function toggleLog(orderId, sampleName, status) {
   if (selectedLogOrderId === orderId) {
     closeLogPanel();
@@ -4864,9 +4917,12 @@ function toggleLog(orderId, sampleName, status) {
 
   loadLog(orderId);
 
-  if (logRefreshTimer) clearInterval(logRefreshTimer);
-  if (status === 'running') {
-    logRefreshTimer = setInterval(function() { loadLog(orderId); }, 3000);
+  // Use live status from cachedOrders; fall back to passed-in value if not cached yet
+  var currentStatus = _getOrderStatus(orderId) || status;
+  // If a poll is already running for this order (started by resetLogForOrder), keep it.
+  // Otherwise start one if the order is still active.
+  if (logPollingOrderId !== orderId && _isActiveLogStatus(currentStatus)) {
+    _startLogPolling(orderId);
   }
 }
 
@@ -4874,7 +4930,10 @@ function loadLog(orderId) {
   if (selectedLogOrderId !== orderId) return;
   if (logRefreshPaused) return;
   apiFetch('/api/orders/' + orderId + '/logs').then(function(r) {
-    if (!r.success) return;
+    if (!r.success) {
+      document.getElementById('logBody').textContent = '[오류] 로그를 불러오지 못했습니다: ' + (r.error || '알 수 없는 오류');
+      return;
+    }
     var snap = document.getElementById('logSnapshot');
     var body = document.getElementById('logBody');
     var reg = r.order_snapshot || '';
@@ -4883,7 +4942,12 @@ function loadLog(orderId) {
     var wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 50;
     body.textContent = r.logs || '';
     if (wasAtBottom) body.scrollTop = body.scrollHeight;
-  }).catch(function() {});
+  }).catch(function(e) {
+    var body = document.getElementById('logBody');
+    if (body && selectedLogOrderId === orderId) {
+      body.textContent = '[오류] 로그 요청 실패 — 네트워크 또는 서버 오류';
+    }
+  });
 }
 
 var logRefreshPaused = false;
@@ -4933,7 +4997,9 @@ function closeLogPanel() {
   if (sub) sub.textContent = '';
   document.getElementById('logBody').textContent = '';
   document.querySelectorAll('.order-row').forEach(function(r) { r.classList.remove('selected'); });
-  if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
+  // Keep logRefreshTimer / logPollingOrderId running — if the user reopens the panel
+  // for the same order while analysis is still ongoing, _pollLog will resume updating it.
+  // The poll stops itself when the order reaches a terminal status.
 }
 
 function downloadLog() {
