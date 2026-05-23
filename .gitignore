@@ -25,7 +25,18 @@ __pycache__/
 *.egg
 
 # ===== Deploy (offline bundle artifacts) =====
-deploy/
+# Track scripts and docs, but ignore built artifacts and subdirectories
+deploy/*
+!deploy/*.sh
+!deploy/*.md
+!deploy/scripts/
+deploy/scripts/*
+!deploy/scripts/*.sh
+deploy/usb/
+deploy/docker_offline/
+deploy/licenses/
+deploy/*.tar
+deploy/*.tar.gz
 
 # ===== Licensing =====
 # Private signing keys, customer licenses, and the on-disk license file
