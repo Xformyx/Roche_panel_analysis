@@ -497,8 +497,33 @@ def _nf_log_succeeded(order_id, sample_name):
     return False
 
 
+def _archive_and_remove_container(order_id, sample_name, container_name):
+    """Flush docker logs → log file, then remove the stopped container.
+
+    This keeps the log readable via the file-based fallback while preventing
+    exited containers from accumulating indefinitely.
+    """
+    log_path = os.path.join(LOG_DIR, f"{sample_name}_{order_id}_nf.log")
+    try:
+        r = subprocess.run(
+            ["docker", "logs", container_name],
+            capture_output=True, text=True, timeout=30,
+        )
+        output = (r.stdout or "") + (r.stderr or "")
+        if output:
+            with open(log_path, "a", errors="replace") as f:
+                f.write(output)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["docker", "rm", container_name],
+                       capture_output=True, timeout=15)
+    except Exception:
+        pass
+
+
 def _resolve_exited_status(db, order_id, sample_name, container_name, now, clear_error=False):
-    """Determine completed vs failed for an exited container."""
+    """Determine completed vs failed for an exited container, then archive and remove it."""
     exit_code = docker_container_exit_code(container_name)
     if exit_code == 0 and _nf_log_succeeded(order_id, sample_name):
         extra = ", error_message=''" if clear_error else ""
@@ -514,6 +539,7 @@ def _resolve_exited_status(db, order_id, sample_name, container_name, now, clear
             "UPDATE orders SET status='failed', error_message=?, updated_at=? WHERE id=?",
             (reason, now, order_id),
         )
+    _archive_and_remove_container(order_id, sample_name, container_name)
 
 
 def sync_order_statuses(db=None):
@@ -1656,7 +1682,7 @@ def api_stop_order(order_id):
     now = datetime.now().isoformat()
     container_name = (row["container_name"] or "").strip() or f"nxt_{row['sample_name']}_{order_id[:14]}"
     subprocess.run(["docker", "stop", container_name], capture_output=True, timeout=30)
-    subprocess.run(["docker", "rm",  container_name], capture_output=True, timeout=10)
+    _archive_and_remove_container(order_id, row["sample_name"], container_name)
     _cleanup_nf_lock(order_id)
     db.execute("UPDATE orders SET status='cancelled', updated_at=? WHERE id=?", (now, order_id))
     db.commit()
