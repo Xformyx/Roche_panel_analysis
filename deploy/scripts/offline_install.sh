@@ -229,6 +229,45 @@ RUN_GID="$(id -g "$RUN_USER")"
 DOCKER_GID="$(getent group docker | cut -d: -f3 || echo 999)"
 
 # ---------------------------------------------------------------------------
+# Step 3b — Upgrade guard: auto-backup critical files if upgrading
+# ---------------------------------------------------------------------------
+IS_UPGRADE=0
+BACKUP_DIR=""
+
+if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    IS_UPGRADE=1
+    BACKUP_DIR="${INSTALL_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
+    warn "Existing installation detected — creating safety backup before upgrade"
+    mkdir -p "$BACKUP_DIR"
+
+    _backed_up=()
+    for _f in \
+        "${INSTALL_DIR}/.env" \
+        "${INSTALL_DIR}/license/license.json" \
+        "${INSTALL_DIR}/log/orders_nxt.db"
+    do
+        if [[ -f "$_f" ]]; then
+            cp -p "$_f" "$BACKUP_DIR/"
+            _backed_up+=("$(basename "$_f")")
+        fi
+    done
+
+    if [[ ${#_backed_up[@]} -gt 0 ]]; then
+        ok "Backup created: ${BACKUP_DIR}/"
+        for _name in "${_backed_up[@]}"; do
+            ok "  backed up: ${_name}"
+        done
+    fi
+
+    echo ""
+    warn "Upgrade mode — the following will be REPLACED:"
+    warn "  docker-compose.yml, main.nf, nextflow.config, modules/, workflows/, conf/"
+    warn "The following will be PRESERVED:"
+    warn "  .env, license/, results/, log/, fastq/, work/, bed/, data/"
+    echo ""
+fi
+
+# ---------------------------------------------------------------------------
 # Step 4 — Create install directory and copy app files
 # ---------------------------------------------------------------------------
 step "Create ${INSTALL_DIR} and copy application files"
@@ -290,8 +329,14 @@ load_image() {
         return
     fi
     if docker image inspect "$name" >/dev/null 2>&1; then
-        ok "${name} already loaded — skipping"
-        return
+        if [[ $IS_UPGRADE -eq 1 ]]; then
+            # Upgrade: replace existing image so the new version is actually used
+            echo "  Removing old ${name} before loading new version..."
+            docker rmi "$name" >/dev/null 2>&1 || true
+        else
+            ok "${name} already loaded — skipping"
+            return
+        fi
     fi
     echo "  Loading ${name} from $(basename "$tarball") ($(du -h "$tarball" | awk '{print $1}'))..."
     gunzip -c "$tarball" | docker load
@@ -552,3 +597,17 @@ cat <<EOF
   Results will appear in  : ${INSTALL_DIR}/results/
 
 EOF
+
+if [[ $IS_UPGRADE -eq 1 && -n "$BACKUP_DIR" ]]; then
+    echo "${C_YEL}  Upgrade backup (safe to delete once verified):${C_RST}"
+    echo "    ${BACKUP_DIR}/"
+    for _f in "$BACKUP_DIR"/*; do
+        [[ -f "$_f" ]] && echo "      $(basename "$_f")  ($(du -sh "$_f" 2>/dev/null | cut -f1))"
+    done
+    echo ""
+    echo "  To roll back, restore from backup:"
+    echo "    cp ${BACKUP_DIR}/.env              ${INSTALL_DIR}/"
+    echo "    cp ${BACKUP_DIR}/license.json      ${INSTALL_DIR}/license/"
+    echo "    cp ${BACKUP_DIR}/orders_nxt.db     ${INSTALL_DIR}/log/"
+    echo ""
+fi

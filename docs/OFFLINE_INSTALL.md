@@ -256,166 +256,251 @@ cd deploy/usb && sha256sum -c SHA256SUMS
 
 ---
 
-## 6. 설치자 측 — 설치 실행
+## 6. 설치자 측 — 공통 준비 (신규·업그레이드 공통)
 
-> **현재 배포 파일:** `usb_bundle_v2.tar` (USB 루트에 위치)
-
-### 6.1 USB 마운트
+### 6.1 USB 마운트 및 번들 해제
 
 ```bash
-# USB 장치 확인 (보통 /dev/sdb1 또는 /dev/sdc1)
+# 1) USB 장치 확인 (보통 /dev/sdb1 또는 /dev/sdc1)
 lsblk
-
-# 마운트
 sudo mkdir -p /mnt/usb
-sudo mount /dev/sdb1 /mnt/usb   # 장치명은 lsblk 결과에 맞게 변경
+sudo mount /dev/sdb1 /mnt/usb          # 장치명은 lsblk 결과에 맞게 변경
 
-# 번들 파일 확인
-ls /mnt/usb/usb_bundle_v2.tar
-```
+# 2) 번들 파일 확인
+ls /mnt/usb/usb_bundle_v3.tar
 
-### 6.2 번들 압축 해제
-
-```bash
-# 작업 디렉터리 생성 후 압축 해제
+# 3) 압축 해제
 sudo mkdir -p /opt/roche_install
-sudo tar -xf /mnt/usb/usb_bundle_v2.tar -C /opt/roche_install
+sudo tar -xf /mnt/usb/usb_bundle_v3.tar -C /opt/roche_install
 
-# 압축 해제 결과 확인 — install.sh 가 보이면 정상
+# 4) 결과 확인 — install.sh 가 보이면 정상
 ls /opt/roche_install/usb/
 #   install.sh  README.txt  SHA256SUMS  app/  data/  docker/  images/  license/  liftover/  scripts/
 ```
 
-### 6.3 설치 실행
+---
+
+## 7. 신규 설치 (처음 설치하는 서버)
 
 ```bash
 cd /opt/roche_install/usb
 sudo bash install.sh
 ```
 
-**그게 전부입니다.** 스크립트가 11단계로 진행하면서 각 단계마다 다음과 같이
-출력합니다:
+기본 설치 경로는 `/opt/roche_nxt` 입니다. 다른 경로를 원하면:
 
-```
-[1/11] Preflight checks
-──────────────────────────────────────────────────────────────────────
-  ✓ Running as root
-  ✓ Detected OS: Ubuntu 22.04.3 LTS
-  ✓ Architecture: x86_64
-  ✓ Bundle structure looks valid
-  ✓ Disk space: 412 GB free at /opt
-  ✓ All checksums match
-
-[2/11] Docker Engine (offline install)
-──────────────────────────────────────────────────────────────────────
-  ! Docker is not installed. Running offline installer...
-[docker] Detected: Ubuntu 22.04.3 LTS — using ubuntu-22.04/
-[docker] Installing 5 .deb packages...
-  ✓ Packages installed
-  ✓ Docker daemon is up
-  ✓ Docker:  24.0.7
-  ✓ Compose: 2.21.0
-[docker] Docker is ready.
-  ✓ Docker installed
-  ✓ Docker Compose plugin available (v2.21.0)
-
-...
-
-[11/11] Verify
-──────────────────────────────────────────────────────────────────────
-  ✓ HTTP probe passed on port 8080
-  Licensed features:
-      customer : ABC Hospital
-      expires  : 2027-04-20
-      dev_mode : False
-      longitudinal: True
-      igv         : True
-      hg19_view   : False
-
-============================================================
-  Installation complete.
-============================================================
-
-  Web UI     : http://<this-server-ip>:8080/
-  Install dir: /opt/roche_nxt
-  ...
+```bash
+sudo bash install.sh --install-dir /home/alice/roche_nxt_v3
 ```
 
-### 6.3 실패했을 때
+스크립트가 11단계로 진행합니다:
 
-스크립트는 **실패한 단계 번호를 명시하고 즉시 중단**합니다. 메시지를 고친 뒤
-같은 명령을 다시 실행하세요. 이미 끝난 단계는 자동으로 감지되어
-재실행되지 않습니다(idempotent).
+```
+[1/11] Preflight checks        ✓ OS, 아키텍처, 디스크, 체크섬
+[2/11] Docker Engine           ✓ 이미 설치된 경우 자동 스킵
+[3/11] User/Group              ✓ roche_nxt 사용자/그룹
+[4/11] Install directory       ✓ /opt/roche_nxt 생성 + 코드 배포
+[5/11] Docker images           ✓ roche_nxt_web, roche_nxt_analysis 로드
+[6/11] Reference data          ✓ roche_data.tar.gz 압축 해제 (최초 1회)
+[7/11] License                 ✓ license.json 설치
+[8/11] Runtime directories     ✓ results/, log/, fastq/ 등 생성
+[9/11] .env                    ✓ HOST_DIR, UID/GID, 포트 자동 설정
+[10/11] Stack start            ✓ docker compose up -d
+[11/11] Health check           ✓ HTTP 200 on :8080
+```
 
-대표적인 실패와 해결:
-
-| 메시지                                         | 원인                                | 해결                                    |
-|------------------------------------------------|-------------------------------------|-----------------------------------------|
-| `ls: cannot access '...usb_bundle_v2.tar'`    | USB 마운트 실패 또는 파일 위치 오류 | `lsblk` 재확인 후 올바른 장치 마운트    |
-| `install.sh: No such file or directory`        | tar 해제 경로 오류                  | `ls /opt/roche_install/usb/` 로 구조 재확인 |
-| `Unsupported OS: ...`                          | 지원 OS 아님                        | 담당자에게 OS 버전 전달 → 재번들링       |
-| `No packages at docker/ubuntu-XX.XX/`          | 해당 OS 용 .deb 미포함              | 담당자에게 재번들링 요청                |
-| `dpkg dependencies failed`                     | OS 기본 패키지 누락                 | 의존성 .deb 추가 포함 필요              |
-| `LicenseError: signature verification failed` | 잘못된 라이선스 또는 공개키 불일치  | 담당자에게 라이선스 재발급 요청         |
-| `Checksum verification failed`                 | USB 손상/복사 불완전                | USB 재작성 또는 다른 매체로 재전송      |
+완료 후 웹 UI: `http://<서버IP>:8080/`
 
 ---
 
-## 7. 설치 후 확인 사항
+## 8. 업그레이드 (기존 설치 디렉터리에 덮어쓰기)
 
-### 7.1 동작 확인
+### 8.1 보존되는 것 vs 교체되는 것
+
+| 항목 | 업그레이드 동작 | 이유 |
+|------|----------------|------|
+| `results/` | **보존** | 기존 분석 결과 유지 |
+| `log/orders_nxt.db` | **보존** | 오더 이력 전체 유지 |
+| `log/*.log` | **보존** | 과거 실행 로그 유지 |
+| `fastq/` | **보존** | 업로드된 FASTQ 유지 |
+| `work/` | **보존** | Nextflow 캐시 유지 (resume 가능) |
+| `bed/` | **보존** | 커스텀 BED 유지 |
+| `data/` | **보존** | 레퍼런스 데이터 (재설치 불필요) |
+| `license/license.json` | **보존** | 기존 라이선스 그대로 |
+| `.env` | **보존** (경로·UID만 갱신) | 커스텀 설정 유지 |
+| `docker-compose.yml` | **교체** | 새 버전 적용 |
+| `main.nf`, `nextflow.config` | **교체** | 새 파이프라인 |
+| `modules/`, `workflows/`, `conf/` | **교체** | 새 모듈 |
+| Docker 이미지 | **교체** | 아래 절차대로 |
+
+> `results/`, `log/`, `fastq/`는 스크립트가 건드리지 않습니다.
+> 업그레이드 전 별도 백업은 **필수가 아니지만**, 아래 § 8.2의 핵심 파일 백업은 권장합니다.
+
+### 8.2 업그레이드 전 핵심 파일 백업 (자동)
+
+`install.sh`는 기존 설치 디렉터리를 감지하면 **자동으로** 3개 파일을 백업합니다.
+
+```
+[3b] Upgrade guard
+  ✓ Existing installation detected — creating safety backup before upgrade
+  ✓ Backup created: /home/alice/roche_nxt_v2_backup_20260523_151200/
+  ✓   backed up: .env
+  ✓   backed up: license.json
+  ✓   backed up: orders_nxt.db
+```
+
+- 백업 경로: `<INSTALL_DIR>_backup_<날짜시각>/`
+- 백업 대상: `.env`, `license/license.json`, `log/orders_nxt.db`
+- `results/`, `fastq/`는 install.sh가 건드리지 않으므로 백업 불필요
+
+설치 완료 메시지에도 롤백 명령이 출력됩니다:
+
+```
+  Upgrade backup (safe to delete once verified):
+    /home/alice/roche_nxt_v2_backup_20260523_151200/
+      .env           (2.1K)
+      license.json   (218B)
+      orders_nxt.db  (48K)
+
+  To roll back, restore from backup:
+    cp .../backup/.env           /home/alice/roche_nxt_v2/
+    cp .../backup/license.json   /home/alice/roche_nxt_v2/license/
+    cp .../backup/orders_nxt.db  /home/alice/roche_nxt_v2/log/
+```
+
+### 8.3 기존 스택 중지
 
 ```bash
-cd /opt/roche_nxt
-docker compose ps                       # 컨테이너 상태
-docker compose logs -f roche-nxt-web    # 실시간 로그 (Ctrl-C로 종료)
+INSTALL_DIR=/home/alice/roche_nxt_v2   # 기존 설치 경로로 변경
 
-curl http://localhost:8080/api/features | python3 -m json.tool
+cd "$INSTALL_DIR"
+docker compose down
 ```
 
-### 7.2 기본 디렉터리
+> `docker rmi`는 불필요합니다. install.sh가 업그레이드 모드를 감지하면
+> 구 이미지를 자동으로 교체합니다.
 
-```
-/opt/roche_nxt/
-├── docker-compose.yml        ← 프로덕션 버전
-├── .env                      ← 경로/UID/포트 자동 설정됨
-├── license/license.json      ← 0444 (읽기전용)
-├── data/                     ← 레퍼런스 게놈/BED 등
-├── fastq/                    ← 고객이 여기에 원본 FASTQ 업로드
-├── bed/                      ← 고객이 BED 추가 시
-├── results/                  ← 분석 산출물 (자동 생성)
-├── work/                     ← Nextflow 작업 디렉터리
-├── log/                      ← 웹 UI + 파이프라인 로그 + SQLite DB
-└── liftover/                 ← hg38→hg19 chain (hg19_view 기능용)
-```
-
-### 7.3 일상 운영 명령
-
-`/opt/roche_nxt/` 에서:
+### 8.4 install.sh 실행 (업그레이드)
 
 ```bash
-docker compose ps                       # 상태
-docker compose restart roche-nxt-web    # 재시작
+cd /opt/roche_install/usb
+sudo bash install.sh --install-dir /home/alice/roche_nxt_v2
+```
+
+스크립트가 기존 디렉터리를 감지해 다음과 같이 동작합니다:
+
+```
+[4/11] Install directory
+  ✓ .env already exists — preserved
+  ✓ Nextflow pipeline installed (28 .nf files)
+
+[6/11] Reference data
+  ✓ data/ already exists — skipping extraction   ← 재설치 안 함
+
+[7/11] License
+  ✓ Existing license retained at .../license.json  ← 기존 유지
+
+[8/11] Runtime directories
+  ✓ results/ already exists
+  ✓ log/ already exists
+  ✓ fastq/ already exists
+  ...
+```
+
+### 8.5 업그레이드 후 확인
+
+```bash
+cd /home/alice/roche_nxt_v2
+docker compose ps                       # 두 컨테이너 Up 확인
+curl http://localhost:8080/api/features | python3 -m json.tool  # 라이선스·버전 확인
+```
+
+웹 UI에서 기존 오더 이력이 그대로 보이면 업그레이드 성공입니다.
+
+### 8.6 업그레이드 실패 시 롤백
+
+install.sh 완료 메시지에 출력된 백업 경로를 사용합니다.
+
+```bash
+INSTALL_DIR=/home/alice/roche_nxt_v2
+BACKUP_DIR="${INSTALL_DIR}_backup_<날짜시각>"   # 설치 완료 메시지에서 확인
+
+# 스택 중지
+cd "$INSTALL_DIR"
+docker compose down 2>/dev/null || true
+
+# 핵심 파일 복원 (install.sh가 완료 메시지에 복원 명령을 그대로 출력해 줌)
+cp "$BACKUP_DIR/.env"          "${INSTALL_DIR}/"
+cp "$BACKUP_DIR/license.json"  "${INSTALL_DIR}/license/"
+cp "$BACKUP_DIR/orders_nxt.db" "${INSTALL_DIR}/log/"
+
+# 이전 버전 이미지가 남아있으면 그대로 재기동; 없으면 구 USB 번들로 재설치
+docker compose up -d
+```
+
+---
+
+## 9. 설치 실패 시 점검
+
+스크립트는 **실패한 단계 번호를 명시하고 즉시 중단**합니다. 원인 해결 후
+같은 명령을 다시 실행하면 됩니다 (완료된 단계는 자동 스킵).
+
+| 메시지 | 원인 | 해결 |
+|--------|------|------|
+| `ls: cannot access '...usb_bundle_v3.tar'` | USB 마운트 실패 | `lsblk` 재확인 후 올바른 장치 마운트 |
+| `install.sh: No such file or directory` | tar 해제 경로 오류 | `ls /opt/roche_install/usb/` 확인 |
+| `Unsupported OS: ...` | 지원 OS 아님 | 담당자에게 OS 버전 전달 → 재번들링 |
+| `No packages at docker/ubuntu-XX.XX/` | 해당 OS 용 .deb 미포함 | 담당자에게 재번들링 요청 |
+| `dpkg dependencies failed` | OS 기본 패키지 누락 | 의존성 .deb 추가 포함 필요 |
+| `LicenseError: signature verification failed` | 라이선스 불일치 | 담당자에게 라이선스 재발급 요청 |
+| `Checksum verification failed` | USB 손상/복사 불완전 | USB 재작성 또는 다른 매체로 재전송 |
+
+---
+
+## 10. 설치 후 일상 운영
+
+### 10.1 디렉터리 구조
+
+```
+<INSTALL_DIR>/
+├── docker-compose.yml    ← 프로덕션 버전 (업그레이드 시 교체됨)
+├── .env                  ← 경로/UID/포트 (업그레이드 시 보존)
+├── license/
+│   └── license.json      ← 0444 (읽기전용)
+├── data/                 ← 레퍼런스 게놈/BED 등
+├── fastq/                ← FASTQ 업로드 경로
+├── bed/                  ← 커스텀 BED
+├── results/              ← 분석 산출물
+├── work/                 ← Nextflow 작업 디렉터리
+├── log/
+│   ├── orders_nxt.db     ← 오더 이력 (SQLite)
+│   └── *.log             ← 파이프라인 로그
+└── liftover/             ← hg38→hg19 chain
+```
+
+### 10.2 운영 명령
+
+```bash
+cd <INSTALL_DIR>
+docker compose ps                       # 상태 확인
+docker compose restart roche-nxt-web    # 웹 UI 재시작
 docker compose down                     # 중지
 docker compose up -d                    # 시작
 docker compose logs --tail=100          # 로그
 ```
 
-라이선스 갱신·기능 추가 등 운영 시나리오는 `docs/OPERATIONS.md` § 4, § 6
-을 참고하세요.
+라이선스 갱신·기능 추가 등은 `docs/OPERATIONS.md` § 4, § 6 참고.
 
 ---
 
-## 8. 제거/재설치
-
-완전 제거:
+## 11. 완전 제거
 
 ```bash
-cd /opt/roche_nxt
+cd <INSTALL_DIR>
 docker compose down
 docker image rm roche_nxt_web:latest roche_nxt_analysis:latest
 cd /
-sudo rm -rf /opt/roche_nxt
+sudo rm -rf <INSTALL_DIR>
 # (선택) Docker 자체도 제거
 sudo apt-get purge -y docker-ce docker-ce-cli containerd.io \
     docker-buildx-plugin docker-compose-plugin
@@ -425,7 +510,7 @@ sudo apt-get purge -y docker-ce docker-ce-cli containerd.io \
 
 ---
 
-## 9. 체크리스트
+## 12. 체크리스트
 
 ### 담당자
 
@@ -437,14 +522,21 @@ sudo apt-get purge -y docker-ce docker-ce-cli containerd.io \
 - [ ] USB 총 용량 확인 후 복사 완료 (`sync` 필수)
 - [ ] 라이선스 별도 사본 백업 (재전송용)
 
-### 설치자
+### 설치자 — 신규 설치
 
-- [ ] `cat /etc/os-release` 로 OS 버전 담당자에 공유
-- [ ] 고객 서버에서 `sudo` 권한 확보
 - [ ] USB 마운트 확인 (`lsblk` → `sudo mount /dev/sdXn /mnt/usb`)
-- [ ] `ls /mnt/usb/usb_bundle_v2.tar` 로 번들 파일 존재 확인
-- [ ] `sudo tar -xf /mnt/usb/usb_bundle_v2.tar -C /opt/roche_install` 압축 해제
-- [ ] `ls /opt/roche_install/usb/install.sh` 로 해제 결과 확인
-- [ ] `cd /opt/roche_install/usb && sudo bash install.sh` 실행, 11 단계 모두 ✓
+- [ ] `ls /mnt/usb/usb_bundle_v3.tar` 번들 파일 존재 확인
+- [ ] `sudo tar -xf /mnt/usb/usb_bundle_v3.tar -C /opt/roche_install` 해제
+- [ ] `cd /opt/roche_install/usb && sudo bash install.sh` 실행, 11단계 모두 ✓
 - [ ] 웹 UI 접속 확인 (`http://<ip>:8080/`)
 - [ ] 테스트 FASTQ 1세트 업로드 후 파이프라인 완주 확인
+
+### 설치자 — 업그레이드
+
+- [ ] 기존 설치 경로 확인 (예: `/home/alice/roche_nxt_v2`)
+- [ ] 핵심 파일 백업: `.env`, `license.json`, `orders_nxt.db` (§ 8.2)
+- [ ] `docker compose down` 완료
+- [ ] USB 마운트 + 번들 해제 (§ 6.1)
+- [ ] `sudo bash install.sh --install-dir <기존경로>` 실행, 11단계 모두 ✓
+- [ ] 웹 UI에서 기존 오더 이력 확인
+- [ ] 테스트 분석 1건 실행 확인
