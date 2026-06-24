@@ -985,7 +985,8 @@ tbody tr:hover{background:#F8FAFC}
                 <div class="form-group">
                   <label>기본 레퍼런스</label>
                   <select id="set-default_reference">
-                    <option value="hg38">hg38</option>
+                    <option value="hg38">hg38 (GRCh38)</option>
+                    <option value="hg19">hg19 (GRCh37)</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -1439,6 +1440,13 @@ tbody tr:hover{background:#F8FAFC}
                   <label>cNumber / ID</label>
                   <input type="text" id="vl-new-cnumber" placeholder="예: rs123 또는 c.123A>T">
                 </div>
+                <div class="form-group" id="vlNewGenomeGroup" style="display:none;min-width:90px;max-width:110px">
+                  <label>Genome</label>
+                  <select id="vl-new-genome">
+                    <option value="hg38">hg38</option>
+                    <option value="hg19">hg19</option>
+                  </select>
+                </div>
                 <div class="form-group" id="vlNewPosGroup" style="display:none;min-width:80px">
                   <label>Chr</label>
                   <input type="text" id="vl-new-chrom" placeholder="chr1">
@@ -1788,7 +1796,8 @@ tbody tr:hover{background:#F8FAFC}
           <div class="form-group">
             <label>레퍼런스</label>
             <select id="ord-reference">
-              <option value="hg38">hg38</option>
+              <option value="hg38">hg38 (GRCh38)</option>
+              <option value="hg19">hg19 (GRCh37)</option>
             </select>
           </div>
           <div class="form-group">
@@ -3101,6 +3110,11 @@ function vlRenderTable() {
       + '<td><input type="number" value="' + (r.pos||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'pos\',this.value)" style="min-width:65px"></td>'
       + '<td><input value="' + escapeHtml(r.ref||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'ref\',this.value)" style="min-width:35px;text-transform:uppercase"></td>'
       + '<td><input value="' + escapeHtml(r.alt||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'alt\',this.value)" style="min-width:35px;text-transform:uppercase"></td>'
+      + '<td><select onchange="vlUpdateField(\'' + r.id + '\',\'genome\',this.value)" style="font-size:.78rem;padding:2px 4px;min-width:60px">'
+      +   '<option value="hg38"' + ((!r.genome||r.genome==="hg38")?" selected":"") + '>hg38</option>'
+      +   '<option value="hg19"' + (r.genome==="hg19"?" selected":"") + '>hg19</option>'
+      +   '<option value="any"' + (r.genome==="any"?" selected":"") + '>any</option>'
+      + '</select></td>'
       + '<td><input value="' + escapeHtml(r.gene||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'gene\',this.value)" style="min-width:55px"></td>'
       + '<td><input value="' + escapeHtml(r.category||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'category\',this.value)" style="min-width:60px"></td>'
       + '<td><input value="' + escapeHtml(r.ratio||'') + '" onchange="vlUpdateField(\'' + r.id + '\',\'ratio\',this.value)" style="min-width:55px"></td>'
@@ -3139,11 +3153,12 @@ function vlDeleteEntry(entryId) {
 function vlToggleNewForm() {
   var mode = document.getElementById('vl-new-entry_type').value;
   var isCnum = mode === 'cnumber';
-  document.getElementById('vlNewCnumGroup').style.display = isCnum ? '' : 'none';
-  document.getElementById('vlNewPosGroup').style.display  = isCnum ? 'none' : '';
-  document.getElementById('vlNewPosGroup2').style.display = isCnum ? 'none' : '';
-  document.getElementById('vlNewRefGroup').style.display  = isCnum ? 'none' : '';
-  document.getElementById('vlNewAltGroup').style.display  = isCnum ? 'none' : '';
+  document.getElementById('vlNewCnumGroup').style.display   = isCnum ? '' : 'none';
+  document.getElementById('vlNewGenomeGroup').style.display = isCnum ? 'none' : '';
+  document.getElementById('vlNewPosGroup').style.display    = isCnum ? 'none' : '';
+  document.getElementById('vlNewPosGroup2').style.display   = isCnum ? 'none' : '';
+  document.getElementById('vlNewRefGroup').style.display    = isCnum ? 'none' : '';
+  document.getElementById('vlNewAltGroup').style.display    = isCnum ? 'none' : '';
 }
 
 function vlAddEntry() {
@@ -3157,6 +3172,7 @@ function vlAddEntry() {
   var category = (document.getElementById('vl-new-category').value || '').trim();
   var ratio    = (document.getElementById('vl-new-ratio').value || '').trim();
   var note     = (document.getElementById('vl-new-note').value || '').trim();
+  var genome   = (document.getElementById('vl-new-genome') ? document.getElementById('vl-new-genome').value : 'hg38');
 
   if (entry_type === 'cnumber' && !cnumber) { showToast('cNumber를 입력해주세요.', 'error'); return; }
   if (entry_type === 'position' && (!chrom || !pos)) { showToast('Chr과 Position을 입력해주세요.', 'error'); return; }
@@ -3168,7 +3184,7 @@ function vlAddEntry() {
       list_type: vlCurrentType, entry_type: entry_type,
       cnumber: cnumber, chrom: chrom, pos: parseInt(pos) || 0,
       ref: ref, alt: alt, gene: gene,
-      category: category, ratio: ratio, note: note
+      category: category, ratio: ratio, note: note, genome: genome
     })
   }).then(function(res) {
     if (res.success) {
@@ -5082,7 +5098,7 @@ function openEditModal(orderId) {
     document.getElementById('ord-diagnosis').value = o.diagnosis || '';
     document.getElementById('ord-doctor_comment').value = o.doctor_comment || '';
     document.getElementById('ord-sample_name').value = o.sample_name || '';
-    document.getElementById('ord-reference').value = 'hg38';
+    document.getElementById('ord-reference').value = o.reference || 'hg38';
     document.getElementById('ord-af_threshold').value = o.af_threshold || 0.005;
     document.getElementById('ord-bed_file').value = o.bed_file || '';
     document.getElementById('ord-delete_intermediate').checked = o.delete_intermediate === 'Y';
@@ -5180,7 +5196,7 @@ function resetOrderForm() {
 
 function loadDefaultSettings() {
   apiFetch('/api/settings').then(function(s) {
-    document.getElementById('ord-reference').value = 'hg38';
+    document.getElementById('ord-reference').value = s.default_reference || 'hg38';
     if (s.default_af_threshold) document.getElementById('ord-af_threshold').value = s.default_af_threshold;
     if (s.delete_intermediate) document.getElementById('ord-delete_intermediate').checked = s.delete_intermediate === 'Y';
     // Panel selector: show only when both panels enabled
@@ -5261,7 +5277,7 @@ function submitOrder() {
     sample_name: sampleName,
     r1_fastq: selectedFastq ? selectedFastq.r1 : '',
     r2_fastq: selectedFastq ? selectedFastq.r2 : '',
-    reference: 'hg38',
+    reference: document.getElementById('ord-reference').value || 'hg38',
     af_threshold: parseFloat(document.getElementById('ord-af_threshold').value) || 0.005,
     bed_file: document.getElementById('ord-bed_file').value,
     delete_intermediate: document.getElementById('ord-delete_intermediate').checked ? 'Y' : 'N',
@@ -5475,7 +5491,7 @@ function loadSettings() {
     if (s.max_concurrent_samples !== undefined) document.getElementById('set-max_concurrent_samples').value = s.max_concurrent_samples;
     if (s.max_cpus !== undefined) document.getElementById('set-max_cpus').value = s.max_cpus;
     if (s.max_memory !== undefined) document.getElementById('set-max_memory').value = s.max_memory;
-    document.getElementById('set-default_reference').value = 'hg38';
+    document.getElementById('set-default_reference').value = s.default_reference || 'hg38';
     if (s.default_af_threshold !== undefined) document.getElementById('set-default_af_threshold').value = s.default_af_threshold;
     document.getElementById('set-delete_intermediate').checked = s.delete_intermediate === 'Y';
     var lcb = document.getElementById('set-longitudinal_enabled');
@@ -5569,7 +5585,7 @@ function saveSettings() {
     max_cpus: document.getElementById('set-max_cpus').value,
     max_memory: document.getElementById('set-max_memory').value,
     max_concurrent_samples: document.getElementById('set-max_concurrent_samples').value,
-    default_reference: 'hg38',
+    default_reference: document.getElementById('set-default_reference').value || 'hg38',
     default_af_threshold: document.getElementById('set-default_af_threshold').value,
     delete_intermediate: document.getElementById('set-delete_intermediate').checked ? 'Y' : 'N',
     longitudinal_enabled: (document.getElementById('set-longitudinal_enabled') && document.getElementById('set-longitudinal_enabled').checked) ? 'true' : 'false',

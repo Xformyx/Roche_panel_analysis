@@ -157,12 +157,17 @@ workflow {
 
         SELECT_REPORT(select_ann_ch, select_germline_ch, select_followup_ch, blocklist)
 
-        LONGITUDINAL(
-            final_bam_ch,
-            SELECT_REPORT.out.reporters,
-            file(genome.bed_longit),
-            blocklist
-        )
+        if (genome.bed_longit) {
+            LONGITUDINAL(
+                final_bam_ch,
+                SELECT_REPORT.out.reporters,
+                file(genome.bed_longit),
+                blocklist,
+                bsgenome_ref
+            )
+        } else {
+            log.warn "Longitudinal analysis skipped: bed_longit is not configured for reference '${params.reference}'"
+        }
 
     } else {
 
@@ -260,12 +265,17 @@ workflow {
 
         // ── 6. Longitudinal Analysis (optional) ──────────────────
         if (params.run_longitudinal && params.run_select_reporter) {
-            LONGITUDINAL(
-                final_bam_ch,
-                SELECT_REPORT.out.reporters,
-                file(genome.bed_longit),
-                blocklist
-            )
+            if (genome.bed_longit) {
+                LONGITUDINAL(
+                    final_bam_ch,
+                    SELECT_REPORT.out.reporters,
+                    file(genome.bed_longit),
+                    blocklist,
+                    bsgenome_ref
+                )
+            } else {
+                log.warn "Longitudinal analysis skipped: bed_longit is not configured for reference '${params.reference}'"
+            }
         }
 
     }

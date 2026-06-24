@@ -7,6 +7,7 @@ process LONGITUDINAL_ANALYSIS {
     tuple val(sample_id), path(followup_bam), path(followup_bai), path(reporters_txt)
     path  target_bed
     path  blocklist
+    val   bsgenome
 
     output:
     tuple val(sample_id), path("${sample_id}_longitudinal_analysis.csv"), emit: results
@@ -20,7 +21,7 @@ process LONGITUDINAL_ANALYSIS {
         --blocklist        ${blocklist} \
         --blist_type       variant \
         --output           ${sample_id}_longitudinal_analysis.csv \
-        --reference        BSgenome.Hsapiens.UCSC.hg38 \
+        --reference        ${bsgenome} \
         --reads_threshold  ${params.la_reads_threshold} \
         --pvalue_threshold ${params.la_pvalue_threshold} \
         --vaf_threshold    ${params.la_vaf_threshold} \

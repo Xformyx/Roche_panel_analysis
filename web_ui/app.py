@@ -283,11 +283,16 @@ def init_db():
     for col, coldef in [
         ("category", "TEXT DEFAULT ''"),
         ("ratio",    "TEXT DEFAULT ''"),
+        ("genome",   "TEXT DEFAULT 'hg38'"),   # 'hg38' | 'hg19' | 'any'
     ]:
         try:
             conn.execute(f"ALTER TABLE variant_lists ADD COLUMN {col} {coldef}")
         except sqlite3.OperationalError:
             pass
+    # Back-fill genome='any' for cnumber and gene entries (reference-independent)
+    conn.execute(
+        "UPDATE variant_lists SET genome='any' WHERE entry_type IN ('cnumber','gene') AND (genome IS NULL OR genome='hg38')"
+    )
 
     # Legacy: unused columns / settings keys removed from UI
     try:
@@ -820,7 +825,9 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
     os.makedirs(LOG_DIR, exist_ok=True)
 
     af = order.get("af_threshold") or 0.005
-    ref = "hg38"
+    ref = order.get("reference") or "hg38"
+    if ref not in ("hg38", "hg19"):
+        ref = "hg38"
 
     # Read baseline params from settings DB (fallback to nextflow.config defaults)
     settings = get_all_settings()
@@ -1560,7 +1567,7 @@ def api_create_order():
         sample_name,
         r1_fastq,
         r2_fastq,
-        "hg38",
+        data.get("reference", "hg38") if data.get("reference") in ("hg38", "hg19") else "hg38",
         data.get("profile", "docker"),
         float(data.get("af_threshold", 0.005)),
         data.get("bed_file", ""),
@@ -1633,7 +1640,7 @@ def api_update_order(order_id):
         if col in data:
             val = data[col]
             if col == "reference":
-                val = "hg38"
+                val = val if val in ("hg38", "hg19") else "hg38"
             if col == "followup_order_ids" and isinstance(val, list):
                 val = ",".join(val)
             if col == "use_umi":
@@ -2747,7 +2754,8 @@ def api_vcf_data(order_id):
         return gene, effect, impact, transcript, hgvs_c, hgvs_p
 
     try:
-        by_position, by_cnumber, by_gene = _build_list_lookup()
+        order_ref = order.get("reference") or "hg38"
+        by_position, by_cnumber, by_gene = _build_list_lookup(reference=order_ref)
         rows_out = []
         blacklisted = 0
         with open(fp, "r") as fh:
@@ -3313,7 +3321,8 @@ def api_get_settings():
     settings["max_cpus"] = env.get("MAX_CPUS", "0")
     settings["max_memory"] = env.get("MAX_MEMORY", "0")
     settings["max_concurrent_samples"] = env.get("MAX_CONCURRENT_SAMPLES", "0")
-    settings["default_reference"] = "hg38"
+    _def_ref = settings.get("default_reference", "hg38")
+    settings["default_reference"] = _def_ref if _def_ref in ("hg38", "hg19") else "hg38"
 
     # Longitudinal defaults (DB values take precedence)
     _sr_defaults = {
@@ -3406,7 +3415,7 @@ def api_save_settings():
         write_env_file(env)
 
     if "default_reference" in data:
-        data["default_reference"] = "hg38"
+        data["default_reference"] = data["default_reference"] if data["default_reference"] in ("hg38", "hg19") else "hg38"
 
     for k, v in data.items():
         db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))
@@ -3469,11 +3478,15 @@ def _norm_chrom(c):
     return c.lower()
 
 
-def _build_list_lookup():
-    """Return (by_position, by_cnumber, by_gene) lookup dicts for fast matching."""
+def _build_list_lookup(reference="hg38"):
+    """Return (by_position, by_cnumber, by_gene) lookup dicts for fast matching.
+
+    Position entries are filtered to genome == reference OR genome == 'any'.
+    cnumber/gene entries always match regardless of reference.
+    """
     db = get_db()
     rows = db.execute(
-        "SELECT list_type, entry_type, cnumber, chrom, pos, ref, alt, gene FROM variant_lists"
+        "SELECT list_type, entry_type, cnumber, chrom, pos, ref, alt, gene, genome FROM variant_lists"
     ).fetchall()
 
     by_position = {}  # (chrom_norm, pos, ref_u, alt_u) or (chrom_norm, pos, '', '') -> list_type
@@ -3485,6 +3498,7 @@ def _build_list_lookup():
         lt = r["list_type"]
         p  = _VL_PRIORITY.get(lt, 0)
         et = r.get("entry_type", "")
+        genome = (r.get("genome") or "hg38").strip().lower()
 
         if et == "gene":
             gene_u = (r.get("gene") or "").strip().upper()
@@ -3496,6 +3510,9 @@ def _build_list_lookup():
             if key not in by_cnumber or p > _VL_PRIORITY.get(by_cnumber[key], 0):
                 by_cnumber[key] = lt
         else:
+            # Position entries: only match if genome matches or 'any'
+            if genome not in (reference.lower(), "any"):
+                continue
             chrom = _norm_chrom(r.get("chrom") or "")
             pos   = int(r.get("pos") or 0)
             if not chrom or not pos:
@@ -3842,8 +3859,16 @@ def api_vl_create():
     if list_type not in ("blacklist", "whitelist", "onhold"):
         return jsonify({"success": False, "error": "list_type must be blacklist/whitelist/onhold"}), 400
     entry_type = data.get("entry_type", "position")
-    if entry_type not in ("cnumber", "position"):
-        return jsonify({"success": False, "error": "entry_type must be cnumber or position"}), 400
+    if entry_type not in ("cnumber", "position", "gene"):
+        return jsonify({"success": False, "error": "entry_type must be cnumber/position/gene"}), 400
+
+    # genome: 'any' for reference-independent types, else 'hg38'/'hg19'
+    if entry_type in ("cnumber", "gene"):
+        genome = "any"
+    else:
+        genome = data.get("genome", "hg38")
+        if genome not in ("hg38", "hg19", "any"):
+            genome = "hg38"
 
     now = datetime.now().isoformat()
     vid = str(uuid.uuid4())
@@ -3851,8 +3876,8 @@ def api_vl_create():
     db.execute(
         """INSERT INTO variant_lists
            (id, list_type, entry_type, cnumber, chrom, pos, ref, alt, gene, note,
-            category, ratio, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            category, ratio, genome, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             vid, list_type, entry_type,
             (data.get("cnumber") or "").strip(),
@@ -3864,6 +3889,7 @@ def api_vl_create():
             (data.get("note") or "").strip(),
             (data.get("category") or "").strip(),
             (data.get("ratio") or "").strip(),
+            genome,
             now, now,
         ),
     )
@@ -3882,7 +3908,7 @@ def api_vl_update(entry_id):
         return jsonify({"success": False, "error": "Not found"}), 404
     data = request.json or {}
     now = datetime.now().isoformat()
-    editable = ["list_type", "entry_type", "cnumber", "chrom", "pos", "ref", "alt", "gene", "note", "category", "ratio"]
+    editable = ["list_type", "entry_type", "cnumber", "chrom", "pos", "ref", "alt", "gene", "note", "category", "ratio", "genome"]
     sets = ["updated_at=?"]
     params = [now]
     for col in editable:
@@ -3892,6 +3918,8 @@ def api_vl_update(entry_id):
                 val = val.upper()
             if col == "pos":
                 val = int(val or 0)
+            if col == "genome" and val not in ("hg38", "hg19", "any"):
+                val = "hg38"
             sets.append(f"{col}=?")
             params.append(val)
     params.append(entry_id)
