@@ -1048,10 +1048,14 @@ tbody tr:hover{background:#F8FAFC}
             </div>
 
             <p id="settingsAdminNote" style="display:none;font-size:.82rem;color:var(--text-light);margin-top:4px">설정 변경은 관리자만 가능합니다.</p>
-            <div class="tab-save-row">
+            <div class="tab-save-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <button class="btn btn-primary settings-save-btn" onclick="saveSettings()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                 설정 저장
+              </button>
+              <button class="btn btn-secondary" id="restartServiceBtn" onclick="restartService()" style="display:flex;align-items:center;gap:6px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                서비스 재시작
               </button>
             </div>
             </div><!-- /stab-general -->
@@ -2270,17 +2274,19 @@ function resourceBarClass(pct) {
 /* ================================================================
    TOAST
    ================================================================ */
-function showToast(msg, type) {
+function showToast(msg, type, duration) {
   type = type || 'info';
+  duration = duration || 3000;
   var icons = {
     success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
     error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
     warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
   };
   var container = document.getElementById('toastContainer');
   var toast = document.createElement('div');
-  toast.className = 'toast toast-' + type;
+  toast.className = 'toast toast-' + (type === 'warn' ? 'warning' : type);
   toast.innerHTML = (icons[type] || '') + escapeHtml(msg);
   container.appendChild(toast);
   setTimeout(function() {
@@ -2288,7 +2294,7 @@ function showToast(msg, type) {
     toast.style.transform = 'translateX(20px)';
     toast.style.transition = 'all .3s';
     setTimeout(function() { toast.remove(); }, 300);
-  }, 3000);
+  }, duration);
 }
 
 /* ================================================================
@@ -3809,6 +3815,31 @@ function renderQCSummary(d) {
   var fastp = d.fastp || {};
   var ins = d.insert_size_umi_deduped || d.insert_size_aligned || {};
   var aln = d.alignment_umi_deduped || d.alignment_aligned || {};
+  var qs = d.qc_summary || {};
+
+  // ── Key Metrics Summary Table (6 항목) ──────────────────────────────────
+  if (Object.keys(qs).length > 0) {
+    var smRows = [
+      { label: 'Throughput (Mb)',       val: qs.throughput_mb         != null ? fmtNum(qs.throughput_mb, 1) + ' Mb' : '—' },
+      { label: 'Q30 Trimmed (%)',        val: qs.q30_trimmed_pct       != null ? qs.q30_trimmed_pct.toFixed(2) + '%'  : '—' },
+      { label: 'Mapped (%)',             val: qs.mapped_pct            != null ? qs.mapped_pct.toFixed(2) + '%'        : '—' },
+      { label: 'Duplicated (%)',         val: qs.duplicated_pct        != null ? qs.duplicated_pct.toFixed(2) + '%'    : '—' },
+      { label: 'On-Target (%)',          val: qs.ontarget_pct          != null ? qs.ontarget_pct.toFixed(2) + '%'      : '—' },
+      { label: 'On-Target Coverage (x)', val: qs.ontarget_coverage_x  != null ? qs.ontarget_coverage_x.toFixed(1) + 'x' : '—' },
+    ];
+    html += '<div style="grid-column:1/-1;margin-bottom:4px">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:.82rem">'
+      + '<thead><tr><th colspan="2" style="text-align:left;padding:6px 10px 4px;font-size:.7rem;font-weight:700;'
+      + 'color:var(--text-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border)">Key Metrics</th></tr></thead>'
+      + '<tbody>';
+    smRows.forEach(function(r) {
+      html += '<tr>'
+        + '<td style="padding:4px 10px;color:var(--text-muted);width:55%">' + r.label + '</td>'
+        + '<td style="padding:4px 10px;font-weight:600;color:var(--text-primary);text-align:right">' + r.val + '</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
 
   var meanCov = parseFloat(hs.mean_target_coverage);
   html += '<div class="qc-kpi ' + kpiClass(meanCov, 500, 100, true) + '">'
@@ -3839,11 +3870,13 @@ function renderQCSummary(d) {
     + '<div class="kpi-value">' + fmtNum(fastp.before_total_reads) + '</div>'
     + '<div class="kpi-sub">After trim: ' + fmtNum(fastp.after_total_reads) + '</div></div>';
 
-  var alnPct = parseFloat(aln.pct_pf_reads_aligned);
-  html += '<div class="qc-kpi ' + kpiClass(alnPct, 0.95, 0.85, true) + '">'
+  // Mapped % — use true rate (raw reads vs aligned) from qc_summary; fall back to Picard value
+  var mappedPct = (qs.mapped_pct != null) ? qs.mapped_pct / 100 : parseFloat(aln.pct_pf_reads_aligned);
+  var mappedSub = (qs.mapped_pct != null) ? 'vs raw reads' : 'vs trimmed reads';
+  html += '<div class="qc-kpi ' + kpiClass(mappedPct, 0.90, 0.80, true) + '">'
     + '<div class="kpi-label">Alignment Rate</div>'
-    + '<div class="kpi-value">' + fmtPct(aln.pct_pf_reads_aligned) + '</div>'
-    + '<div class="kpi-sub">Reads: ' + fmtNum(aln.total_reads) + '</div></div>';
+    + '<div class="kpi-value">' + (isNaN(mappedPct) ? '—' : (mappedPct * 100).toFixed(2) + '%') + '</div>'
+    + '<div class="kpi-sub">' + mappedSub + '</div></div>';
 
   var medIns = parseFloat(ins.median_insert_size);
   html += '<div class="qc-kpi neutral">'
@@ -5597,7 +5630,7 @@ function saveSettings() {
       if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) { renderOrderTable(); }
       loadResourceInfo();
       if (r.restart_needed) {
-        setTimeout(function() { showToast('리소스/디렉토리 변경은 즉시 적용됩니다. (.env에도 저장됨)', 'info'); }, 500);
+        setTimeout(function() { showToast('⚠ Fastq/BED 경로 변경은 .env에 저장되었습니다. 반영하려면 docker compose down && up -d 로 컨테이너를 재시작해야 합니다.', 'warn', 6000); }, 500);
       }
     } else showToast('설정 저장에 실패했습니다.', 'error');
   }).catch(function() { showToast('요청에 실패했습니다.', 'error'); });
@@ -6377,5 +6410,65 @@ function onVariantRowClick(tr) {
 </script>
 
 <script src="/static/gene_presets.js"></script>
+
+<!-- ── 서비스 재시작 오버레이 ── -->
+<div id="restartOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;
+  display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+  <div style="background:var(--bg-card,#1e2330);border-radius:12px;padding:36px 48px;text-align:center;
+    box-shadow:0 8px 32px rgba(0,0,0,.5)">
+    <div id="restartSpinner" style="width:40px;height:40px;border:3px solid var(--border,#2a3045);
+      border-top-color:var(--primary,#4e8af4);border-radius:50%;animation:spin 0.8s linear infinite;
+      margin:0 auto 16px"></div>
+    <div id="restartMsg" style="font-size:1rem;font-weight:600;color:var(--text-primary,#e2e8f0)">서비스 재시작 중...</div>
+    <div id="restartSub" style="font-size:.8rem;color:var(--text-muted,#64748b);margin-top:6px">잠시 후 자동으로 페이지가 새로고침됩니다</div>
+  </div>
+</div>
+
+<script>
+function restartService() {
+  if (!confirm('서비스를 재시작합니다. 약 10초간 연결이 끊깁니다.\n계속하시겠습니까?')) return;
+
+  var btn = document.getElementById('restartServiceBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+
+  var overlay = document.getElementById('restartOverlay');
+  overlay.style.display = 'flex';
+
+  apiFetch('/api/restart', { method: 'POST' })
+    .catch(function() {})  // Connection may drop immediately — ignore error
+    .finally(function() {
+      _pollUntilBack(0);
+    });
+}
+
+function _pollUntilBack(attempt) {
+  var maxAttempts = 40;  // 40 × 1s = 40s timeout
+  if (attempt >= maxAttempts) {
+    document.getElementById('restartMsg').textContent = '재시작 실패 또는 시간 초과';
+    document.getElementById('restartSub').textContent = '수동으로 페이지를 새로고침 해주세요 (F5)';
+    return;
+  }
+
+  if (attempt === 5) {
+    document.getElementById('restartSub').textContent = '재시작 중... (' + attempt + 's)';
+  }
+
+  setTimeout(function() {
+    fetch('/api/health', { cache: 'no-store' })
+      .then(function(r) {
+        if (r.ok) {
+          document.getElementById('restartMsg').textContent = '재시작 완료!';
+          document.getElementById('restartSub').textContent = '페이지를 새로고침합니다...';
+          setTimeout(function() { window.location.reload(); }, 800);
+        } else {
+          _pollUntilBack(attempt + 1);
+        }
+      })
+      .catch(function() {
+        _pollUntilBack(attempt + 1);
+      });
+  }, 1000);
+}
+</script>
 </body>
 </html>

@@ -2488,6 +2488,42 @@ def api_qc_data(order_id):
     result["has_qc"] = os.path.isdir(qc_dir) and bool(os.listdir(qc_dir))
     result["panel_type"] = order.get("panel_type", "exome")
 
+    # ── Computed QC summary (6 key metrics) ──────────────────────────────────
+    try:
+        fp_s   = result.get("fastp", {})
+        al_s   = result.get("alignment_aligned", {})
+        dup_s  = result.get("duplicates", {})
+        hs_s   = result.get("hs_metrics_aligned", {})
+        ot_al  = result.get("ontarget_aligned")
+
+        before_bases = float(fp_s.get("before_total_bases") or 0)
+        before_reads = float(fp_s.get("before_total_reads") or 0)
+        pf_aligned   = float(al_s.get("pf_reads_aligned") or 0)
+        total_reads  = float(al_s.get("total_reads") or 0)
+        dup_pct      = float(dup_s.get("percent_duplication") or 0)
+        mean_cov     = float(hs_s.get("mean_target_coverage") or 0)
+        after_q30    = float(fp_s.get("after_q30_rate") or 0)
+
+        summary = {}
+        if before_bases > 0:
+            summary["throughput_mb"] = round(before_bases / 1e6, 1)
+        if after_q30 > 0:
+            summary["q30_trimmed_pct"] = round(after_q30 * 100, 2)
+        if pf_aligned > 0 and before_reads > 0:
+            # True mapping rate: aligned reads vs original raw reads
+            summary["mapped_pct"] = round(pf_aligned / before_reads * 100, 2)
+        if dup_pct >= 0 and dup_s:
+            summary["duplicated_pct"] = round(dup_pct * 100, 4)
+        if ot_al is not None and total_reads > 0:
+            summary["ontarget_pct"] = round(ot_al / total_reads * 100, 2)
+        if mean_cov > 0:
+            summary["ontarget_coverage_x"] = round(mean_cov, 1)
+
+        if summary:
+            result["qc_summary"] = summary
+    except Exception:
+        pass
+
     return jsonify(result)
 
 
@@ -2524,6 +2560,17 @@ def api_qc_report_txt(order_id):
     lines.append(f"Order   : {d.get('order_name','')}")
     lines.append(f"Order ID: {order_id}")
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # QC Key Metrics Summary
+    qs = d.get("qc_summary")
+    if qs:
+        h("QC Key Metrics")
+        if "throughput_mb"      in qs: row_kv("Throughput (Mb)",         f"{qs['throughput_mb']:,.1f}")
+        if "q30_trimmed_pct"    in qs: row_kv("Q30 Trimmed (%)",         f"{qs['q30_trimmed_pct']:.2f}%")
+        if "mapped_pct"         in qs: row_kv("Mapped (%)",              f"{qs['mapped_pct']:.2f}%")
+        if "duplicated_pct"     in qs: row_kv("Duplicated (%)",          f"{qs['duplicated_pct']:.4f}%")
+        if "ontarget_pct"       in qs: row_kv("On-Target (%)",           f"{qs['ontarget_pct']:.2f}%")
+        if "ontarget_coverage_x" in qs: row_kv("On-Target Coverage (x)", f"{qs['ontarget_coverage_x']:.1f}x")
 
     # Subsampling
     sub = d.get("subsample_info")
@@ -3331,6 +3378,10 @@ def api_save_settings():
         if new_dir:
             env = env or read_env_file()
             env["FASTQ_HOST_DIR"] = new_dir
+            # Update running process immediately so new analysis runs use the new path
+            os.environ["FASTQ_HOST_DIR"] = new_dir
+            global FASTQ_HOST_DIR
+            FASTQ_HOST_DIR = new_dir
             restart_needed = True
 
     if "bed_host_dir" in data:
@@ -3338,6 +3389,9 @@ def api_save_settings():
         if new_dir:
             env = env or read_env_file()
             env["BED_HOST_DIR"] = new_dir
+            os.environ["BED_HOST_DIR"] = new_dir
+            global BED_HOST_DIR
+            BED_HOST_DIR = new_dir
             restart_needed = True
 
     for env_key in ["max_cpus", "max_memory", "max_concurrent_samples"]:
@@ -3358,6 +3412,33 @@ def api_save_settings():
         db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))
     db.commit()
     return jsonify({"success": True, "restart_needed": restart_needed})
+
+
+@app.route("/api/restart", methods=["POST"])
+def api_restart():
+    """Restart the web container via Docker socket (async — caller must poll /api/health)."""
+    import threading
+
+    def _do_restart():
+        import time
+        time.sleep(0.5)  # Allow HTTP response to be sent first
+        try:
+            subprocess.run(
+                ["docker", "restart", "roche_nxt_web"],
+                timeout=30,
+                capture_output=True,
+            )
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_do_restart, daemon=True)
+    t.start()
+    return jsonify({"success": True, "message": "재시작 요청이 전송되었습니다."})
+
+
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    return jsonify({"status": "ok"})
 
 
 # ---------------------------------------------------------------------------
