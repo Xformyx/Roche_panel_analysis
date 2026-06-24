@@ -3836,12 +3836,12 @@ function renderQCSummary(d) {
   // ── Key Metrics Summary Table (6 항목) ──────────────────────────────────
   if (Object.keys(qs).length > 0) {
     var smRows = [
-      { label: 'Throughput (Mb)',       val: qs.throughput_mb         != null ? fmtNum(qs.throughput_mb, 1) + ' Mb' : '—' },
-      { label: 'Q30 Trimmed (%)',        val: qs.q30_trimmed_pct       != null ? qs.q30_trimmed_pct.toFixed(2) + '%'  : '—' },
-      { label: 'Mapped (%)',             val: qs.mapped_pct            != null ? qs.mapped_pct.toFixed(2) + '%'        : '—' },
-      { label: 'Duplicated (%)',         val: qs.duplicated_pct        != null ? qs.duplicated_pct.toFixed(2) + '%'    : '—' },
-      { label: 'On-Target (%)',          val: qs.ontarget_pct          != null ? qs.ontarget_pct.toFixed(2) + '%'      : '—' },
-      { label: 'On-Target Coverage (x)', val: qs.ontarget_coverage_x  != null ? qs.ontarget_coverage_x.toFixed(1) + 'x' : '—' },
+      { label: 'Throughput (Mb)',              val: qs.throughput_mb        != null ? fmtNum(qs.throughput_mb, 1) + ' Mb' : '—' },
+      { label: 'Alignment Rate (%)',           val: qs.mapped_pct           != null ? qs.mapped_pct.toFixed(2) + '%'       : '—' },
+      { label: 'On-Target (%)',                val: qs.ontarget_pct         != null ? qs.ontarget_pct.toFixed(2) + '%'     : '—' },
+      { label: 'On-Target Coverage (x)',       val: qs.ontarget_coverage_x  != null ? qs.ontarget_coverage_x.toFixed(1) + 'x' : '—' },
+      { label: 'Coverage Uniformity (≥100x)', val: qs.uniformity_100x      != null ? qs.uniformity_100x.toFixed(2) + '%'  : '—' },
+      { label: 'Duplication (%)',              val: qs.duplicated_pct       != null ? qs.duplicated_pct.toFixed(2) + '%'   : '—' },
     ];
     html += '<div style="grid-column:1/-1;margin-bottom:4px">'
       + '<table style="width:100%;border-collapse:collapse;font-size:.82rem">'

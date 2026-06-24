@@ -2500,7 +2500,7 @@ def api_qc_data(order_id):
         fp_s   = result.get("fastp", {})
         al_s   = result.get("alignment_aligned", {})
         dup_s  = result.get("duplicates", {})
-        hs_s   = result.get("hs_metrics_aligned", {})
+        hs_s   = result.get("hs_metrics_umi_deduped") or result.get("hs_metrics_aligned") or {}
         ot_al  = result.get("ontarget_aligned")
 
         before_bases = float(fp_s.get("before_total_bases") or 0)
@@ -2509,22 +2509,22 @@ def api_qc_data(order_id):
         total_reads  = float(al_s.get("total_reads") or 0)
         dup_pct      = float(dup_s.get("percent_duplication") or 0)
         mean_cov     = float(hs_s.get("mean_target_coverage") or 0)
-        after_q30    = float(fp_s.get("after_q30_rate") or 0)
+        pct_100x     = float(hs_s.get("pct_target_bases_100x") or 0)
 
         summary = {}
         if before_bases > 0:
             summary["throughput_mb"] = round(before_bases / 1e6, 1)
-        if after_q30 > 0:
-            summary["q30_trimmed_pct"] = round(after_q30 * 100, 2)
         if pf_aligned > 0 and before_reads > 0:
             # True mapping rate: aligned reads vs original raw reads
             summary["mapped_pct"] = round(pf_aligned / before_reads * 100, 2)
-        if dup_pct >= 0 and dup_s:
-            summary["duplicated_pct"] = round(dup_pct * 100, 4)
         if ot_al is not None and total_reads > 0:
             summary["ontarget_pct"] = round(ot_al / total_reads * 100, 2)
         if mean_cov > 0:
             summary["ontarget_coverage_x"] = round(mean_cov, 1)
+        if pct_100x > 0:
+            summary["uniformity_100x"] = round(pct_100x * 100, 2)
+        if dup_pct >= 0 and dup_s:
+            summary["duplicated_pct"] = round(dup_pct * 100, 2)
 
         if summary:
             result["qc_summary"] = summary
@@ -2572,12 +2572,12 @@ def api_qc_report_txt(order_id):
     qs = d.get("qc_summary")
     if qs:
         h("QC Key Metrics")
-        if "throughput_mb"      in qs: row_kv("Throughput (Mb)",         f"{qs['throughput_mb']:,.1f}")
-        if "q30_trimmed_pct"    in qs: row_kv("Q30 Trimmed (%)",         f"{qs['q30_trimmed_pct']:.2f}%")
-        if "mapped_pct"         in qs: row_kv("Mapped (%)",              f"{qs['mapped_pct']:.2f}%")
-        if "duplicated_pct"     in qs: row_kv("Duplicated (%)",          f"{qs['duplicated_pct']:.4f}%")
-        if "ontarget_pct"       in qs: row_kv("On-Target (%)",           f"{qs['ontarget_pct']:.2f}%")
-        if "ontarget_coverage_x" in qs: row_kv("On-Target Coverage (x)", f"{qs['ontarget_coverage_x']:.1f}x")
+        if "throughput_mb"      in qs: row_kv("Throughput (Mb)",               f"{qs['throughput_mb']:,.1f}")
+        if "mapped_pct"         in qs: row_kv("Alignment Rate (%)",             f"{qs['mapped_pct']:.2f}%")
+        if "ontarget_pct"       in qs: row_kv("On-Target (%)",                  f"{qs['ontarget_pct']:.2f}%")
+        if "ontarget_coverage_x" in qs: row_kv("On-Target Coverage (x)",        f"{qs['ontarget_coverage_x']:.1f}x")
+        if "uniformity_100x"    in qs: row_kv("Coverage Uniformity (>=100x, %)", f"{qs['uniformity_100x']:.2f}%")
+        if "duplicated_pct"     in qs: row_kv("Duplication (%)",                f"{qs['duplicated_pct']:.2f}%")
 
     # Subsampling
     sub = d.get("subsample_info")
