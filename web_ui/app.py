@@ -74,6 +74,19 @@ def _get_flask_secret_key():
 
 app.secret_key = _get_flask_secret_key()
 
+# ---------------------------------------------------------------------------
+# Application version  (loaded from version.json alongside app.py)
+# ---------------------------------------------------------------------------
+def _load_app_version() -> str:
+    try:
+        _vpath = os.path.join(os.path.dirname(__file__), "version.json")
+        with open(_vpath, "r", encoding="utf-8") as _vf:
+            return json.load(_vf).get("version", "")
+    except Exception:
+        return ""
+
+APP_VERSION = _load_app_version()
+
 HOST_DIR = os.environ.get("HOST_DIR", "/home/ken/Roche_nxt")
 ANALYSIS_IMAGE = os.environ.get("ANALYSIS_IMAGE", "roche_nxt_analysis:latest")
 LIFTOVER_CHAIN_HG38_TO_HG19 = os.environ.get(
@@ -171,12 +184,16 @@ def _require_auth():
     ep = request.endpoint
     if ep == "static" or (request.path or "").startswith("/static/"):
         return None
-    if ep in ("index", "favicon"):
+    if ep in ("index", "favicon", "api_explorer"):
         return None
     if ep == "auth_me":
         return None
     if ep == "auth_login" and request.method == "POST":
         return None
+    # Allow API key authentication (for external CLI / LIS integration)
+    if _api_key_auth():
+        return None
+
     uid = session.get("user_id")
     if not uid:
         return jsonify({"error": "Unauthorized", "code": "auth_required"}), 401
@@ -430,6 +447,33 @@ def longitudinal_feature_enabled():
     """Settings → 일반: Longitudinal 분석 사용 여부 (신규 L 오더·변환·API)."""
     lo = get_all_settings().get("longitudinal_enabled", "true")
     return str(lo).lower() in ("true", "1", "yes", "on")
+
+
+def get_or_create_api_key() -> str:
+    """Return the stored API key, creating one if it doesn't exist yet."""
+    db = get_db()
+    row = db.execute("SELECT value FROM settings WHERE key='api_key'").fetchone()
+    if row and row["value"]:
+        return row["value"]
+    key = "rnxt-" + uuid.uuid4().hex
+    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('api_key', ?)", (key,))
+    db.commit()
+    return key
+
+
+def _api_key_auth() -> bool:
+    """Return True if the request carries a valid API key."""
+    stored = get_setting("api_key", "")
+    if not stored:
+        return False
+    # Accept X-Api-Key header or Authorization: Bearer <key>
+    via_header = request.headers.get("X-Api-Key", "")
+    via_bearer = ""
+    auth_hdr = request.headers.get("Authorization", "")
+    if auth_hdr.lower().startswith("bearer "):
+        via_bearer = auth_hdr[7:].strip()
+    candidate = via_header or via_bearer
+    return bool(candidate) and candidate == stored
 
 
 def docker_container_status(container_name, retries=3):
@@ -1216,6 +1260,22 @@ def auth_logout():
     return jsonify({"success": True})
 
 
+@app.route("/api/auth/api_key", methods=["GET"])
+def auth_get_api_key():
+    """Return (or auto-create) the API key for external CLI integration."""
+    return jsonify({"api_key": get_or_create_api_key()})
+
+
+@app.route("/api/auth/api_key/regenerate", methods=["POST"])
+def auth_regenerate_api_key():
+    """Generate a new API key, invalidating the previous one."""
+    new_key = "rnxt-" + uuid.uuid4().hex
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('api_key', ?)", (new_key,))
+    db.commit()
+    return jsonify({"api_key": new_key})
+
+
 @app.route("/api/auth/change-password", methods=["POST"])
 def auth_change_password():
     uid = session.get("user_id")
@@ -1362,7 +1422,17 @@ def _static_no_cache_for_icons(response):
 
 @app.route("/")
 def index():
-    return render_template("index.html", has_auth_session=bool(session.get("user_id")))
+    return render_template(
+        "index.html",
+        has_auth_session=bool(session.get("user_id")),
+        app_version=APP_VERSION,
+    )
+
+
+@app.route("/developer")
+def api_explorer():
+    """API Explorer — 3rd party developer guide (no auth required)."""
+    return render_template("api_explorer.html", app_version=APP_VERSION)
 
 
 @app.route("/api/features")
@@ -1744,6 +1814,77 @@ def api_force_order(order_id):
         return jsonify({"success": True, "container_id": cid})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/orders/<order_id>/report_status", methods=["POST"])
+def api_report_status(order_id):
+    """External-integration endpoint: let an external CLI/program update an order's status.
+
+    This allows a fully external Nextflow run (not managed by this Web UI's Docker control)
+    to feed its lifecycle back into the order DB so that results are visible in the UI.
+
+    Allowed transitions:
+      registered → running   (analysis just started externally)
+      running    → completed (analysis finished successfully)
+      running    → failed    (analysis finished with error)
+      registered → completed (shortcut: external run already done before this call)
+      registered → failed
+
+    Body (JSON):
+      status        required  "running" | "completed" | "failed"
+      error_message optional  error text when status="failed"
+      nf_work_dir   optional  absolute host path to Nextflow work/ dir
+      container_name optional container name for log lookup (if any)
+
+    Returns { "success": true } on success.
+    """
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "Order not found"}), 404
+
+    data = request.json or {}
+    new_status = (data.get("status") or "").strip().lower()
+    if new_status not in ("running", "completed", "failed"):
+        return jsonify({"success": False, "error": "status must be 'running', 'completed', or 'failed'"}), 400
+
+    current_status = row["status"]
+    allowed_from = {
+        "running":   ("registered",),
+        "completed": ("registered", "running"),
+        "failed":    ("registered", "running"),
+    }
+    if current_status not in allowed_from[new_status]:
+        return jsonify({
+            "success": False,
+            "error": f"Cannot transition from '{current_status}' to '{new_status}'",
+        }), 400
+
+    now = datetime.now().isoformat()
+    sets = ["status=?", "updated_at=?"]
+    params = [new_status, now]
+
+    if new_status == "running":
+        sets.append("error_message=''")
+    if new_status == "completed":
+        sets.extend(["completed_at=?", "error_message=''"])
+        params.append(now)
+    if new_status == "failed":
+        err = (data.get("error_message") or "").strip()
+        sets.append("error_message=?")
+        params.append(err)
+
+    if "nf_work_dir" in data and data["nf_work_dir"]:
+        sets.append("nf_work_dir=?")
+        params.append(str(data["nf_work_dir"]))
+    if "container_name" in data and data["container_name"]:
+        sets.append("container_name=?")
+        params.append(str(data["container_name"]))
+
+    params.append(order_id)
+    db.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id=?", params)
+    db.commit()
+    return jsonify({"success": True, "order_id": order_id, "status": new_status})
 
 
 @app.route("/api/orders/<order_id>/reannotate", methods=["POST"])

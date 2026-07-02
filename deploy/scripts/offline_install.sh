@@ -368,30 +368,47 @@ fi
 if [[ $REF_POPULATED -eq 1 ]]; then
     ok "Reference data already present at ${REF_DIR} — skipping"
 else
-    DATA_TAR=""
+    # Support both a single legacy tarball and multiple genome-specific tarballs.
+    # Search order: bundle/data/ first, then the parent directory of BUNDLE_ROOT
+    # (useful when data tars are placed alongside the app bundle on USB).
+    DATA_TARS=()
+    PARENT_ROOT="$(dirname "$BUNDLE_ROOT")"
     for cand in \
+        "${BUNDLE_ROOT}/data/roche_data_hg38.tar" \
+        "${BUNDLE_ROOT}/data/roche_data_hg38.tar.gz" \
+        "${BUNDLE_ROOT}/data/roche_data_hg19.tar" \
+        "${BUNDLE_ROOT}/data/roche_data_hg19.tar.gz" \
         "${BUNDLE_ROOT}/data/roche_data.tar.gz" \
         "${BUNDLE_ROOT}/data/roche_data.tar" \
-        "${BUNDLE_ROOT}/data/reference.tar.gz"; do
-        [[ -f "$cand" ]] && { DATA_TAR="$cand"; break; }
+        "${BUNDLE_ROOT}/data/reference.tar.gz" \
+        "${PARENT_ROOT}/roche_data_hg38.tar" \
+        "${PARENT_ROOT}/roche_data_hg38.tar.gz" \
+        "${PARENT_ROOT}/roche_data_hg19.tar" \
+        "${PARENT_ROOT}/roche_data_hg19.tar.gz" \
+        "${PARENT_ROOT}/roche_data.tar.gz" \
+        "${PARENT_ROOT}/roche_data.tar"; do
+        [[ -f "$cand" ]] && DATA_TARS+=("$cand")
     done
-    if [[ -z "$DATA_TAR" ]]; then
+    if [[ ${#DATA_TARS[@]} -eq 0 ]]; then
         warn "No reference data tarball found in bundle/data/."
         warn "The pipeline will fail at runtime without reference genome files."
         warn ""
-        warn "Expected structure under ${REF_DIR}/:"
-        warn "  refs/hg38/  — genome FASTA, dbSNP, STAR index, GTF, CTAT lib"
-        warn "  snpeff/     — SnpEff databases"
-        warn "  bed/hg38/   — panel BED files"
+        warn "Expected files under bundle/data/:"
+        warn "  roche_data_hg38.tar   — hg38 genome FASTA, BWA index, dbSNP, SnpEff, BED"
+        warn "  roche_data_hg19.tar   — hg19 genome FASTA, BWA index, dbSNP, SnpEff, BED"
+        warn "  (or a combined roche_data.tar.gz)"
         warn ""
-        warn "You can populate this directory manually and re-run the installer."
+        warn "You can populate ${REF_DIR}/ manually and re-run the installer."
         confirm "Continue without reference data?" || die "Aborted."
     else
-        echo "  Extracting $(basename "$DATA_TAR") to ${REF_DIR}/ (this may take a while)..."
-        case "$DATA_TAR" in
-            *.tar.gz|*.tgz) tar -xzf "$DATA_TAR" -C "$REF_DIR" --strip-components=1 ;;
-            *.tar)          tar -xf  "$DATA_TAR" -C "$REF_DIR" --strip-components=1 ;;
-        esac
+        for DATA_TAR in "${DATA_TARS[@]}"; do
+            echo "  Extracting $(basename "$DATA_TAR") → ${REF_DIR}/ (this may take a while)..."
+            case "$DATA_TAR" in
+                *.tar.gz|*.tgz) tar -xzf "$DATA_TAR" -C "$REF_DIR" --strip-components=1 ;;
+                *.tar)          tar -xf  "$DATA_TAR" -C "$REF_DIR" --strip-components=1 ;;
+            esac
+            ok "  $(basename "$DATA_TAR") extracted"
+        done
         ok "Reference data extracted to ${REF_DIR}"
     fi
 fi

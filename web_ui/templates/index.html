@@ -60,6 +60,7 @@ tbody tr:hover{background:#F8FAFC}
 .nav-item.active{background:rgba(37,99,235,.15);color:#fff;border-left-color:var(--primary)}
 .nav-item svg{width:20px;height:20px;flex-shrink:0}
 .sidebar-footer{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:.75rem;color:var(--text-muted)}
+.sidebar-version{text-align:center;font-size:.7rem;font-weight:600;letter-spacing:.04em;color:rgba(255,255,255,.35);margin-bottom:10px;font-family:monospace}
 .sidebar-footer-brand{margin-bottom:12px;text-align:center}
 .sidebar-footer-brand img{max-width:100%;height:auto;display:block;opacity:.95}
 
@@ -623,6 +624,9 @@ tbody tr:hover{background:#F8FAFC}
     </div>
   </nav>
   <div class="sidebar-footer">
+    {% if app_version %}
+    <div class="sidebar-version">Ver.{{ app_version }}</div>
+    {% endif %}
     <div class="sidebar-footer-brand">
       <img src="/static/leaninbio-footer.png?v=3" alt="(주)린인바이오 LeaninBio">
     </div>
@@ -1044,6 +1048,32 @@ tbody tr:hover{background:#F8FAFC}
                   <label>BED 파일 디렉토리 (호스트)</label>
                   <input type="text" id="set-bed_host_dir" placeholder="/home/ken/Roche/data/bed/hg38">
                   <span style="font-size:.72rem;color:var(--text-muted);margin-top:4px;display:block">.env 파일의 BED_HOST_DIR에 저장됩니다. 변경 후 컨테이너를 재시작해야 적용됩니다.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ===== API Key ===== -->
+            <div class="form-section" style="margin-top:20px">
+              <div class="form-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                외부 연동 API Key
+              </div>
+              <div style="margin-top:12px">
+                <div class="form-group">
+                  <label>API Key</label>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <input type="text" id="apiKeyDisplay" readonly style="flex:1;font-family:monospace;font-size:.8rem;background:var(--bg);cursor:text" placeholder="(로딩 중...)">
+                    <button class="btn btn-ghost btn-sm" onclick="copyApiKey()" title="복사" style="flex-shrink:0">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="regenerateApiKey()" title="재발급" style="flex-shrink:0;color:var(--orange,#f97316)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    </button>
+                  </div>
+                  <span style="font-size:.72rem;color:var(--text-muted);margin-top:4px;display:block">
+                    외부 LIS/LIMS 또는 CLI에서 <code>X-Api-Key: &lt;key&gt;</code> 헤더로 인증합니다.
+                    재발급 시 기존 키는 즉시 무효화됩니다.
+                  </span>
                 </div>
               </div>
             </div>
@@ -5480,6 +5510,7 @@ function toggleUmiOptions() {
 }
 
 function loadSettings() {
+  loadApiKey();
   var isAdm = currentUser && currentUser.role === 'admin';
   var note = document.getElementById('settingsAdminNote');
   if (note) note.style.display = isAdm ? 'none' : 'block';
@@ -6484,6 +6515,39 @@ function _pollUntilBack(attempt) {
         _pollUntilBack(attempt + 1);
       });
   }, 1000);
+}
+
+// ── API Key management ──────────────────────────────────────────────────────
+function loadApiKey() {
+  apiFetch('/api/auth/api_key')
+    .then(function(d) {
+      var el = document.getElementById('apiKeyDisplay');
+      if (el) el.value = d.api_key || '';
+    })
+    .catch(function() {});
+}
+
+function copyApiKey() {
+  var el = document.getElementById('apiKeyDisplay');
+  if (!el || !el.value) return;
+  navigator.clipboard.writeText(el.value).then(function() {
+    showToast('API Key를 클립보드에 복사했습니다.', 'success');
+  }).catch(function() {
+    el.select();
+    document.execCommand('copy');
+    showToast('API Key를 클립보드에 복사했습니다.', 'success');
+  });
+}
+
+function regenerateApiKey() {
+  if (!confirm('API Key를 재발급하면 기존 키는 즉시 무효화됩니다.\n계속하시겠습니까?')) return;
+  apiFetch('/api/auth/api_key/regenerate', { method: 'POST' })
+    .then(function(d) {
+      var el = document.getElementById('apiKeyDisplay');
+      if (el) el.value = d.api_key || '';
+      showToast('API Key가 재발급되었습니다.', 'success');
+    })
+    .catch(function(e) { showToast('재발급 실패: ' + (e.message || e), 'error'); });
 }
 </script>
 </body>

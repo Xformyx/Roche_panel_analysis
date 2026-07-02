@@ -1,0 +1,4 @@
+{
+    "version": "1.1.0",
+    "comment": "외부 API 연동: API Key 인증, API Explorer(/developer), report_status 엔드포인트 추가"
+}

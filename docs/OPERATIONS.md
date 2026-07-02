@@ -466,6 +466,164 @@ docker compose -f docker-compose.yml restart roche-nxt-web
 
 ---
 
+## 8. 시나리오 G: 외부 프로그램과 REST API 연동
+
+외부 LIS/LIMS·자동화 프로그램이 Web UI를 거치지 않고 분석을 제어하고,
+결과는 Web UI에서 그대로 확인하는 통합 패턴입니다.
+
+### 8-1. 방법 A — API로 생성 + API로 실행 (권장)
+
+Web UI의 Docker 관리를 그대로 활용합니다.
+추가 개발이 필요 없고, 로그·상태·QC 결과 모두 완벽하게 표시됩니다.
+
+```bash
+BASE="http://server:8080"
+
+# 1) Order 생성
+ORDER=$(curl -s -X POST "$BASE/api/orders" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sample_name":   "SAMPLE-001",
+    "r1_fastq":      "SAMPLE-001_R1.fastq.gz",
+    "r2_fastq":      "SAMPLE-001_R2.fastq.gz",
+    "bed_file":      "SNUH_bed/coords.cons.bed",
+    "reference":     "hg38",
+    "af_threshold":  0.005,
+    "use_umi":       "Y",
+    "order_name":    "외래 2026-06-26 SAMPLE-001",
+    "patient_name":  "홍길동",
+    "chart_number":  "12345678"
+  }')
+ORDER_ID=$(echo "$ORDER" | python3 -c "import sys,json; print(json.load(sys.stdin)['order_id'])")
+echo "Order ID: $ORDER_ID"
+
+# 2) 분석 실행 (Web UI의 Docker 관리 하에 실행됨)
+curl -s -X POST "$BASE/api/orders/$ORDER_ID/start"
+
+# 3) 상태 폴링 (완료까지 대기)
+while true; do
+  STATUS=$(curl -s "$BASE/api/orders/$ORDER_ID" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+  echo "Status: $STATUS"
+  [[ "$STATUS" == "completed" || "$STATUS" == "failed" ]] && break
+  sleep 30
+done
+
+# 4) QC 결과 조회
+curl -s "$BASE/api/orders/$ORDER_ID/qc_data" | python3 -m json.tool
+```
+
+---
+
+### 8-2. 방법 B — API로 생성 + 외부 CLI 실행 + 상태 보고
+
+외부 프로그램이 Nextflow를 직접 실행하는 경우입니다.
+`POST /api/orders/<id>/report_status` 엔드포인트로 상태를 Web UI DB에 반영합니다.
+
+**결과 파일 위치 규칙 (반드시 준수)**
+
+```
+<HOST_DIR>/results/<sample_name>/output/
+├── <sample_name>_vardict_annotated_vcf.txt   # 변이 테이블
+├── <sample_name>_fastp.json                  # QC (fastp)
+├── <sample_name>_alignment_metrics.txt       # Picard alignment metrics
+├── <sample_name>_markdup_metrics.txt         # Picard duplicate metrics
+├── <sample_name>_hs_metrics.txt              # Picard HS metrics
+└── ...
+```
+
+**흐름:**
+
+```bash
+BASE="http://server:8080"
+
+# 1) Order 생성
+ORDER_ID=$(curl -s -X POST "$BASE/api/orders" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sample_name": "SAMPLE-001",
+    "r1_fastq":    "SAMPLE-001_R1.fastq.gz",
+    "r2_fastq":    "SAMPLE-001_R2.fastq.gz",
+    "bed_file":    "SNUH_bed/coords.cons.bed"
+  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['order_id'])")
+
+# 2) 분석 시작 알림
+curl -s -X POST "$BASE/api/orders/$ORDER_ID/report_status" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "running"}'
+
+# 3) 외부 CLI로 Nextflow 직접 실행
+nextflow run /work_nxt/main.nf \
+  --input samplesheet.csv \
+  --outdir /opt/roche_snuh/results/SAMPLE-001 \
+  ...
+
+# 4-a) 성공 시
+curl -s -X POST "$BASE/api/orders/$ORDER_ID/report_status" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "completed"}'
+
+# 4-b) 실패 시
+curl -s -X POST "$BASE/api/orders/$ORDER_ID/report_status" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "failed", "error_message": "Exit code 1: BWA_ALIGN failed"}'
+```
+
+**허용 상태 전이:**
+
+| 현재 status | → running | → completed | → failed |
+|------------|-----------|-------------|----------|
+| registered | ✅ | ✅ | ✅ |
+| running    | ❌ | ✅ | ✅ |
+| completed  | ❌ | ❌ | ❌ |
+| failed     | ❌ | ❌ | ❌ |
+
+---
+
+### 8-3. 인증 (API Key)
+
+모든 API 호출에는 인증이 필요합니다. 외부 프로그램은 세션 쿠키 대신 **API Key**를 사용합니다.
+
+**API Key 발급:**
+1. Web UI → 설정 탭 → "외부 연동 API Key" 섹션에서 확인
+2. 또는 로그인 후: `GET /api/auth/api_key`
+3. 재발급: `POST /api/auth/api_key/regenerate`
+
+**사용 방법 (둘 중 하나):**
+```bash
+# 방법 1: X-Api-Key 헤더
+curl -H "X-Api-Key: rnxt-xxxxxxxxxxxx" http://server:8080/api/orders
+
+# 방법 2: Bearer 토큰
+curl -H "Authorization: Bearer rnxt-xxxxxxxxxxxx" http://server:8080/api/orders
+```
+
+**환경변수로 관리 (권장):**
+```bash
+export ROCHE_API_KEY="rnxt-xxxxxxxxxxxx"
+export ROCHE_BASE="http://server:8080"
+
+curl -H "X-Api-Key: $ROCHE_API_KEY" "$ROCHE_BASE/api/orders"
+```
+
+---
+
+### 8-4. 주요 API 엔드포인트 요약
+
+| Method | Path | 설명 |
+|--------|------|------|
+| `POST` | `/api/orders` | Order 생성 (sample_name, r1_fastq, r2_fastq 필수) |
+| `GET`  | `/api/orders` | Order 목록 조회 |
+| `GET`  | `/api/orders/<id>` | Order 상세 조회 (status 포함) |
+| `PUT`  | `/api/orders/<id>` | Order 메타 수정 (registered 상태에서만) |
+| `POST` | `/api/orders/<id>/start` | **방법 A**: Web UI가 Docker 실행 관리 |
+| `POST` | `/api/orders/<id>/report_status` | **방법 B**: 외부 실행 후 상태 업데이트 |
+| `GET`  | `/api/orders/<id>/qc_data` | QC 결과 JSON 조회 |
+| `GET`  | `/api/orders/<id>/qc_report.txt` | QC 리포트 텍스트 다운로드 |
+| `GET`  | `/api/orders/<id>/logs` | Nextflow/Docker 로그 조회 |
+| `DELETE` | `/api/orders/<id>/delete` | Order 삭제 |
+
+---
+
 ## 체크리스트
 
 **새 고객 배포 시**
