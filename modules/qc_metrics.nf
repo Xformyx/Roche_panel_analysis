@@ -72,7 +72,7 @@ process COLLECT_INSERT_SIZE {
 }
 
 process COUNT_READS {
-    tag "${sample_id} - ${bam_label}"
+    tag "${sample_id} - ${bam_label} [${bed_region}]"
     label 'process_medium'
     publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
@@ -82,9 +82,10 @@ process COUNT_READS {
     path  genome_dict
     path  genome_fai
     path  target_bed
+    val   bed_region   // 'capture' | 'primary' — used as suffix in output filename
 
     output:
-    tuple val(sample_id), path("${sample_id}_ontarget_reads_${bam_label}.txt"), emit: counts
+    tuple val(sample_id), path("${sample_id}_ontarget_reads_${bam_label}_${bed_region}.txt"), emit: counts
 
     script:
     """
@@ -94,6 +95,6 @@ process COUNT_READS {
         --read-filter MappedReadFilter \
         --read-filter NotSecondaryAlignmentReadFilter \
         -R ${genome_fasta} \
-    > ${sample_id}_ontarget_reads_${bam_label}.txt
+    > ${sample_id}_ontarget_reads_${bam_label}_${bed_region}.txt
     """
 }

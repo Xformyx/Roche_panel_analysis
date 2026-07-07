@@ -2,15 +2,10 @@
 #
 # Differences vs. the dev `docker-compose.yml`:
 #   * NO bind-mount of ./web_ui or ./       (source code stays inside the image)
-#   * NO DEV_MODE override                  (signed license is mandatory)
-#   * license/ is mounted read-only         (customers cannot accidentally edit it)
-#   * ENABLE_* env fallbacks are removed    (feature flags come only from the license)
+#   * All features enabled by default       (no license file required)
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml up -d
-#
-# The customer must have placed a valid signed license at
-# ./license/license.json (see LICENSE.md for details).
 #
 # Key directories (configure in .env):
 #   HOST_DIR        — Roche_nxt install root (e.g. /opt/roche_nxt)
@@ -59,7 +54,6 @@ services:
       - FASTQ_HOST_DIR=${FASTQ_HOST_DIR:-}
       - BED_HOST_DIR=${BED_HOST_DIR:-}
       - LIFTOVER_CHAIN_HG38_TO_HG19=${LIFTOVER_CHAIN_HG38_TO_HG19:-/liftover/hg38ToHg19.over.chain.gz}
-      - LICENSE_PATH=/roche_nxt/license/license.json
       - MAX_CPUS=${MAX_CPUS:-0}
       - MAX_MEMORY=${MAX_MEMORY:-0}
       - MAX_CONCURRENT_SAMPLES=${MAX_CONCURRENT_SAMPLES:-0}

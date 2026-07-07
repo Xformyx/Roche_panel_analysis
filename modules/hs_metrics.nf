@@ -4,18 +4,19 @@ process BED_TO_INTERVAL_LIST {
 
     input:
     val   sample_id
-    path  target_bed
+    path  bed_file
     path  genome_dict
+    val   out_name      // e.g. "capture" or "primary"
 
     output:
-    tuple val(sample_id), path("targets.interval_list"), emit: interval_list
+    tuple val(sample_id), val(out_name), path("${out_name}.interval_list"), emit: interval_list
 
     script:
     """
     gatk BedToIntervalList \
-        --INPUT ${target_bed} \
+        --INPUT ${bed_file} \
         --SEQUENCE_DICTIONARY ${genome_dict} \
-        --OUTPUT targets.interval_list
+        --OUTPUT ${out_name}.interval_list
     """
 }
 
@@ -25,7 +26,7 @@ process COLLECT_HS_METRICS {
     publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(sample_id), val(bam_label), path(input_bam), path(interval_list)
+    tuple val(sample_id), val(bam_label), path(input_bam), path(bait_interval_list), path(target_interval_list)
     path  genome_fasta
     path  genome_dict
     path  genome_fai
@@ -38,9 +39,9 @@ process COLLECT_HS_METRICS {
     script:
     """
     gatk CollectHsMetrics \
-        --BAIT_INTERVALS ${interval_list} \
-        --BAIT_SET_NAME KAPA_HyperCap_DS_NHL_Panel_capture_targets \
-        --TARGET_INTERVALS ${interval_list} \
+        --BAIT_INTERVALS ${bait_interval_list} \
+        --BAIT_SET_NAME KAPA_HyperCap_DS_NHL_Panel \
+        --TARGET_INTERVALS ${target_interval_list} \
         --INPUT ${input_bam} \
         --OUTPUT ${sample_id}_hs_metrics_${bam_label}.txt \
         --METRIC_ACCUMULATION_LEVEL ALL_READS \

@@ -243,7 +243,6 @@ if [[ -f "${INSTALL_DIR}/.env" ]]; then
     _backed_up=()
     for _f in \
         "${INSTALL_DIR}/.env" \
-        "${INSTALL_DIR}/license/license.json" \
         "${INSTALL_DIR}/log/orders_nxt.db"
     do
         if [[ -f "$_f" ]]; then
@@ -263,7 +262,7 @@ if [[ -f "${INSTALL_DIR}/.env" ]]; then
     warn "Upgrade mode — the following will be REPLACED:"
     warn "  docker-compose.yml, main.nf, nextflow.config, modules/, workflows/, conf/"
     warn "The following will be PRESERVED:"
-    warn "  .env, license/, results/, log/, fastq/, work/, bed/, data/"
+    warn "  .env, results/, log/, fastq/, work/, bed/, data/"
     echo ""
 fi
 
@@ -413,7 +412,7 @@ else
     fi
 fi
 
-# Liftover chain (only needed if hg19_view feature is licensed)
+# Liftover chain (needed for hg19 analysis)
 LIFTOVER_DIR="${INSTALL_DIR}/liftover"
 if [[ -f "${BUNDLE_ROOT}/liftover/hg38ToHg19.over.chain.gz" ]]; then
     mkdir -p "$LIFTOVER_DIR"
@@ -428,28 +427,8 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 7 — License file
+# Step 7 — (License step removed — all features enabled by default)
 # ---------------------------------------------------------------------------
-step "License"
-
-LIC_DIR="${INSTALL_DIR}/license"
-mkdir -p "$LIC_DIR"
-
-if [[ -f "${LIC_DIR}/license.json" ]]; then
-    ok "Existing license retained at ${LIC_DIR}/license.json"
-else
-    SRC_LIC=""
-    for cand in "${BUNDLE_ROOT}/license/license.json" "${BUNDLE_ROOT}"/license/*.json; do
-        [[ -f "$cand" ]] && { SRC_LIC="$cand"; break; }
-    done
-    if [[ -z "$SRC_LIC" ]]; then
-        die "No license file found in ${BUNDLE_ROOT}/license/. Cannot continue."
-    fi
-    cp -f "$SRC_LIC" "${LIC_DIR}/license.json"
-    ok "License installed from $(basename "$SRC_LIC")"
-fi
-chmod 0444 "${LIC_DIR}/license.json"
-ok "License set to read-only (0444)"
 
 # ---------------------------------------------------------------------------
 # Step 8 — Runtime directories
@@ -494,7 +473,6 @@ upsert LOG_HOST_DIR       "${INSTALL_DIR}/log"
 upsert FASTQ_HOST_DIR     "${INSTALL_DIR}/fastq"
 upsert BED_HOST_DIR       "${INSTALL_DIR}/bed"
 upsert LIFTOVER_HOST_DIR  "${INSTALL_DIR}/liftover"
-upsert LICENSE_HOST_DIR   "${INSTALL_DIR}/license"
 upsert WEB_PORT           "${WEB_PORT:-8080}"
 upsert TZ                 "${TZ:-Asia/Seoul}"
 
@@ -550,7 +528,7 @@ for i in {1..30}; do
     if docker compose ps | grep -q "Exited"; then
         echo ""
         docker compose logs --tail=40 roche-nxt-web || true
-        die "Container exited during startup (likely license/config issue)."
+        die "Container exited during startup (likely config issue — check docker compose logs)."
     fi
     sleep 1
     [[ $i -eq 30 ]] && warn "Still starting — check logs manually: docker compose logs -f roche-nxt-web"
@@ -575,17 +553,13 @@ fi
 FEATURES_JSON="$(curl -fs "http://127.0.0.1:${WEB_PORT_VAL}/api/features" 2>/dev/null || echo '')"
 if [[ -n "$FEATURES_JSON" ]]; then
     echo ""
-    echo "  Licensed features:"
+    echo "  Active features:"
     echo "$FEATURES_JSON" | python3 -c '
 import json, sys
 try:
     d = json.loads(sys.stdin.read())
 except Exception:
     sys.exit(0)
-lic = d.get("license", {})
-print("    customer : {}".format(lic.get("customer", "?")))
-print("    expires  : {}".format(lic.get("expires") or "never"))
-print("    dev_mode : {}".format(lic.get("dev_mode", False)))
 for k in ("longitudinal", "igv", "hg19_view"):
     print("    {:12s}: {}".format(k, d.get(k, False)))
 ' 2>/dev/null || true
@@ -624,7 +598,6 @@ if [[ $IS_UPGRADE -eq 1 && -n "$BACKUP_DIR" ]]; then
     echo ""
     echo "  To roll back, restore from backup:"
     echo "    cp ${BACKUP_DIR}/.env              ${INSTALL_DIR}/"
-    echo "    cp ${BACKUP_DIR}/license.json      ${INSTALL_DIR}/license/"
     echo "    cp ${BACKUP_DIR}/orders_nxt.db     ${INSTALL_DIR}/log/"
     echo ""
 fi

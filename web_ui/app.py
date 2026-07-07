@@ -95,37 +95,14 @@ LIFTOVER_CHAIN_HG38_TO_HG19 = os.environ.get(
 )
 
 # ---------------------------------------------------------------------------
-# Feature flags — loaded from a signed license.json (DEV_MODE bypasses this).
+# Feature flags — all features enabled by default (no license required).
 # ---------------------------------------------------------------------------
-import license as _license  # local module: web_ui/license.py
+FEATURES = {"hg19_view": True}
+LICENSE_META = {"customer": "", "issued": "", "expires": "", "dev_mode": False}
 
-try:
-    _LICENSE_INFO = _license.load()
-except _license.LicenseError as _exc:
-    # Fail fast: the server cannot start without a valid license in prod.
-    # In DEV_MODE this branch is never reached (license.load() always succeeds).
-    import sys as _sys
-    print("=" * 70, file=_sys.stderr)
-    print("Roche_nxt license error: {}".format(_exc), file=_sys.stderr)
-    print("  - Place a signed license at {}.".format(_license.LICENSE_PATH), file=_sys.stderr)
-    print("  - Or set DEV_MODE=1 for internal development use.", file=_sys.stderr)
-    print("=" * 70, file=_sys.stderr)
-    raise SystemExit(2)
-
-FEATURES = dict(_LICENSE_INFO["features"])  # copy; app.py never mutates it
-LICENSE_META = {
-    "customer": _LICENSE_INFO.get("customer", ""),
-    "issued": _LICENSE_INFO.get("issued", ""),
-    "expires": _LICENSE_INFO.get("expires", ""),
-    "dev_mode": bool(_LICENSE_INFO.get("dev_mode")),
-}
-
-# Backwards-compatible aliases so existing call sites keep working.
-# IGV is always a base feature; Longitudinal UI/API is gated by settings
-# (longitudinal_enabled), but pipeline can still run existing L jobs.
 ENABLE_LONGITUDINAL = True
 ENABLE_IGV = True
-ENABLE_HG19_VIEW = FEATURES["hg19_view"]
+ENABLE_HG19_VIEW = True
 
 # ---------------------------------------------------------------------------
 # Resource limits  (0 = auto-detect)
@@ -229,6 +206,8 @@ def init_db():
         profile         TEXT DEFAULT 'docker',
         af_threshold    REAL DEFAULT 0.005,
         bed_file        TEXT DEFAULT '',
+        bed_primary_file    TEXT DEFAULT '',
+        bed_bait_file       TEXT DEFAULT '',
         delete_intermediate TEXT DEFAULT 'Y',
         order_type      TEXT DEFAULT 'baseline',
         baseline_order_id   TEXT DEFAULT '',
@@ -287,9 +266,11 @@ def init_db():
         ("created_by_user_id", "TEXT DEFAULT ''"),
         ("analysis_by_user_id", "TEXT DEFAULT ''"),
         ("subsample_info", "TEXT DEFAULT ''"),
-        ("use_umi",     "TEXT DEFAULT ''"),
-        ("panel_type",      "TEXT DEFAULT 'exome'"),
-        ("container_name",  "TEXT DEFAULT ''"),
+        ("use_umi",          "TEXT DEFAULT ''"),
+        ("panel_type",       "TEXT DEFAULT 'exome'"),
+        ("container_name",   "TEXT DEFAULT ''"),
+        ("bed_primary_file", "TEXT DEFAULT ''"),
+        ("bed_bait_file",    "TEXT DEFAULT ''"),
     ]:
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col} {coldef}")
@@ -387,6 +368,27 @@ def is_admin_user(user_id):
     return bool(row and row.get("role") == "admin")
 
 
+def _default_bed_label(reference: str, bed_type: str = "capture") -> str:
+    """Return the default BED filename shown when no bed file is specified."""
+    defaults = {
+        "capture": {
+            "hg38": "NHL_bed/KAPA_HyperCap_DS_NHL_Panel_capture_targets.bed (기본값)",
+            "hg19": "NHL_bed/NHL_hg19_capture_targets.bed (기본값)",
+        },
+        "primary": {
+            "hg38": "NHL_bed/KAPA_HyperCap_DS_NHL_Panel_primary_targets.bed (기본값)",
+            "hg19": "NHL_bed/NHL_hg19_primary_targets.bed (기본값)",
+        },
+        "bait": {
+            "hg38": "NHL_bed/KAPA_HyperCap_DS_NHL_Panel_capture_targets_bait.interval_list (기본값)",
+            "hg19": "(기본값 없음 — capture BED 사용)",
+        },
+    }
+    return defaults.get(bed_type, defaults["capture"]).get(
+        reference, defaults.get(bed_type, defaults["capture"]).get("hg38", "-")
+    )
+
+
 def format_order_snapshot(order):
     """Human-readable lines (Korean labels) for order registration fields."""
     o = dict_from_row(order) if order is not None and not isinstance(order, dict) else order
@@ -413,7 +415,9 @@ def format_order_snapshot(order):
         f"R2 FASTQ: {val('r2_fastq')}",
         f"레퍼런스: {val('reference')}",
         f"AF threshold: {val('af_threshold')}",
-        f"BED 파일: {val('bed_file')}",
+        f"Capture BED: {val('bed_file') if o.get('bed_file') else _default_bed_label(o.get('reference') or 'hg38', 'capture')}",
+        f"Primary BED: {val('bed_primary_file') if o.get('bed_primary_file') else _default_bed_label(o.get('reference') or 'hg38', 'primary')}",
+        f"Bait Interval List: {val('bed_bait_file') if o.get('bed_bait_file') else _default_bed_label(o.get('reference') or 'hg38', 'bait')}",
         f"중간파일 삭제(work 정리): {val('delete_intermediate')}",
     ]
     if (o.get("order_type") or "").strip().lower() == "longitudinal":
@@ -1004,9 +1008,17 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
         if extra_nf_params:
             nf_cmd.extend(extra_nf_params)
     else:
-        # Exome-specific options
+        # Exome-specific options — BED files
+        # Capture BED (VarDict variant calling)
         if order.get("bed_file"):
             nf_cmd.extend(["--target_bed", f"/work_nxt_bed/{order['bed_file']}"])
+        # Primary BED (on-target reads + HsMetrics TARGET)
+        if order.get("bed_primary_file"):
+            nf_cmd.extend(["--primary_bed", f"/work_nxt_bed/{order['bed_primary_file']}"])
+        # Bait interval list (HsMetrics BAIT_INTERVALS)
+        if order.get("bed_bait_file"):
+            nf_cmd.extend(["--bait_intervals", f"/work_nxt_bed/{order['bed_bait_file']}"])
+
         if order.get("delete_intermediate") == "Y":
             nf_cmd.append("--delete_intermediate")
 
@@ -1186,7 +1198,7 @@ def browse_fastq(subdir=""):
     }
 
 
-def browse_bed(subdir=""):
+def browse_bed(subdir="", all_files=False):
     base = BED_SOURCE_DIR if os.path.isdir(BED_SOURCE_DIR) else os.path.join(DATA_DIR, "bed")
     target = os.path.join(base, subdir) if subdir else base
     target = os.path.abspath(target)
@@ -1202,7 +1214,7 @@ def browse_bed(subdir=""):
             rel = os.path.join(subdir, item) if subdir else item
             if os.path.isdir(full):
                 dirs.append({"name": item, "path": rel})
-            elif item.endswith(".bed"):
+            elif all_files or item.endswith(".bed"):
                 files.append({"name": item, "path": rel, "size": os.path.getsize(full)})
 
     return {
@@ -1437,13 +1449,12 @@ def api_explorer():
 
 @app.route("/api/features")
 def api_features():
-    chain_ready = ENABLE_HG19_VIEW and os.path.isfile(LIFTOVER_CHAIN_HG38_TO_HG19)
+    chain_ready = os.path.isfile(LIFTOVER_CHAIN_HG38_TO_HG19)
     return jsonify({
         "longitudinal": longitudinal_feature_enabled(),
         "igv": True,
         "hg19_view": bool(chain_ready),
-        "hg19_chain_missing": ENABLE_HG19_VIEW and not chain_ready,
-        "license": LICENSE_META,
+        "hg19_chain_missing": not chain_ready,
     })
 
 
@@ -1619,11 +1630,11 @@ def api_create_order():
         INSERT INTO orders (id, order_name, patient_name, patient_dob, chart_number,
             department, doctor_name, diagnosis, doctor_comment,
             sample_name, r1_fastq, r2_fastq, reference, profile,
-            af_threshold, bed_file, delete_intermediate,
+            af_threshold, bed_file, bed_primary_file, bed_bait_file, delete_intermediate,
             order_type, baseline_order_id, germline_order_id, followup_order_ids, reuse_work_order_id,
             use_umi, panel_type,
             status, created_at, updated_at, created_by_user_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         order_id,
         data.get("order_name", sample_name),
@@ -1641,6 +1652,8 @@ def api_create_order():
         data.get("profile", "docker"),
         float(data.get("af_threshold", 0.005)),
         data.get("bed_file", ""),
+        data.get("bed_primary_file", ""),
+        data.get("bed_bait_file", ""),
         data.get("delete_intermediate", "Y"),
         order_type,
         data.get("baseline_order_id", ""),
@@ -1814,6 +1827,79 @@ def api_force_order(order_id):
         return jsonify({"success": True, "container_id": cid})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/orders/<order_id>/rerun_qc", methods=["POST"])
+def api_rerun_qc(order_id):
+    """Re-run QC_REPORT only using existing BAM files and (optionally updated) BED settings.
+
+    Finds the published deduped BAM in results/<sample>/output/bam/ and launches
+    Nextflow with --qc_only mode.  Variant calls are NOT repeated.
+    Returns 409 if no BAM is found (user must do a full force-rerun instead).
+    """
+    _require_auth()
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "error": "Order not found"}), 404
+    order = dict_from_row(row)
+
+    sample = order["sample_name"]
+    ref    = order.get("reference") or "hg38"
+
+    # Locate existing deduped BAM (clipped_sorted = UMI deduped final BAM)
+    import glob as _glob3
+    bam_candidates = _glob3.glob(
+        os.path.join(RESULTS_DIR, sample, "output", "bam", "*_clipped_sorted.bam")
+    )
+    if not bam_candidates:
+        return jsonify({
+            "success": False,
+            "error": f"기존 BAM 파일을 찾을 수 없습니다 ({sample}/output/bam/). 처음부터 재실행하세요.",
+        }), 409
+
+    deduped_bam = bam_candidates[0]
+    # Container-internal path
+    results_rel  = os.path.relpath(RESULTS_DIR, BASE_DIR)
+    container_bam = f"/work_nxt/{results_rel}/{sample}/output/bam/{os.path.basename(deduped_bam)}"
+
+    # Resolve BED overrides (same logic as start_analysis)
+    extra_nf = ["--qc_only", "true", "--qc_deduped_bam", container_bam]
+    if order.get("bed_file"):
+        extra_nf += ["--target_bed",    f"/work_nxt_bed/{order['bed_file']}"]
+    if order.get("bed_primary_file"):
+        extra_nf += ["--primary_bed",   f"/work_nxt_bed/{order['bed_primary_file']}"]
+    if order.get("bed_bait_file"):
+        extra_nf += ["--bait_intervals", f"/work_nxt_bed/{order['bed_bait_file']}"]
+
+    try:
+        cid = start_analysis(
+            order,
+            force=False,
+            resume=False,
+            started_by_user_id=session.get("user_id") or "",
+            extra_nf_params=extra_nf,
+        )
+        return jsonify({"success": True, "container_id": cid, "bam": deduped_bam})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/orders/<order_id>/check_bam", methods=["GET"])
+def api_check_bam(order_id):
+    """Check whether a published BAM exists for this order (used by UI to decide rerun options)."""
+    _require_auth()
+    db = get_db()
+    row = db.execute("SELECT sample_name FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"exists": False}), 404
+    sample = row["sample_name"]
+    import glob as _glob4
+    bam_candidates = _glob4.glob(
+        os.path.join(RESULTS_DIR, sample, "output", "bam", "*_clipped_sorted.bam")
+    )
+    return jsonify({"exists": bool(bam_candidates),
+                    "bam": bam_candidates[0] if bam_candidates else None})
 
 
 @app.route("/api/orders/<order_id>/report_status", methods=["POST"])
@@ -2234,7 +2320,8 @@ def api_fastq_files():
 
 @app.route("/api/bed_files")
 def api_bed_files():
-    return jsonify(browse_bed(request.args.get("path", "")))
+    all_files = request.args.get("all", "false").lower() == "true"
+    return jsonify(browse_bed(request.args.get("path", ""), all_files=all_files))
 
 
 @app.route("/api/results_image/<path:rel_path>")
@@ -2485,12 +2572,21 @@ def api_qc_data(order_id):
             "estimated_library_size": r0.get("ESTIMATED_LIBRARY_SIZE", ""),
         }
 
-    # 5. On-target reads
+    # 5. On-target reads — two BED regions: capture (experiment success) and primary (analytical)
+    for bed_region in ["capture", "primary"]:
+        for bam_label in ["umi_deduped", "aligned"]:
+            fp = os.path.join(qc_dir, f"{sample}_ontarget_reads_{bam_label}_{bed_region}.txt")
+            # Backwards-compat: fall back to old filename (no bed_region suffix) for capture
+            if not os.path.isfile(fp) and bed_region == "capture":
+                fp = os.path.join(qc_dir, f"{sample}_ontarget_reads_{bam_label}.txt")
+            count = _read_count(fp)
+            if count is not None:
+                result[f"ontarget_{bam_label}_{bed_region}"] = count
+        # Keep legacy keys so older result directories still work
+    # Legacy fallback: populate old keys if new ones not found
     for label in ["umi_deduped", "aligned"]:
-        fp = os.path.join(qc_dir, f"{sample}_ontarget_reads_{label}.txt")
-        count = _read_count(fp)
-        if count is not None:
-            result[f"ontarget_{label}"] = count
+        if f"ontarget_{label}_capture" in result and f"ontarget_{label}" not in result:
+            result[f"ontarget_{label}"] = result[f"ontarget_{label}_capture"]
 
     # 6. HS metrics
     for label in ["umi_deduped", "aligned"]:
@@ -2642,7 +2738,9 @@ def api_qc_data(order_id):
         al_s   = result.get("alignment_aligned", {})
         dup_s  = result.get("duplicates", {})
         hs_s   = result.get("hs_metrics_umi_deduped") or result.get("hs_metrics_aligned") or {}
-        ot_al  = result.get("ontarget_aligned")
+        # On-target reads: prefer aligned BAM (before dedup), use capture BED as primary metric
+        ot_capture = result.get("ontarget_aligned_capture") or result.get("ontarget_aligned")
+        ot_primary = result.get("ontarget_aligned_primary")
 
         before_bases = float(fp_s.get("before_total_bases") or 0)
         before_reads = float(fp_s.get("before_total_reads") or 0)
@@ -2651,15 +2749,23 @@ def api_qc_data(order_id):
         dup_pct      = float(dup_s.get("percent_duplication") or 0)
         mean_cov     = float(hs_s.get("mean_target_coverage") or 0)
         pct_100x     = float(hs_s.get("pct_target_bases_100x") or 0)
+        # PCT_SELECTED_BASES: bases on-target ±250bp / total usable bases (bait proximity metric)
+        pct_selected = float(hs_s.get("pct_selected_bases") or 0)
 
         summary = {}
         if before_bases > 0:
             summary["throughput_mb"] = round(before_bases / 1e6, 1)
         if pf_aligned > 0 and before_reads > 0:
-            # True mapping rate: aligned reads vs original raw reads
             summary["mapped_pct"] = round(pf_aligned / before_reads * 100, 2)
-        if ot_al is not None and total_reads > 0:
-            summary["ontarget_pct"] = round(ot_al / total_reads * 100, 2)
+        if ot_capture is not None and total_reads > 0:
+            # Capture BED-based on-target reads %
+            summary["ontarget_pct"] = round(ot_capture / total_reads * 100, 2)
+        if ot_primary is not None and total_reads > 0:
+            # Primary BED-based on-target reads %
+            summary["ontarget_primary_pct"] = round(ot_primary / total_reads * 100, 2)
+        if pct_selected > 0:
+            # PCT_SELECTED_BASES: bases within capture ±250bp / usable bases
+            summary["selected_bases_pct"] = round(pct_selected * 100, 2)
         if mean_cov > 0:
             summary["ontarget_coverage_x"] = round(mean_cov, 1)
         if pct_100x > 0:
@@ -2713,12 +2819,14 @@ def api_qc_report_txt(order_id):
     qs = d.get("qc_summary")
     if qs:
         h("QC Key Metrics")
-        if "throughput_mb"      in qs: row_kv("Throughput (Mb)",               f"{qs['throughput_mb']:,.1f}")
-        if "mapped_pct"         in qs: row_kv("Alignment Rate (%)",             f"{qs['mapped_pct']:.2f}%")
-        if "ontarget_pct"       in qs: row_kv("On-Target (%)",                  f"{qs['ontarget_pct']:.2f}%")
-        if "ontarget_coverage_x" in qs: row_kv("On-Target Coverage (x)",        f"{qs['ontarget_coverage_x']:.1f}x")
-        if "uniformity_100x"    in qs: row_kv("Coverage Uniformity (>=100x, %)", f"{qs['uniformity_100x']:.2f}%")
-        if "duplicated_pct"     in qs: row_kv("Duplication (%)",                f"{qs['duplicated_pct']:.2f}%")
+        if "throughput_mb"       in qs: row_kv("Throughput (Mb)",                        f"{qs['throughput_mb']:,.1f}")
+        if "mapped_pct"          in qs: row_kv("Alignment Rate (%)",                    f"{qs['mapped_pct']:.2f}%")
+        if "selected_bases_pct"  in qs: row_kv("On-Target % (Capture ±250bp)",         f"{qs['selected_bases_pct']:.2f}%")
+        if "ontarget_pct"        in qs: row_kv("On-Target Reads (%, Capture)",          f"{qs['ontarget_pct']:.2f}%")
+        if "ontarget_primary_pct" in qs: row_kv("On-Target Reads (%, Primary)",        f"{qs['ontarget_primary_pct']:.2f}%")
+        if "ontarget_coverage_x" in qs: row_kv("On-Target Coverage (x)",               f"{qs['ontarget_coverage_x']:.1f}x")
+        if "uniformity_100x"     in qs: row_kv("Coverage Uniformity (>=100x, %)",      f"{qs['uniformity_100x']:.2f}%")
+        if "duplicated_pct"      in qs: row_kv("Duplication (%)",                       f"{qs['duplicated_pct']:.2f}%")
 
     # Subsampling
     sub = d.get("subsample_info")

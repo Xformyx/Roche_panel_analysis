@@ -12,7 +12,7 @@ USB에 아래 파일 3개를 복사해 전달합니다.
 
 | 파일명 | 크기 (예상) | 내용 |
 |--------|------------|------|
-| `usb_bundle_snuh_v1.tar` | ~260 MB | 앱 번들 (Docker 이미지, 설치 스크립트, SNUH 라이선스, Rocky Linux 9 용 Docker 오프라인 패키지) |
+| `usb_bundle_snuh_v1.tar` | ~260 MB | 앱 번들 (Docker 이미지, 설치 스크립트, Rocky Linux 9 용 Docker 오프라인 패키지) |
 | `roche_data_hg38.tar` | ~210 GB | hg38 레퍼런스 데이터 |
 | `roche_data_hg19.tar` | ~19 GB | hg19 레퍼런스 데이터 |
 
@@ -89,12 +89,12 @@ sudo bash install.sh --install-dir /opt/roche_snuh
 5. 환경설정 파일 (`.env`) 대화형 설정
 6. **레퍼런스 데이터 압축 해제** ← `roche_data_hg38.tar`, `roche_data_hg19.tar` 자동 탐색
 7. Docker 이미지 로드
-8. 라이선스 파일 배치
-9. 컨테이너 기동
-10. 헬스체크
-11. 완료 메시지 및 접속 URL 출력
+8. 컨테이너 기동
+9. 헬스체크
+10. 완료 메시지 및 접속 URL 출력
 
-> 레퍼런스 데이터 압축 해제는 **수 시간** 소요될 수 있습니다.
+> 레퍼런스 데이터 압축 해제는 **수 시간** 소요될 수 있습니다.  
+> 라이선스 파일은 별도 배치가 필요 없으며, 모든 기능이 기본 활성화되어 있습니다.
 
 ### 3-5. 설치 완료 확인
 
@@ -125,18 +125,38 @@ Web UI → **설정** → FASTQ 디렉토리 경로를 실제 시퀀서 출력 �
 
 Web UI → **설정** → BED 디렉토리 경로 확인
 
-### 4-4. 라이선스 확인
+### 4-4. BED 파일 설정 (SNUH 전용)
 
-Web UI → **설정** → 라이선스 탭에서 만료일 및 활성 기능 확인
+SNUH는 자체 패널 타겟 BED(`coords.cons.bed`)를 사용합니다.  
+오더 생성 시 아래와 같이 3개 BED 필드를 설정하세요.
+
+| 필드 | 선택 파일 | 역할 |
+|------|-----------|------|
+| **Capture BED** | `coords.cons.bed` | 변이 검출(VarDict) 범위 + On-Target %(Capture) 계산 |
+| **Primary BED** | `coords.cons.bed` | On-Target %(Primary) + HsMetrics TARGET 커버리지 |
+| **Bait Interval List** | 비워둠 (권장) | 자동으로 Capture BED로 대체됨 |
+
+> **비워두면 되는 이유**: Bait Interval List를 지정하지 않으면 파이프라인이 Capture BED를  
+> 자동으로 interval_list로 변환해 사용합니다. coords.cons.bed 하나로 모든 QC가 계산됩니다.
+
+결과적으로 모든 QC 지표(On-Target %, Coverage depth, HsMetrics)는  
+SNUH `coords.cons.bed` 영역을 기준으로 계산됩니다.
+
+#### BED 파일이 업데이트된 경우 재분석 방법
+
+1. 오더 목록에서 해당 오더 클릭 → **편집** 버튼  
+2. BED 파일 필드 변경 (찾기 버튼으로 새 파일 선택)  
+3. **저장 후 재실행** 버튼 클릭 → 새 BED로 처음부터 재분석
 
 ---
 
 ## 5. hg19 분석 기능 확인
 
-SNUH 라이선스에는 `hg19_view` 기능이 포함되어 있습니다.
+hg19 레퍼런스를 사용하는 경우:
 
 1. 오더 생성 시 **레퍼런스 선택** 드롭다운에서 `hg19 (GRCh37)` 선택
 2. hg19 레퍼런스 데이터가 정상 설치된 경우 즉시 사용 가능
+3. BED 파일도 hg19 좌표 기반인지 확인 필요 (`coords.cons.bed`가 hg19 좌표라면 그대로 사용)
 
 ---
 

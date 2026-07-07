@@ -129,6 +129,8 @@ tbody tr:hover{background:#F8FAFC}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}.btn-outline:hover{background:var(--bg)}
 .btn-sm{padding:5px 10px;font-size:.78rem}
 .btn-danger{background:var(--red);color:#fff}.btn-danger:hover{background:#DC2626}
+.btn-warning{background:#D97706;color:#fff;gap:6px}.btn-warning:hover{background:#B45309}
+.btn-secondary{background:#4B5563;color:#fff;gap:6px}.btn-secondary:hover{background:#374151}
 .btn-ghost{background:transparent;color:var(--text-light);padding:6px}.btn-ghost:hover{background:var(--bg);color:var(--text)}
 
 /* ===== FILTER TABS ===== */
@@ -1842,12 +1844,31 @@ tbody tr:hover{background:#F8FAFC}
               <option value="N">UMI 없음 (BWA + Picard MarkDuplicates)</option>
             </select>
           </div>
+          <!-- Capture BED -->
           <div class="form-group full">
-            <label>BED 파일</label>
+            <label>Capture BED <span style="font-size:.68rem;color:var(--text-muted);font-weight:400">— 변이 검출(VarDict) 영역</span></label>
             <div style="display:flex;gap:8px;align-items:center">
-              <input type="text" id="ord-bed_file" placeholder="선택 안함 (기본: capture_targets)" readonly style="flex:1">
-              <button class="btn btn-outline btn-sm" type="button" onclick="openBedBrowser()">찾기</button>
-              <button class="btn btn-ghost btn-sm" type="button" onclick="clearBedFile()">초기화</button>
+              <input type="text" id="ord-bed_file" placeholder="선택 안함 (기본: capture_targets.bed)" readonly style="flex:1">
+              <button class="btn btn-outline btn-sm" type="button" onclick="openBedBrowser('capture')">찾기</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="clearBedFile('capture')">초기화</button>
+            </div>
+          </div>
+          <!-- Primary BED -->
+          <div class="form-group full">
+            <label>Primary BED <span style="font-size:.68rem;color:var(--text-muted);font-weight:400">— On-Target reads 계산 · HsMetrics TARGET</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="ord-bed_primary_file" placeholder="선택 안함 (기본: primary_targets.bed)" readonly style="flex:1">
+              <button class="btn btn-outline btn-sm" type="button" onclick="openBedBrowser('primary')">찾기</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="clearBedFile('primary')">초기화</button>
+            </div>
+          </div>
+          <!-- Bait Interval List -->
+          <div class="form-group full">
+            <label>Bait Interval List <span style="font-size:.68rem;color:var(--text-muted);font-weight:400">— HsMetrics BAIT_INTERVALS (.interval_list)</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="ord-bed_bait_file" placeholder="선택 안함 (기본: capture_targets_bait.interval_list)" readonly style="flex:1">
+              <button class="btn btn-outline btn-sm" type="button" onclick="openBedBrowser('bait')">찾기</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="clearBedFile('bait')">초기화</button>
             </div>
           </div>
         </div>
@@ -1858,7 +1879,7 @@ tbody tr:hover{background:#F8FAFC}
         <div class="file-browser" id="bedBrowser">
           <div class="file-browser-header">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <span>BED 파일 브라우저</span>
+            <span id="bedBrowserTitle">BED 파일 브라우저</span>
             <span class="path-text" id="bedCurrentPath">hg38</span>
           </div>
           <div class="file-browser-list" id="bedFileList"></div>
@@ -1879,6 +1900,17 @@ tbody tr:hover{background:#F8FAFC}
 
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeCreateModal()">취소</button>
+      <!-- "QC만 재실행" — 편집 모드, 기존 BAM 있을 때만 표시 -->
+      <button class="btn btn-secondary" id="rerunQcBtn" style="display:none" onclick="submitAndRerunQC()"
+              title="기존 BAM을 재사용하여 QC만 다시 계산합니다 (VarDict 생략, 빠름)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        변경 후 QC 재실행
+      </button>
+      <!-- 편집 모드에서만 표시 -->
+      <button class="btn btn-warning" id="saveAndRerunBtn" style="display:none" onclick="submitAndRerun()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        변경 후 분석 재실행
+      </button>
       <button class="btn btn-primary" id="createModalSubmitBtn" onclick="submitOrder()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         <span id="createModalSubmitText">등록</span>
@@ -2945,7 +2977,7 @@ function buildActionButtons(order) {
       + (s === 'cancelling' ? '중지 처리 중...' : '시작 처리 중...') + '</span>';
   }
 
-  if (s === 'registered' || s === 'failed' || s === 'cancelled') {
+  if (s === 'registered' || s === 'failed' || s === 'cancelled' || s === 'completed') {
     btns += '<button class="action-btn" data-tip="수정" style="color:var(--blue)" onclick="event.stopPropagation();openEditModal(\'' + id + '\')">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>';
     btns += '<button class="action-btn act-start" data-tip="실행" onclick="event.stopPropagation();startOrder(\'' + id + '\')">'
@@ -3866,12 +3898,12 @@ function renderQCSummary(d) {
   // ── Key Metrics Summary Table (6 항목) ──────────────────────────────────
   if (Object.keys(qs).length > 0) {
     var smRows = [
-      { label: 'Throughput (Mb)',              val: qs.throughput_mb        != null ? fmtNum(qs.throughput_mb, 1) + ' Mb' : '—' },
-      { label: 'Alignment Rate (%)',           val: qs.mapped_pct           != null ? qs.mapped_pct.toFixed(2) + '%'       : '—' },
-      { label: 'On-Target (%)',                val: qs.ontarget_pct         != null ? qs.ontarget_pct.toFixed(2) + '%'     : '—' },
-      { label: 'On-Target Coverage (x)',       val: qs.ontarget_coverage_x  != null ? qs.ontarget_coverage_x.toFixed(1) + 'x' : '—' },
-      { label: 'Coverage Uniformity (≥100x)', val: qs.uniformity_100x      != null ? qs.uniformity_100x.toFixed(2) + '%'  : '—' },
-      { label: 'Duplication (%)',              val: qs.duplicated_pct       != null ? qs.duplicated_pct.toFixed(2) + '%'   : '—' },
+      { label: 'Throughput (Mb)',                    val: qs.throughput_mb       != null ? fmtNum(qs.throughput_mb, 1) + ' Mb'       : '—' },
+      { label: 'Alignment Rate (%)',                 val: qs.mapped_pct          != null ? qs.mapped_pct.toFixed(2) + '%'             : '—' },
+      { label: 'On-Target % (Capture ±250bp)',       val: qs.selected_bases_pct  != null ? qs.selected_bases_pct.toFixed(2) + '%'     : '—' },
+      { label: 'On-Target Coverage (x)',             val: qs.ontarget_coverage_x != null ? qs.ontarget_coverage_x.toFixed(1) + 'x'   : '—' },
+      { label: 'Coverage Uniformity (≥100x)',        val: qs.uniformity_100x     != null ? qs.uniformity_100x.toFixed(2) + '%'       : '—' },
+      { label: 'Duplication (%)',                    val: qs.duplicated_pct      != null ? qs.duplicated_pct.toFixed(2) + '%'        : '—' },
     ];
     html += '<div style="grid-column:1/-1;margin-bottom:4px">'
       + '<table style="width:100%;border-collapse:collapse;font-size:.82rem">'
@@ -3899,11 +3931,33 @@ function renderQCSummary(d) {
     + '<div class="kpi-value">' + fmtPct(dup.percent_duplication) + '</div>'
     + '<div class="kpi-sub">Optical dups: ' + fmtNum(dup.read_pair_optical_duplicates) + '</div></div>';
 
-  var onTargetPct = parseFloat(hs.pct_usable_bases_on_target);
-  html += '<div class="qc-kpi ' + kpiClass(onTargetPct, 0.30, 0.15, true) + '">'
-    + '<div class="kpi-label">On-target Rate</div>'
+  // On-Target — Bases, Capture ±250bp (PCT_SELECTED_BASES from HsMetrics)
+  var selectedBasesPct = (qs.selected_bases_pct != null) ? qs.selected_bases_pct / 100 : parseFloat(hs.pct_selected_bases) || null;
+  html += '<div class="qc-kpi ' + (selectedBasesPct != null ? kpiClass(selectedBasesPct, 0.80, 0.60, true) : 'neutral') + '">'
+    + '<div class="kpi-label">On-Target Reads % (Capture ±250bp)</div>'
+    + '<div class="kpi-value">' + (selectedBasesPct != null ? (selectedBasesPct * 100).toFixed(2) + '%' : '—') + '</div>'
+    + '<div class="kpi-sub">PCT_SELECTED_BASES (bait 근방 ±250bp 염기 비율)</div></div>';
+
+  // On-Target Rate — Reads, Capture BED (broad, experiment success)
+  var onTargetCapturePct = (qs.ontarget_pct != null) ? qs.ontarget_pct / 100 : null;
+  html += '<div class="qc-kpi ' + (onTargetCapturePct != null ? kpiClass(onTargetCapturePct, 0.70, 0.50, true) : 'neutral') + '">'
+    + '<div class="kpi-label">On-Target Reads % (Capture)</div>'
+    + '<div class="kpi-value">' + (onTargetCapturePct != null ? (onTargetCapturePct * 100).toFixed(2) + '%' : '—') + '</div>'
+    + '<div class="kpi-sub">실험 포획 효율 (capture BED 기준)</div></div>';
+
+  // On-Target Rate — Reads, Primary BED (narrow, analytical coverage)
+  var onTargetPrimaryPct = (qs.ontarget_primary_pct != null) ? qs.ontarget_primary_pct / 100 : null;
+  html += '<div class="qc-kpi ' + (onTargetPrimaryPct != null ? kpiClass(onTargetPrimaryPct, 0.60, 0.40, true) : 'neutral') + '">'
+    + '<div class="kpi-label">On-Target Reads % (Primary)</div>'
+    + '<div class="kpi-value">' + (onTargetPrimaryPct != null ? (onTargetPrimaryPct * 100).toFixed(2) + '%' : '—') + '</div>'
+    + '<div class="kpi-sub">분석 타겟 커버 (primary BED 기준)</div></div>';
+
+  // On-Target Rate — Bases from HsMetrics (PCT_USABLE_BASES_ON_TARGET, primary target)
+  var onTargetBasesPct = parseFloat(hs.pct_usable_bases_on_target);
+  html += '<div class="qc-kpi ' + kpiClass(onTargetBasesPct, 0.30, 0.15, true) + '">'
+    + '<div class="kpi-label">On-Target Rate (Bases)</div>'
     + '<div class="kpi-value">' + fmtPct(hs.pct_usable_bases_on_target) + '</div>'
-    + '<div class="kpi-sub">Selected: ' + fmtPct(hs.pct_selected_bases) + '</div></div>';
+    + '<div class="kpi-sub">PCT_USABLE_BASES_ON_TARGET (primary BED 기준 염기)</div></div>';
 
   var q30 = parseFloat(fastp.after_q30_rate);
   html += '<div class="qc-kpi ' + kpiClass(q30, 0.90, 0.80, true) + '">'
@@ -5101,6 +5155,8 @@ function openCreateModal() {
   editingOrderId = null;
   document.getElementById('createModalTitle').textContent = '새 오더 생성';
   document.getElementById('createModalSubmitText').textContent = '등록';
+  document.getElementById('saveAndRerunBtn').style.display = 'none';
+  document.getElementById('rerunQcBtn').style.display = 'none';
   document.getElementById('createModal').classList.add('open');
   resetOrderForm();
   currentFastqPath = '';
@@ -5114,9 +5170,18 @@ function openEditModal(orderId) {
   editingOrderLongitudinal = false;
   document.getElementById('createModalTitle').textContent = '오더 수정';
   document.getElementById('createModalSubmitText').textContent = '저장';
+  document.getElementById('saveAndRerunBtn').style.display = '';  // 편집 모드에서 표시
+  document.getElementById('rerunQcBtn').style.display = 'none';  // 기본 숨김; BAM 확인 후 표시
   document.getElementById('createModal').classList.add('open');
   resetOrderForm();
   currentFastqPath = '';
+
+  // BAM 존재 여부 확인 → 있으면 "QC만 재실행" 버튼 표시
+  apiFetch('/api/orders/' + orderId + '/check_bam').then(function(br) {
+    if (br && br.exists) {
+      document.getElementById('rerunQcBtn').style.display = '';
+    }
+  }).catch(function() {});
 
   apiFetch('/api/orders/' + orderId).then(function(o) {
     document.getElementById('ord-order_name').value = o.order_name || '';
@@ -5131,6 +5196,8 @@ function openEditModal(orderId) {
     document.getElementById('ord-reference').value = o.reference || 'hg38';
     document.getElementById('ord-af_threshold').value = o.af_threshold || 0.005;
     document.getElementById('ord-bed_file').value = o.bed_file || '';
+    document.getElementById('ord-bed_primary_file').value = o.bed_primary_file || '';
+    document.getElementById('ord-bed_bait_file').value = o.bed_bait_file || '';
     document.getElementById('ord-delete_intermediate').checked = o.delete_intermediate === 'Y';
     var useUmiSel = document.getElementById('ord-use_umi');
     if (useUmiSel) useUmiSel.value = o.use_umi || '';
@@ -5201,6 +5268,8 @@ function resetOrderForm() {
   var fields = ['order_name','patient_name','patient_dob','chart_number','department','doctor_name','diagnosis','doctor_comment','sample_name'];
   fields.forEach(function(f) { document.getElementById('ord-' + f).value = ''; });
   document.getElementById('ord-bed_file').value = '';
+  document.getElementById('ord-bed_primary_file').value = '';
+  document.getElementById('ord-bed_bait_file').value = '';
   document.getElementById('ord-reference').value = 'hg38';
   document.getElementById('ord-delete_intermediate').checked = true;
   var useUmiSel = document.getElementById('ord-use_umi');
@@ -5310,6 +5379,8 @@ function submitOrder() {
     reference: document.getElementById('ord-reference').value || 'hg38',
     af_threshold: parseFloat(document.getElementById('ord-af_threshold').value) || 0.005,
     bed_file: document.getElementById('ord-bed_file').value,
+    bed_primary_file: document.getElementById('ord-bed_primary_file').value,
+    bed_bait_file: document.getElementById('ord-bed_bait_file').value,
     delete_intermediate: document.getElementById('ord-delete_intermediate').checked ? 'Y' : 'N',
     use_umi: (document.getElementById('ord-use_umi') ? document.getElementById('ord-use_umi').value : ''),
     order_type: currentOrderType,
@@ -5346,6 +5417,90 @@ function submitOrder() {
       showToast(r.error || (editingOrderId ? '오더 수정에 실패했습니다.' : '오더 등록에 실패했습니다.'), 'error');
     }
   }).catch(function() { showToast('요청에 실패했습니다.', 'error'); });
+}
+
+// 공통 헬퍼: 현재 폼에서 오더 데이터 오브젝트 빌드
+function _buildEditPayload() {
+  var sampleName = document.getElementById('ord-sample_name').value.trim();
+  var orderName  = document.getElementById('ord-order_name').value.trim() || sampleName;
+  return {
+    order_name: orderName,
+    patient_name: document.getElementById('ord-patient_name').value.trim(),
+    patient_dob:  document.getElementById('ord-patient_dob').value,
+    chart_number: document.getElementById('ord-chart_number').value.trim(),
+    department:   document.getElementById('ord-department').value.trim(),
+    doctor_name:  document.getElementById('ord-doctor_name').value.trim(),
+    diagnosis:    document.getElementById('ord-diagnosis').value.trim(),
+    doctor_comment: document.getElementById('ord-doctor_comment').value.trim(),
+    sample_name:  sampleName,
+    r1_fastq: selectedFastq ? selectedFastq.r1 : '',
+    r2_fastq: selectedFastq ? selectedFastq.r2 : '',
+    reference:    document.getElementById('ord-reference').value || 'hg38',
+    af_threshold: parseFloat(document.getElementById('ord-af_threshold').value) || 0.005,
+    bed_file:         document.getElementById('ord-bed_file').value,
+    bed_primary_file: document.getElementById('ord-bed_primary_file').value,
+    bed_bait_file:    document.getElementById('ord-bed_bait_file').value,
+    delete_intermediate: document.getElementById('ord-delete_intermediate').checked ? 'Y' : 'N',
+    use_umi:     (document.getElementById('ord-use_umi') ? document.getElementById('ord-use_umi').value : ''),
+    order_type:  currentOrderType,
+    panel_type:  currentPanelType || 'exome'
+  };
+}
+
+// 공통: 오더 저장 후 콜백 실행
+function _saveAndThen(targetId, toastMsg, afterSaveFn) {
+  var sampleName = document.getElementById('ord-sample_name').value.trim();
+  if (!sampleName) { showToast('샘플명을 입력해주세요.', 'error'); return; }
+  var data = _buildEditPayload();
+
+  showToast('오더 저장 중...', 'info');
+  apiFetch('/api/orders/' + targetId, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function(r) {
+    if (!r.success) { showToast(r.error || '저장에 실패했습니다.', 'error'); return; }
+    closeCreateModal();
+    loadOrders();
+    showToast(toastMsg, 'info');
+    afterSaveFn();
+  }).catch(function() { showToast('저장 요청에 실패했습니다.', 'error'); });
+}
+
+// 저장 후 즉시 전체 재실행 (편집 모달에서만 호출)
+function submitAndRerun() {
+  if (!editingOrderId) return;
+  var targetId = editingOrderId;
+  _saveAndThen(targetId, '변경 저장 완료. 처음부터 분석 재실행 중...', function() {
+    setOrderStatusLocally(targetId, 'starting');
+    apiFetch('/api/orders/' + targetId + '/force', { method: 'POST' }).then(function(fr) {
+      if (fr.success) {
+        showToast('재분석을 시작했습니다.', 'success');
+        resetLogForOrder(targetId);
+      } else {
+        showToast(fr.error || '재실행에 실패했습니다.', 'error');
+      }
+      loadOrders();
+    }).catch(function() { showToast('재실행 요청에 실패했습니다.', 'error'); loadOrders(); });
+  });
+}
+
+// 저장 후 QC만 재실행 (기존 BAM 재사용, VarDict 생략)
+function submitAndRerunQC() {
+  if (!editingOrderId) return;
+  var targetId = editingOrderId;
+  _saveAndThen(targetId, '변경 저장 완료. QC 재실행 중 (기존 BAM 재사용)...', function() {
+    setOrderStatusLocally(targetId, 'starting');
+    apiFetch('/api/orders/' + targetId + '/rerun_qc', { method: 'POST' }).then(function(fr) {
+      if (fr.success) {
+        showToast('QC 재실행을 시작했습니다. (기존 BAM 재사용)', 'success');
+        resetLogForOrder(targetId);
+      } else {
+        showToast(fr.error || 'QC 재실행에 실패했습니다.', 'error');
+      }
+      loadOrders();
+    }).catch(function() { showToast('QC 재실행 요청에 실패했습니다.', 'error'); loadOrders(); });
+  });
 }
 
 /* ================================================================
@@ -5413,17 +5568,37 @@ function selectFastq(el, name, r1, r2) {
 /* ================================================================
    BED FILE BROWSER
    ================================================================ */
-function openBedBrowser() {
+var _currentBedTarget = 'capture'; // which field the browser is for
+
+var _bedTargetMeta = {
+  capture: { id: 'ord-bed_file',         label: 'Capture BED' },
+  primary: { id: 'ord-bed_primary_file', label: 'Primary BED' },
+  bait:    { id: 'ord-bed_bait_file',    label: 'Bait Interval List' },
+};
+
+function openBedBrowser(target) {
+  _currentBedTarget = target || 'capture';
+  var meta = _bedTargetMeta[_currentBedTarget];
+  var titleEl = document.getElementById('bedBrowserTitle');
+  if (titleEl) titleEl.textContent = (meta ? meta.label : 'BED') + ' 브라우저';
+
   var sec = document.getElementById('bedBrowserSection');
-  sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
-  if (sec.style.display === 'block') {
+  // Scroll browser into view if switching targets while already open
+  var isOpen = sec.style.display !== 'none';
+  if (!isOpen || _currentBedTarget !== (sec.dataset.lastTarget || '')) {
+    sec.style.display = 'block';
+    sec.dataset.lastTarget = _currentBedTarget;
     currentBedPath = '';
     loadBedFiles('');
+    sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } else {
+    sec.style.display = 'none';
   }
 }
 
-function clearBedFile() {
-  document.getElementById('ord-bed_file').value = '';
+function clearBedFile(target) {
+  var meta = _bedTargetMeta[target || 'capture'];
+  if (meta) document.getElementById(meta.id).value = '';
   document.getElementById('bedBrowserSection').style.display = 'none';
 }
 
@@ -5433,7 +5608,8 @@ function loadBedFiles(path) {
   var list = document.getElementById('bedFileList');
   list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted)">불러오는 중...</div>';
 
-  apiFetch('/api/bed_files?path=' + encodeURIComponent(path)).then(function(data) {
+  var allFiles = (_currentBedTarget === 'bait') ? '&all=true' : '';
+  apiFetch('/api/bed_files?path=' + encodeURIComponent(path) + allFiles).then(function(data) {
     var html = '';
 
     if (data.parent_path !== null && data.parent_path !== undefined) {
@@ -5462,7 +5638,7 @@ function loadBedFiles(path) {
     }
 
     if (!html) {
-      html = '<div style="padding:20px;text-align:center;color:var(--text-muted)">BED 파일이 없습니다.</div>';
+      html = '<div style="padding:20px;text-align:center;color:var(--text-muted)">파일이 없습니다.</div>';
     }
     list.innerHTML = html;
   }).catch(function() {
@@ -5471,9 +5647,12 @@ function loadBedFiles(path) {
 }
 
 function selectBedFile(path) {
-  document.getElementById('ord-bed_file').value = path;
+  var meta = _bedTargetMeta[_currentBedTarget];
+  if (meta) {
+    document.getElementById(meta.id).value = path;
+    showToast(meta.label + ' 선택: ' + path.split('/').pop(), 'success');
+  }
   document.getElementById('bedBrowserSection').style.display = 'none';
-  showToast('BED 파일 선택: ' + path.split('/').pop(), 'success');
 }
 
 /* ================================================================

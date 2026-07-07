@@ -29,7 +29,7 @@ include { VARIANTS_TO_TABLE  } from './modules/variants_to_table'
 
 // ── Parameter validation ─────────────────────────────────────
 def validateParams() {
-    if (!params.input) {
+    if (!params.qc_only && !params.input) {
         error "ERROR: --input samplesheet.csv is required"
     }
 }
@@ -37,12 +37,20 @@ def validateParams() {
 // ── Main workflow ────────────────────────────────────────────
 workflow {
 
+    main:
+
     // Resolve genome-specific params (moved from config for v2 parser compatibility)
     def genome = params.genomes[params.reference] ?: params.genomes['hg38']
-    def resolved_fasta  = params.genome_fasta ?: genome.fasta
-    def resolved_dict   = params.genome_dict  ?: genome.dict
-    def resolved_dbsnp  = params.dbsnp_vcf    ?: genome.dbsnp
-    def resolved_bed    = params.target_bed   ?: genome.bed_capture
+    def resolved_fasta   = params.genome_fasta  ?: genome.fasta
+    def resolved_dict    = params.genome_dict   ?: genome.dict
+    def resolved_dbsnp   = params.dbsnp_vcf     ?: genome.dbsnp
+    // Capture BED: used for VarDict variant calling (wide region)
+    def resolved_bed     = params.target_bed    ?: genome.bed_capture
+    // Primary BED: used for on-target read counting (strict target region)
+    def resolved_primary = params.primary_bed   ?: (genome.bed_primary ?: resolved_bed)
+    // Bait interval list: used for HsMetrics BAIT_INTERVALS
+    // Falls back to capture BED (will be converted on the fly) if not available
+    def resolved_bait    = params.bait_intervals ?: (genome.bed_bait   ?: null)
 
     validateParams()
 
@@ -54,7 +62,9 @@ workflow {
   Input       : ${params.input}
   Reference   : ${params.reference}
   Genome      : ${resolved_fasta}
-  Target BED  : ${resolved_bed}
+  Capture BED : ${resolved_bed}
+  Primary BED : ${resolved_primary}
+  Bait iList  : ${resolved_bait ?: '(same as capture BED)'}
   AF threshold: ${params.af_threshold}
   UMI mode    : ${params.use_umi}
   Subsample   : ${params.subsample}${params.subsample.toString() == 'true' ? " (threshold: ${params.subsample_threshold_gb}GB → target: ${params.seqtk_sample_size} reads)" : ""}
@@ -66,11 +76,73 @@ workflow {
     def genome_fasta  = file(resolved_fasta)
     def genome_dict   = file(resolved_dict)
     def genome_fai    = file("${resolved_fasta}.fai")
-    def target_bed    = file(resolved_bed)
+    def target_bed    = file(resolved_bed)           // capture BED (VarDict)
+    def primary_bed   = file(resolved_primary)       // primary BED (CountReads + HsMetrics TARGET)
+    def bait_ilist    = resolved_bait ? file(resolved_bait) : null  // HsMetrics BAIT (interval_list)
     def dbsnp_vcf     = file(resolved_dbsnp)
     def blocklist     = file(genome.blocklist)
     def snpeff_db     = genome.snpeff_db
     def bsgenome_ref  = genome.bsgenome
+
+    // ── QC-only mode: re-run QC_REPORT using existing BAMs, new BED settings ──
+    // Activated when --qc_only is set and --qc_deduped_bam points to existing BAM.
+    // Skips FastQC / UMI preprocessing / VarDict / SnpEff / annotation.
+    // Useful when BED files change but variant calls do not need to be repeated.
+    def qc_only = params.qc_only as Boolean
+
+    if (qc_only) {
+        // Read sample_id from samplesheet (still required for output naming)
+        def sample_id_ch = channel.fromPath(params.input)
+            .splitCsv(header: true)
+            .map { row -> row.sample_id ?: row.order_id ?: "sample" }
+            .first()
+
+        def deduped_bam_path = file(params.qc_deduped_bam)
+        def deduped_bai_path = params.qc_deduped_bai
+            ? file(params.qc_deduped_bai)
+            : file("${params.qc_deduped_bam}.bai")
+
+        // For the aligned BAM channel use the same deduped BAM if no separate aligned BAM given
+        def aligned_bam_path = params.qc_aligned_bam ? file(params.qc_aligned_bam) : deduped_bam_path
+        def aligned_bai_path = params.qc_aligned_bai
+            ? file(params.qc_aligned_bai)
+            : file("${aligned_bam_path}.bai")
+
+        aligned_bam_ch_qc = sample_id_ch.map { sid ->
+            tuple(sid, aligned_bam_path, aligned_bai_path)
+        }
+        deduped_bam_ch_qc = sample_id_ch.map { sid ->
+            tuple(sid, deduped_bam_path)
+        }
+
+        log.info """
+╔══════════════════════════════════════════════════════════════╗
+║        Roche_nxt: QC-only Re-run Mode                       ║
+╚══════════════════════════════════════════════════════════════╝
+
+  Deduped BAM  : ${deduped_bam_path}
+  Capture BED  : ${resolved_bed}
+  Primary BED  : ${resolved_primary}
+  Bait iList   : ${resolved_bait ?: '(same as capture BED)'}
+  Output dir   : ${params.outdir}
+──────────────────────────────────────────────────────────────
+"""
+
+        QC_REPORT(
+            aligned_bam_ch_qc,
+            deduped_bam_ch_qc,
+            genome_fasta,
+            genome_dict,
+            genome_fai,
+            target_bed,
+            primary_bed,
+            bait_ilist,
+            blocklist,
+            bsgenome_ref
+        )
+
+        return
+    }
 
     // ── Reannotation mode: re-run SnpEff/SnpSift/VariantsToTable only ────
     // Activated when --reannotate_vcf is supplied (path to published *_vardict.vcf).
@@ -227,7 +299,9 @@ workflow {
             genome_fasta,
             genome_dict,
             genome_fai,
-            target_bed,
+            target_bed,    // capture BED → VarDict / mismatch rate
+            primary_bed,   // primary BED → CountReads on-target
+            bait_ilist,    // bait interval_list → HsMetrics BAIT (null = use capture BED)
             blocklist,
             bsgenome_ref
         )
@@ -280,9 +354,8 @@ workflow {
 
     }
 
-    // ── Completion handler ───────────────────────────────────
-    workflow.onComplete = {
-        log.info """
+    onComplete:
+    log.info """
 ══════════════════════════════════════════════════════════════
   Pipeline completed at : ${workflow.complete}
   Duration              : ${workflow.duration}
@@ -291,5 +364,4 @@ workflow {
   Exit status           : ${workflow.exitStatus}
 ══════════════════════════════════════════════════════════════
 """
-    }
 }

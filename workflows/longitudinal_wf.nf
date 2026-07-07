@@ -11,6 +11,7 @@ workflow LONGITUDINAL {
     reporters_ch      // tuple(sample_id, reporters_txt)
     target_bed        // path
     blocklist         // path
+    bsgenome          // val (e.g. BSgenome.Hsapiens.UCSC.hg38)
 
     main:
 
@@ -19,7 +20,7 @@ workflow LONGITUDINAL {
         .join(reporters_ch)
         .map { sid, bam, bai, reporters -> tuple(sid, bam, bai, reporters) }
 
-    LONGITUDINAL_ANALYSIS(input_ch, target_bed, blocklist)
+    LONGITUDINAL_ANALYSIS(input_ch, target_bed, blocklist, bsgenome)
 
     emit:
     results = LONGITUDINAL_ANALYSIS.out.results
