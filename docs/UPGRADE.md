@@ -7,10 +7,10 @@
 
 ## 업그레이드 방법 선택
 
-| 상황 | 권장 방법 |
-|------|-----------|
-| 병원 서버에서 GitHub 접속 가능 | **방법 A — GitHub 자동 업그레이드** (권장) |
-| 인터넷 차단 / GitHub 접속 불가 | **방법 B — 이미지 파일 교체** |
+| 상황 | 권장 방법 | 스크립트 |
+|------|-----------|----------|
+| 병원 서버에서 GitHub 접속 가능 | **방법 A — GitHub 자동 업그레이드** | `upgrade_from_github.sh` |
+| 인터넷 차단 / USB·SCP 전달 | **방법 B — 이미지 파일 교체** | `save_patch.sh` → `upgrade_from_image.sh` |
 
 ---
 
@@ -55,55 +55,66 @@ http://<서버 IP>:8080
 
 ## 방법 B — 이미지 파일 교체 (오프라인)
 
-GitHub 접속이 불가한 경우, 개발자로부터 새 이미지 파일을 전달받아 교체합니다.
+GitHub 접속 불가 환경에서 개발자가 만든 패치 패키지를 USB/SCP로 전달받아 적용합니다.  
+두 단계로 진행됩니다: **개발 서버에서 패키지 생성 → 병원 서버에서 적용**.
 
-### B-1. 이미지 파일 전달받기
+### B-1. 개발 서버 — 패치 패키지 생성
 
-개발자로부터 전달받는 파일:
+```bash
+cd /home/ken/Roche_nxt
+
+# Web 이미지만 포함 (패치용, 빠름)
+bash deploy/scripts/save_patch.sh --web-only
+
+# Web + Analysis 이미지 모두 포함 (전체 설치 대체 시)
+bash deploy/scripts/save_patch.sh
+```
+
+`deploy/patches/roche_patch_v1.3.0/` 디렉터리에 다음 파일이 생성됩니다:
 
 | 파일 | 크기 | 내용 |
 |------|------|------|
-| `roche_nxt_web_v1.3.0.tar.gz` | ~200 MB | 새 Web 이미지 |
+| `roche_nxt_web_v1.3.0.tar.gz` | ~200 MB | Web Docker 이미지 |
+| `Roche_nxt_v1.3.0.tar.gz` | ~50 MB | 소스 파일 |
+| `apply_patch.sh` | — | 병원 서버 적용 스크립트 |
+| `PATCH_NOTES.md` | — | 변경 내용 및 적용 방법 |
 
-> 분석 이미지(`roche_nxt_analysis`)는 파이프라인 도구가 변경되지 않는 한 교체 불필요합니다.
+> 분석 이미지(`roche_nxt_analysis`)는 파이프라인 도구가 변경되지 않는 한 포함 불필요합니다.
 
-### B-2. 이미지 로드 및 서비스 교체
-
-```bash
-# 1. 이미지 파일을 서버로 전송 (개발 서버 → 병원 서버)
-scp roche_nxt_web_v1.3.0.tar.gz user@hospital-server:/tmp/
-
-# 2. 병원 서버에서 이미지 로드
-docker load < /tmp/roche_nxt_web_v1.3.0.tar.gz
-
-# 3. 서비스 재시작 (설치 디렉터리에서)
-cd /opt/roche_nxt
-docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate roche-nxt-web
-
-# 4. 확인
-docker logs roche_nxt_web --tail=20
-```
-
-### B-3. 소스 파일 업데이트 (선택)
-
-이미지와 함께 최신 소스 파일도 전달된 경우:
+### B-2. 패치 파일 전송
 
 ```bash
-cd /opt/roche_nxt
+# SCP로 전송 (개발 서버 → 병원 서버)
+scp -r deploy/patches/roche_patch_v1.3.0/ user@hospital-server:/tmp/
 
-# 중요 파일 백업
-BACKUP_DIR=backup/$(date +%Y%m%d_%H%M%S)
-mkdir -p $BACKUP_DIR
-cp web_ui/orders.db .env nextflow.config $BACKUP_DIR/ 2>/dev/null || true
-
-# 소스 파일 교체 (전달받은 tar의 경우)
-tar -xf /tmp/Roche_nxt_v1.3.0.tar --strip-components=1 \
-    --exclude='web_ui/orders.db' \
-    --exclude='.env'
-
-# 서비스 재시작
-docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate roche-nxt-web
+# 또는 tar로 묶어서 전송
+tar -czf roche_patch_v1.3.0.tar.gz -C deploy/patches roche_patch_v1.3.0
+scp roche_patch_v1.3.0.tar.gz user@hospital-server:/tmp/
 ```
+
+### B-3. 병원 서버 — 패치 적용
+
+```bash
+# SCP 전송의 경우
+cd /tmp/roche_patch_v1.3.0
+bash apply_patch.sh
+
+# tar로 묶어서 전송한 경우
+cd /tmp
+tar -xzf roche_patch_v1.3.0.tar.gz
+cd roche_patch_v1.3.0
+bash apply_patch.sh
+
+# 설치 경로를 명시적으로 지정하는 경우
+bash apply_patch.sh --install-dir /opt/roche_nxt
+```
+
+스크립트가 자동으로 수행하는 작업:
+1. ✅ 실행 중인 분석 확인
+2. ✅ 중요 파일 백업 (`orders.db`, `.env`, `nextflow.config`)
+3. ✅ 소스 파일 교체 (DB·환경설정 보존)
+4. ✅ Docker 이미지 로드
+5. ✅ 서비스 재시작 및 기동 확인
 
 ---
 

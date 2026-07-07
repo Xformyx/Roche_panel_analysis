@@ -49,56 +49,40 @@ GitHub 접속이 안 되는 경우에만 사용합니다.
 ```bash
 cd /home/ken/Roche_nxt
 
-# Web 이미지 저장
-docker save roche_nxt_web:latest | gzip > roche_nxt_web_v1.3.0.tar.gz
-ls -lh roche_nxt_web_v1.3.0.tar.gz
+# 패치 패키지 자동 생성 (Web 이미지 + 소스 + 적용 스크립트 일괄 생성)
+bash deploy/scripts/save_patch.sh --web-only
+
+# 생성 위치: deploy/patches/roche_patch_v1.3.0/
+ls deploy/patches/roche_patch_v1.3.0/
 ```
 
 #### 2-2. 병원 서버로 전송
 
 ```bash
-# 개발 서버 → 병원 서버 (SCP 또는 USB)
-scp roche_nxt_web_v1.3.0.tar.gz user@hospital-server:/tmp/
+# SCP로 전송
+scp -r deploy/patches/roche_patch_v1.3.0/ user@hospital-server:/tmp/
+
+# 또는 tar로 묶어서 USB 전달
+tar -czf roche_patch_v1.3.0.tar.gz -C deploy/patches roche_patch_v1.3.0
 ```
 
-#### 2-3. 병원 서버에서 교체
+#### 2-3. 병원 서버에서 패치 적용
 
 ```bash
-# 이미지 로드
-docker load < /tmp/roche_nxt_web_v1.3.0.tar.gz
+cd /tmp/roche_patch_v1.3.0
 
-# 설치 디렉터리로 이동
-cd /opt/roche_nxt   # 실제 설치 경로로 변경
+# 자동 적용 (설치 경로 자동 탐색)
+bash apply_patch.sh
 
-# DB 백업 (안전을 위해)
-cp web_ui/orders.db web_ui/orders.db.bak_$(date +%Y%m%d)
-
-# Web 컨테이너만 교체 (분석 컨테이너·데이터 영향 없음)
-docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate roche-nxt-web
-
-# 기동 확인 (약 10초 후)
-sleep 10 && docker logs roche_nxt_web --tail=10
+# 또는 설치 경로 직접 지정
+bash apply_patch.sh --install-dir /opt/roche_nxt
 ```
 
-#### 2-4. 소스 파일도 업데이트 (권장)
-
-이미지와 함께 최신 소스가 전달된 경우 (`Roche_nxt_v1.3.0.tar`):
-
-```bash
-cd /opt/roche_nxt
-
-# 백업
-cp .env .env.bak && cp nextflow.config nextflow.config.bak
-
-# 소스 교체 (.env와 orders.db는 보존)
-tar -xf /tmp/Roche_nxt_v1.3.0.tar --strip-components=1 \
-    --exclude='web_ui/orders.db' \
-    --exclude='.env' \
-    --exclude='web_ui/*.db'
-
-# 재시작
-docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate roche-nxt-web
-```
+스크립트가 자동으로 수행합니다:
+- 중요 파일 백업 (`orders.db`, `.env`, `nextflow.config`)
+- 소스 파일 교체 (DB·환경설정 보존)
+- Docker 이미지 로드
+- 서비스 재시작 및 기동 확인
 
 ---
 
