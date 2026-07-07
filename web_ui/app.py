@@ -1447,6 +1447,40 @@ def api_explorer():
     return render_template("api_explorer.html", app_version=APP_VERSION)
 
 
+@app.route("/api/developer/download/<filename>")
+def developer_download(filename):
+    """Serve developer-facing helper files for download (no auth required)."""
+    allowed = {
+        "roche_client": ("roche_client.py", "roche_client.py"),
+        "cli_guide":    ("CLI_GUIDE.md",     "CLI_GUIDE.md"),
+    }
+    if filename not in allowed:
+        return jsonify({"error": "Not found"}), 404
+
+    src_name, dl_name = allowed[filename]
+
+    # BASE_DIR = /roche_nxt (= $HOST_DIR bind-mounted into container)
+    # tools/ and docs/ live directly under the install root.
+    search_paths = [
+        os.path.join(BASE_DIR, "tools", src_name),
+        os.path.join(BASE_DIR, "docs",  src_name),
+        os.path.join(BASE_DIR, src_name),
+    ]
+    for path in search_paths:
+        if os.path.isfile(path):
+            return send_file(
+                path,
+                as_attachment=True,
+                download_name=dl_name,
+                mimetype="text/plain",
+            )
+    return jsonify({
+        "error": f"{src_name} not found. "
+                 f"Make sure the source package (Roche_nxt_vX.X.X.tar.gz) has been extracted "
+                 f"into the install directory ({BASE_DIR})."
+    }), 404
+
+
 @app.route("/api/features")
 def api_features():
     chain_ready = os.path.isfile(LIFTOVER_CHAIN_HG38_TO_HG19)
