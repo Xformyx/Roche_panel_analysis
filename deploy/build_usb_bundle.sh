@@ -56,7 +56,6 @@ die()  { echo "  ${C_RED}✗ $*${C_RST}" >&2; exit 1; }
 # Defaults / args
 # ---------------------------------------------------------------------------
 CUSTOMER=""
-LICENSE_FILE=""
 WITH_DATA=0
 DOCKER_DEBS_DIR=""
 DOCKER_TARGET_DISTRO=""
@@ -69,7 +68,6 @@ REFRESH_DOCKER=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --customer)         CUSTOMER="$2"; shift 2 ;;
-        --license)          LICENSE_FILE="$2"; shift 2 ;;
         --with-data)        WITH_DATA=1; shift ;;
         --docker-debs-dir)  DOCKER_DEBS_DIR="$2"; shift 2 ;;
         --docker-distro)    DOCKER_TARGET_DISTRO="$2"; shift 2 ;;
@@ -80,11 +78,10 @@ while [[ $# -gt 0 ]]; do
         --refresh-docker)   REFRESH_DOCKER=1; shift ;;
         -h|--help)
             cat <<USAGE
-Usage: bash $(basename "$0") --customer "NAME" --license <path> [OPTIONS]
+Usage: bash $(basename "$0") --customer "NAME" [OPTIONS]
 
 Required:
   --customer NAME         Customer name (for README and filenames)
-  --license PATH          Path to the signed license.json for this customer
 
 Common:
   --with-data             Include reference data tarball (roche_data)
@@ -128,13 +125,10 @@ USAGE
     esac
 done
 
-[[ -n "$CUSTOMER" ]]     || die "--customer is required"
-[[ -n "$LICENSE_FILE" ]] || die "--license is required"
-[[ -f "$LICENSE_FILE" ]] || die "License file not found: $LICENSE_FILE"
+[[ -n "$CUSTOMER" ]] || die "--customer is required"
 
 log "Building USB bundle"
 log "  Customer : $CUSTOMER"
-log "  License  : $LICENSE_FILE"
 log "  With data: $([[ $WITH_DATA -eq 1 ]] && echo yes || echo no)"
 log "  Output   : $OUT_DIR"
 echo ""
@@ -165,11 +159,11 @@ ok "Project files present"
 # Surgical cleanup: keep expensive cached artifacts (data tar, docker pkgs,
 # image tarballs) and only wipe the small, always-rebuilt parts. This lets
 # repeat runs reuse the slow downloads/packing.
-mkdir -p "$OUT_DIR"/{scripts,images,app,license,data,liftover,docker}
-rm -rf "${OUT_DIR}/scripts" "${OUT_DIR}/app" "${OUT_DIR}/license" \
+mkdir -p "$OUT_DIR"/{scripts,images,app,data,liftover,docker}
+rm -rf "${OUT_DIR}/scripts" "${OUT_DIR}/app" \
        "${OUT_DIR}/liftover" "${OUT_DIR}/install.sh" \
        "${OUT_DIR}/README.txt" "${OUT_DIR}/SHA256SUMS"
-mkdir -p "$OUT_DIR"/{scripts,app,license,liftover}
+mkdir -p "$OUT_DIR"/{scripts,app,liftover}
 ok "Output directory prepared at $OUT_DIR (cached data/docker/images preserved)"
 
 # ---------------------------------------------------------------------------
@@ -254,13 +248,6 @@ cp -r "${PROJECT_DIR}/workflows"    "${OUT_DIR}/app/pipeline/"
 [[ -d "${PROJECT_DIR}/conf" ]] && cp -r "${PROJECT_DIR}/conf" "${OUT_DIR}/app/pipeline/"
 NF_COUNT=$(find "${OUT_DIR}/app/pipeline" -name "*.nf" | wc -l)
 ok "Nextflow pipeline staged (${NF_COUNT} .nf files + conf/)"
-
-# ---------------------------------------------------------------------------
-# License
-# ---------------------------------------------------------------------------
-log "[5/8] Stage license"
-cp "$LICENSE_FILE" "${OUT_DIR}/license/license.json"
-ok "license/license.json staged"
 
 # ---------------------------------------------------------------------------
 # Reference data (optional)
@@ -414,7 +401,6 @@ Contents
   scripts/                   Installer engine + Docker offline installer
   images/                    Docker image tarballs
   app/                       docker-compose.yml (prod) + .env.example
-  license/license.json       Customer-specific signed license
   data/                      Reference data (if --with-data was used)
   liftover/                  hg38↔hg19 chain (for hg19_view feature)
   docker/<distro>/           Docker .deb or .rpm packages (if staged)
@@ -431,8 +417,7 @@ Install (on the target server)
   3. Watch the 11-step output. Fix any FAIL message and re-run.
   4. When it finishes, open:   http://<server-ip>:8080/
 
-For details see docs/OFFLINE_INSTALL.md inside the project source tree,
-or LICENSE.md for licensing info.
+For details see docs/INSTALL_IMAGE.md inside the project source tree.
 EOF
 ok "README.txt written"
 
