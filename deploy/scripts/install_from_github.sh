@@ -218,6 +218,35 @@ ENV
     ok ".env 파일 생성 완료"
 fi
 
+# ── Step 6b: 레퍼런스 데이터 압축 해제 (파일이 있으면) ──────────────────────
+# 스크립트 실행 디렉터리 또는 --data-dir 경로에 tar 파일이 있으면 자동으로 풀어줌
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_DATA_TARS=()
+for _cand in \
+    "$SCRIPT_DIR/roche_data_hg38.tar"  "$SCRIPT_DIR/roche_data_hg38.tar.gz" \
+    "$SCRIPT_DIR/roche_data_hg19.tar"  "$SCRIPT_DIR/roche_data_hg19.tar.gz" \
+    "$SCRIPT_DIR/rna_refs.tar.gz"       "$SCRIPT_DIR/rna_refs.tar" \
+    "$DATA_DIR/roche_data_hg38.tar"    "$DATA_DIR/roche_data_hg38.tar.gz" \
+    "$DATA_DIR/roche_data_hg19.tar"    "$DATA_DIR/roche_data_hg19.tar.gz" \
+    "$DATA_DIR/rna_refs.tar.gz"         "$DATA_DIR/rna_refs.tar"; do
+    [[ -f "$_cand" ]] && _DATA_TARS+=("$_cand")
+done
+
+if [[ ${#_DATA_TARS[@]} -gt 0 ]]; then
+    step "레퍼런스 데이터 압축 해제"
+    for _tar in "${_DATA_TARS[@]}"; do
+        info "$(basename "$_tar") → $DATA_DIR ..."
+        case "$_tar" in
+            *.tar.gz|*.tgz) tar -xzf "$_tar" -C "$DATA_DIR" --strip-components=1 ;;
+            *.tar)           tar -xf  "$_tar" -C "$DATA_DIR" --strip-components=1 ;;
+        esac
+        ok "$(basename "$_tar") 완료"
+    done
+else
+    info "레퍼런스 데이터 tar 파일을 찾지 못했습니다."
+    info "설치 완료 후 아래 안내에 따라 수동으로 복사·해제하세요."
+fi
+
 # ── Step 7: 서비스 시작 ──────────────────────────────────────────────────────
 step "서비스 시작"
 
