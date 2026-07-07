@@ -264,24 +264,210 @@ http://<서버 IP>:<포트>/developer
 Web UI 로그인 → 설정 → 외부 연동 API Key → 복사
 ```
 
-### Python 클라이언트 예시
+> API Key는 `X-Api-Key` 헤더로 전달합니다.  
+> 예: `curl -H "X-Api-Key: rnxt-xxxx" http://server:8080/api/orders`
 
-`tools/roche_client.py` 를 사용하면 CLI에서 바로 API를 테스트할 수 있습니다.
+---
+
+## 6. roche_client.py 사용 설명서
+
+`roche_client.py`는 API를 래핑한 Python CLI 도구입니다.  
+개발 없이 터미널에서 바로 분석을 실행하거나, 자동화 스크립트에 활용할 수 있습니다.
+
+### 다운로드
+
+API Explorer (`/developer`) 페이지 상단 **`⬇ roche_client.py`** 버튼으로 다운로드합니다.  
+또는 설치 서버에서 직접 복사:
 
 ```bash
-# 설정
-python3 tools/roche_client.py configure \
-    --url http://<서버IP>:8080 \
-    --api-key <발급받은 키>
+cp /opt/roche_nxt/tools/roche_client.py .
+```
 
-# 오더 목록 조회
-python3 tools/roche_client.py list
+### 사전 요구사항
 
-# 오더 생성 + 분석 시작 + 결과 대기 (one-shot)
-python3 tools/roche_client.py run \
-    --sample-id SAMPLE-001 \
+Python 3.8 이상과 `requests` 패키지가 필요합니다.
+
+```bash
+python3 --version          # 3.8+ 확인
+pip install requests       # requests 설치
+```
+
+---
+
+### 최초 설정 (1회만)
+
+서버 URL과 인증 정보를 `~/.roche_client.json`에 저장합니다.
+
+**방법 A — ID/비밀번호로 로그인 (API Key 자동 저장, 편함)**
+
+```bash
+python3 roche_client.py login \
+    --url http://<서버IP>:<포트> \
+    --user admin
+# 비밀번호는 안전하게 프롬프트로 입력
+```
+
+**방법 B — API Key 직접 입력**
+
+```bash
+# API Key는 Web UI → 설정 → 외부 연동 API Key 에서 복사
+python3 roche_client.py configure \
+    --url http://<서버IP>:<포트> \
+    --key rnxt-xxxxxxxxxxxx
+```
+
+> 설정 확인: `cat ~/.roche_client.json`  
+> 환경변수로도 사용 가능: `ROCHE_BASE_URL`, `ROCHE_API_KEY`
+
+---
+
+### 명령어 목록
+
+| 명령 | 설명 |
+|------|------|
+| `login` | ID/비밀번호로 로그인하여 API Key 자동 저장 |
+| `configure` | 서버 URL과 API Key 직접 저장 |
+| `list` | Order 목록 조회 |
+| `create` | Order 생성 (분석 실행 안 함) |
+| `start` | 기존 Order 분석 시작 |
+| `run` | **Order 생성 → 분석 시작 → 완료 대기 → 결과 출력** (원스텝) |
+| `status` | 특정 Order 상태 확인 |
+| `results` | QC 결과 지표 출력 |
+| `report` | QC 리포트 텍스트 파일 저장 |
+| `logs` | 분석 실행 로그 출력 |
+
+---
+
+### 상세 사용 예시
+
+#### Order 목록 조회
+
+```bash
+python3 roche_client.py list
+python3 roche_client.py list -n 10                  # 최근 10건만
+python3 roche_client.py list --status completed     # 완료된 것만
+```
+
+#### 분석 실행 (원스텝 — 가장 자주 사용)
+
+```bash
+python3 roche_client.py run \
+    --sample SAMPLE-001 \
+    --r1 SAMPLE-001_R1.fastq.gz \
+    --r2 SAMPLE-001_R2.fastq.gz
+```
+
+> `--r1`, `--r2`는 서버의 **FASTQ 디렉터리 기준 파일명**만 입력합니다.  
+> (예: FASTQ 디렉터리 = `/data/fastq` → 파일명만 입력)
+
+실행 흐름:
+1. Order 생성
+2. 분석 컨테이너 시작
+3. 완료될 때까지 폴링 대기 (Ctrl+C로 대기 중단 가능, 분석은 계속 실행)
+4. 완료 시 핵심 QC 지표 6종 자동 출력
+
+**추가 옵션:**
+
+```bash
+python3 roche_client.py run \
+    --sample SAMPLE-001 \
     --r1 SAMPLE-001_R1.fastq.gz \
     --r2 SAMPLE-001_R2.fastq.gz \
-    --reference hg38 \
-    --panel NHL
+    --reference hg19 \               # hg38 (기본) 또는 hg19
+    --bed SNUH_bed/coords.cons.bed \ # BED 파일 (생략 시 기본값)
+    --af 0.01 \                      # AF threshold (기본 0.005)
+    --umi Y \                        # UMI 사용 여부 (기본 Y)
+    --patient "홍길동" \
+    --chart "2026-00001" \
+    --department "혈액종양내과" \
+    --doctor "김철수" \
+    --poll-interval 30               # 상태 확인 주기(초, 기본 15)
 ```
+
+#### Order 상태 확인
+
+```bash
+python3 roche_client.py status 20260626120000-abc123
+```
+
+출력 예:
+```
+Order 상세
+  ID       : 20260626120000-abc123
+  Sample   : SAMPLE-001
+  Status   : completed
+  Reference: hg38
+  Created  : 2026-06-26 12:00:00
+  Completed: 2026-06-26 12:42:11
+```
+
+#### QC 결과 확인
+
+```bash
+python3 roche_client.py results 20260626120000-abc123
+```
+
+출력 예:
+```
+[핵심 QC 지표 - 6종]
++------------------------+--------------+------+
+| 지표                    | 값           | 단위 |
++------------------------+--------------+------+
+| Throughput             | 2341.50      | Mb   |
+| Q30 Trimmed            | 92.34        | %    |
+| Mapped                 | 89.78        | %    |
+| Duplicated             | 12.45        | %    |
+| On-Target              | 69.53        | %    |
+| On-Target Coverage     | 1245.3       | x    |
++------------------------+--------------+------+
+```
+
+#### QC 리포트 저장
+
+```bash
+python3 roche_client.py report 20260626120000-abc123 -o qc_report.txt
+python3 roche_client.py report 20260626120000-abc123 --print   # 화면에도 출력
+```
+
+#### 실행 로그 확인
+
+```bash
+python3 roche_client.py logs 20260626120000-abc123             # 마지막 100줄
+python3 roche_client.py logs 20260626120000-abc123 -n 50       # 마지막 50줄
+```
+
+---
+
+### 자동화 스크립트 예시
+
+여러 샘플을 순차적으로 분석하는 배치 스크립트:
+
+```bash
+#!/bin/bash
+SAMPLES=(
+    "SAMPLE-001 SAMPLE-001_R1.fastq.gz SAMPLE-001_R2.fastq.gz"
+    "SAMPLE-002 SAMPLE-002_R1.fastq.gz SAMPLE-002_R2.fastq.gz"
+    "SAMPLE-003 SAMPLE-003_R1.fastq.gz SAMPLE-003_R2.fastq.gz"
+)
+
+for entry in "${SAMPLES[@]}"; do
+    read -r sample r1 r2 <<< "$entry"
+    echo "=== 분석 시작: $sample ==="
+    python3 roche_client.py run \
+        --sample "$sample" \
+        --r1 "$r1" \
+        --r2 "$r2"
+    echo ""
+done
+```
+
+---
+
+### 오류 해결
+
+| 오류 메시지 | 원인 | 해결 |
+|-------------|------|------|
+| `연결 실패` | 서버 URL 오류 또는 서버 미실행 | URL 확인, `docker ps`로 서버 상태 확인 |
+| `HTTP 401` | API Key 오류 또는 미설정 | `roche_client.py login` 또는 `configure` 재실행 |
+| `HTTP 404` | Order ID 오류 | `roche_client.py list`로 정확한 ID 확인 |
+| `requests 패키지 필요` | requests 미설치 | `pip install requests` |
