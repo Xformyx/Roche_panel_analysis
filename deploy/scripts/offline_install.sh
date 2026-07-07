@@ -377,6 +377,8 @@ else
         "${BUNDLE_ROOT}/data/roche_data_hg38.tar.gz" \
         "${BUNDLE_ROOT}/data/roche_data_hg19.tar" \
         "${BUNDLE_ROOT}/data/roche_data_hg19.tar.gz" \
+        "${BUNDLE_ROOT}/data/rna_refs.tar.gz" \
+        "${BUNDLE_ROOT}/data/rna_refs.tar" \
         "${BUNDLE_ROOT}/data/roche_data.tar.gz" \
         "${BUNDLE_ROOT}/data/roche_data.tar" \
         "${BUNDLE_ROOT}/data/reference.tar.gz" \
@@ -384,6 +386,8 @@ else
         "${PARENT_ROOT}/roche_data_hg38.tar.gz" \
         "${PARENT_ROOT}/roche_data_hg19.tar" \
         "${PARENT_ROOT}/roche_data_hg19.tar.gz" \
+        "${PARENT_ROOT}/rna_refs.tar.gz" \
+        "${PARENT_ROOT}/rna_refs.tar" \
         "${PARENT_ROOT}/roche_data.tar.gz" \
         "${PARENT_ROOT}/roche_data.tar"; do
         [[ -f "$cand" ]] && DATA_TARS+=("$cand")
@@ -395,6 +399,7 @@ else
         warn "Expected files under bundle/data/:"
         warn "  roche_data_hg38.tar   — hg38 genome FASTA, BWA index, dbSNP, SnpEff, BED"
         warn "  roche_data_hg19.tar   — hg19 genome FASTA, BWA index, dbSNP, SnpEff, BED"
+        warn "  rna_refs.tar.gz       — RNA-seq STAR index, GTF, CTAT lib (optional)"
         warn "  (or a combined roche_data.tar.gz)"
         warn ""
         warn "You can populate ${REF_DIR}/ manually and re-run the installer."
