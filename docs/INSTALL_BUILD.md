@@ -42,6 +42,37 @@ docker --version && docker compose version && git --version
 
 ---
 
+## 자동화 스크립트 (권장)
+
+위 모든 단계를 한 번에 수행하는 자동화 스크립트가 제공됩니다.
+
+```bash
+# 스크립트를 먼저 단독으로 받아서 실행 (또는 클론 후 사용)
+wget -O install_from_github.sh \
+  https://raw.githubusercontent.com/Xformyx/Roche_panel_analysis/main/deploy/scripts/install_from_github.sh
+chmod +x install_from_github.sh
+
+# 기본 설치 (설치 경로 /opt/roche_nxt, 포트 8080)
+bash install_from_github.sh
+
+# 옵션 지정 예시
+bash install_from_github.sh \
+  --install-dir /opt/roche_nxt \
+  --tag v1.3.0 \
+  --port 8080 \
+  --fastq-dir /data/fastq \
+  --data-dir /data/roche_data
+
+# Analysis 이미지 빌드 생략 (나중에 직접 빌드하거나 FTP에서 받는 경우)
+bash install_from_github.sh --skip-analysis-build
+```
+
+> 스크립트 위치: `deploy/scripts/install_from_github.sh`
+
+자동화 스크립트가 아닌 **수동 설치**를 원하시면 아래 Step 별 안내를 따르세요.
+
+---
+
 ## Step 1 — Docker Engine 설치 (미설치 시)
 
 ```bash
