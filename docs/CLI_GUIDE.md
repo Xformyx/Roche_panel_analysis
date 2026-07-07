@@ -260,12 +260,30 @@ http://<서버 IP>:<포트>/developer
 
 ### API Key 발급
 
-```
-Web UI 로그인 → 설정 → 외부 연동 API Key → 복사
+두 가지 방법 중 하나를 사용합니다.
+
+**방법 A — Web UI에서 직접 발급**
+
+1. Roche_nxt Web UI 로그인 (`http://<서버IP>:<포트>`)
+2. 우측 상단 **⚙ 설정** 클릭
+3. **외부 연동 API Key** 섹션에서 Key 확인 후 복사
+
+Key 형식: `rnxt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`  
+재발급 버튼을 누르면 기존 Key는 즉시 무효화됩니다.
+
+**방법 B — roche_client.py login으로 자동 발급**
+
+```bash
+python3 roche_client.py login \
+    --url http://<서버IP>:<포트> \
+    --user admin
+# 비밀번호 프롬프트 입력 → Key 자동 조회 후 ~/.roche_client.json 저장
 ```
 
-> API Key는 `X-Api-Key` 헤더로 전달합니다.  
-> 예: `curl -H "X-Api-Key: rnxt-xxxx" http://server:8080/api/orders`
+> API Key는 모든 요청에 `X-Api-Key` 헤더로 전달합니다.
+> ```
+> curl -H "X-Api-Key: rnxt-xxxx..." http://server:8080/api/orders
+> ```
 
 ---
 
