@@ -119,8 +119,9 @@ ok "소스 패키지: $(du -sh $SOURCE_TAR | cut -f1)"
 
 # ── apply_patch.sh 복사 ──────────────────────────────────────────────────────
 cp "$REPO_DIR/deploy/scripts/upgrade_from_image.sh" "$OUTPUT_DIR/apply_patch.sh"
-chmod +x "$OUTPUT_DIR/apply_patch.sh"
-ok "apply_patch.sh 복사 완료"
+cp "$REPO_DIR/deploy/scripts/apply_full_patch.sh"  "$OUTPUT_DIR/apply_full_patch.sh"
+chmod +x "$OUTPUT_DIR/apply_patch.sh" "$OUTPUT_DIR/apply_full_patch.sh"
+ok "apply_patch.sh, apply_full_patch.sh 복사 완료"
 
 # ── PATCH_NOTES.md 생성 ──────────────────────────────────────────────────────
 cat > "$OUTPUT_DIR/PATCH_NOTES.md" << NOTES

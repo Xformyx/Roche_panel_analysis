@@ -30,6 +30,21 @@ warn() { echo "${C_YEL}⚠${C_RST} $*"; }
 die()  { echo "${C_RED}✗${C_RST} $*" >&2; exit 1; }
 h()    { echo; echo "${C_BLD}${C_CYN}── $* ──────────────────────────────${C_RST}"; }
 
+resolve_compose_file() {
+    local dir="$1"
+    if [[ -f "$dir/docker-compose.prod.yml" ]]; then
+        echo "docker-compose.prod.yml"
+    elif [[ -f "$dir/docker-compose.yml" ]]; then
+        echo "docker-compose.yml"
+    else
+        return 1
+    fi
+}
+
+has_compose_file() {
+    [[ -f "$1/docker-compose.prod.yml" || -f "$1/docker-compose.yml" ]]
+}
+
 # ── 인수 파싱 ────────────────────────────────────────────────────────────────
 INSTALL_DIR=""
 TARGET_TAG=""
@@ -48,7 +63,7 @@ done
 # 설치 디렉터리 자동 탐색
 if [[ -z "$INSTALL_DIR" ]]; then
     for d in /opt/roche_nxt /home/*/roche_nxt /opt/roche*; do
-        if [[ -f "$d/docker-compose.prod.yml" ]]; then
+        if has_compose_file "$d"; then
             INSTALL_DIR="$d"
             break
         fi
@@ -56,7 +71,8 @@ if [[ -z "$INSTALL_DIR" ]]; then
 fi
 
 [[ -z "$INSTALL_DIR" ]] && die "--install-dir 를 지정하거나 /opt/roche_nxt 에 설치하세요."
-[[ -f "$INSTALL_DIR/docker-compose.prod.yml" ]] || die "$INSTALL_DIR 에 docker-compose.prod.yml 이 없습니다."
+COMPOSE_FILE="$(resolve_compose_file "$INSTALL_DIR")" \
+    || die "$INSTALL_DIR 에 docker-compose.prod.yml 또는 docker-compose.yml 이 없습니다."
 
 cd "$INSTALL_DIR"
 
@@ -100,7 +116,16 @@ fi
 h "중요 파일 백업"
 
 BACKUP_DIR="$INSTALL_DIR/backup/$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$BACKUP_DIR"
+if ! mkdir -p "$BACKUP_DIR" 2>/dev/null; then
+    BACKUP_DIR="${INSTALL_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
+    if ! mkdir -p "$BACKUP_DIR" 2>/dev/null; then
+        BACKUP_DIR="/tmp/roche_nxt_backup_$(date +%Y%m%d_%H%M%S)_$$"
+        mkdir -p "$BACKUP_DIR" || die "백업 디렉터리를 만들 수 없습니다: $INSTALL_DIR/backup (permission denied)"
+        warn "설치 디렉터리에 쓸 수 없어 임시 백업 사용: $BACKUP_DIR"
+    else
+        warn "설치 디렉터리에 쓸 수 없어 형제 backup 사용: $BACKUP_DIR"
+    fi
+fi
 
 for f in "web_ui/orders.db" "web_ui/app.py" ".env" "nextflow.config"; do
     if [[ -f "$INSTALL_DIR/$f" ]]; then
@@ -139,7 +164,7 @@ ok "이미지 빌드 완료"
 # ── 서비스 재시작 ────────────────────────────────────────────────────────────
 h "서비스 재시작"
 
-docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate roche-nxt-web
+docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate roche-nxt-web
 ok "Web 서비스 재시작 완료"
 
 # ── 확인 ─────────────────────────────────────────────────────────────────────
