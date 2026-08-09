@@ -293,6 +293,12 @@ upsert_env "GID" "$RUN_GID"
 upsert_env "DOCKER_GID" "$DOCKER_GID"
 ok ".env UID/GID → ${RUN_USER} (${RUN_UID}:${RUN_GID})"
 
+# v1.4 신규 변수: 기존 .env에 없으면 기본값으로 추가
+DEFAULT_DATA_DIR="${DATA_DIR:-${INSTALL_DIR}/data}"
+upsert_env "LIFTOVER_HOST_DIR"           "${DEFAULT_DATA_DIR}/liftover"
+upsert_env "LIFTOVER_CHAIN_HG38_TO_HG19" "/liftover/hg38ToHg19.over.chain.gz"
+ok ".env 신규 변수 확인 완료 (LIFTOVER_HOST_DIR 등)"
+
 chown -R "${RUN_UID}:${RUN_GID}" "$INSTALL_DIR"
 if [[ -d "$DATA_DIR" ]]; then
     chown -R "${RUN_UID}:${RUN_GID}" "$DATA_DIR"
