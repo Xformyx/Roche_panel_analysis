@@ -57,13 +57,22 @@ bash /tmp/roche_patch_v1.4.0/apply_patch.sh --install-dir /opt/roche_nxt
 # 웹 브라우저에서 접속 → 사이드바 하단 버전 확인: v1.4.0
 ```
 
-> **EONE (root 설치 환경)**: `apply_full_patch.sh` 사용
+> **EONE (`/home/roche`, root 설치)**: `apply_full_patch.sh` 사용
+>
+> hg19 데이터는 이미 설치돼 있고 **파이프라인 + Web UI만** 갱신하는 경우:
 > ```bash
-> bash /tmp/roche_patch_v1.4.0/apply_full_patch.sh \
+> # 패치 파일을 /home/roche/roche_install/patch 등에 둔 뒤
+> sudo bash /tmp/roche_patch_v1.4.0/apply_full_patch.sh \
 >     --install-dir /home/roche \
->     --data-dir /home/roche/data
-> # 완료 후 chown -R roche:roche /home/roche
+>     --patch-dir /home/roche/roche_install/patch \
+>     --run-user roche \
+>     --skip-hg19
 > ```
+> - `--skip-hg19` : 기존 hg19 data 덮어쓰지 않음 (EONE처럼 이미 받은 경우 필수에 가깝음)
+> - ownership / `.env` UID·GID 갱신은 스크립트가 처리 (`chown` 별도 불필요)
+> - 분석 이미지도 안 바꿀 때만: `--skip-analysis` 추가
+>
+> hg19 tar까지 같이 재설치할 때만 `--skip-hg19` 를 빼면 됩니다.
 
 ---
 

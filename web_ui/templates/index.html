@@ -2044,9 +2044,17 @@ tbody tr:hover{background:#F8FAFC}
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         <span id="qcTitle">QC Report</span>
       </h2>
-      <button class="modal-close" onclick="closeQC()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button type="button" id="qcSummaryDlBtn" onclick="downloadQcSummary()"
+          style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-secondary,transparent);color:var(--teal);font-size:.8rem;font-weight:600;cursor:pointer"
+          title="Key Metrics + KPI 카드 요약 다운로드">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          QC summary download
+        </button>
+        <button class="modal-close" onclick="closeQC()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
     </div>
     <div class="qc-summary" id="qcSummary"></div>
     <div class="qc-tabs" id="qcTabs"></div>
@@ -3869,6 +3877,8 @@ function openQC(orderId) {
     var isRna = (d.panel_type === 'rna') || !!d.rna_star;
     var panelBadge = isRna ? ' <span style="font-size:.7rem;background:rgba(68,114,196,0.15);color:#4472C4;padding:2px 7px;border-radius:10px;font-weight:600">RNA-seq</span>' : '';
     document.getElementById('qcTitle').innerHTML = (d.order_name || d.sample_name) + ' — QC Report' + panelBadge;
+    var dlBtn = document.getElementById('qcSummaryDlBtn');
+    if (dlBtn) dlBtn.style.display = isRna ? 'none' : 'inline-flex';
     if (isRna) {
       renderRnaQCSummary(d);
     } else {
@@ -3881,6 +3891,84 @@ function openQC(orderId) {
 function closeQC() {
   document.getElementById('qcOverlay').classList.remove('open');
   qcData = null;
+}
+
+/** Build 15-line QC summary matching the QC Report overview (6 key metrics + 9 KPI cards). */
+function buildQcSummaryLines(d) {
+  var hs = d.hs_metrics_umi_deduped || d.hs_metrics_aligned || {};
+  var fastp = d.fastp || {};
+  var ins = d.insert_size_umi_deduped || d.insert_size_aligned || {};
+  var qs = d.qc_summary || {};
+
+  var top6 = [
+    ['Throughput (Mb)',
+      qs.throughput_mb != null ? fmtNum(qs.throughput_mb, 1) + ' Mb' : '—'],
+    ['Alignment Rate (%)',
+      qs.mapped_pct != null ? qs.mapped_pct.toFixed(2) + '%' : '—'],
+    ['On-Target % (Capture ±250bp)',
+      qs.selected_bases_pct != null ? qs.selected_bases_pct.toFixed(2) + '%' : '—'],
+    ['On-Target Coverage (x)',
+      qs.ontarget_coverage_x != null ? qs.ontarget_coverage_x.toFixed(1) + 'x' : '—'],
+    ['Coverage Uniformity (≥100x)',
+      qs.uniformity_100x != null ? qs.uniformity_100x.toFixed(2) + '%' : '—'],
+    ['Duplication (%)',
+      qs.duplicated_pct != null ? qs.duplicated_pct.toFixed(2) + '%' : '—'],
+  ];
+
+  var onTargetCapturePct = (qs.ontarget_pct != null) ? qs.ontarget_pct / 100 : null;
+  var onTargetPrimaryPct = (qs.ontarget_primary_pct != null) ? qs.ontarget_primary_pct / 100 : null;
+  var mappedPct = (qs.mapped_pct != null) ? qs.mapped_pct / 100 : parseFloat(
+    (d.alignment_umi_deduped || d.alignment_aligned || {}).pct_pf_reads_aligned
+  );
+  var meanCov = parseFloat(hs.mean_target_coverage);
+  var medIns = parseFloat(ins.median_insert_size);
+  var fold80 = parseFloat(hs.fold_80_base_penalty);
+
+  // 11 KPI cards minus Duplication Rate / On-Target ±250bp (already in Key Metrics)
+  var cards9 = [
+    ['Mean Target Depth',
+      !isNaN(meanCov) ? fmtNum(meanCov, 1) + 'x' : '—'],
+    ['On-Target Reads % (Capture)',
+      onTargetCapturePct != null ? (onTargetCapturePct * 100).toFixed(2) + '%' : '—'],
+    ['On-Target Reads % (Primary)',
+      onTargetPrimaryPct != null ? (onTargetPrimaryPct * 100).toFixed(2) + '%' : '—'],
+    ['On-Target Rate (Bases)', fmtPct(hs.pct_usable_bases_on_target)],
+    ['Q30 (After Trim)', fmtPct(fastp.after_q30_rate)],
+    ['Total Reads (Raw)', fmtNum(fastp.before_total_reads)],
+    ['Alignment Rate',
+      !isNaN(mappedPct) ? (mappedPct * 100).toFixed(2) + '%' : '—'],
+    ['Insert Size (Median)',
+      !isNaN(medIns) ? fmtNum(medIns, 0) + ' bp' : '—'],
+    ['Uniformity (Fold-80)',
+      !isNaN(fold80) ? fmtNum(fold80, 2) : '—'],
+  ];
+
+  return top6.concat(cards9).map(function(pair) {
+    return pair[0] + ': ' + pair[1];
+  });
+}
+
+function downloadQcSummary() {
+  if (!qcData) {
+    showToast('QC 데이터가 없습니다.', 'error');
+    return;
+  }
+  if ((qcData.panel_type === 'rna') || qcData.rna_star) {
+    showToast('DNA/Exome QC 요약만 지원합니다.', 'error');
+    return;
+  }
+  var lines = buildQcSummaryLines(qcData);
+  var base = (qcData.order_name || qcData.sample_name || 'qc').replace(/[\\/:*?"<>|]/g, '_');
+  var filename = base + '_qc_summary.txt';
+  var blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function fmtNum(v, decimals) {
