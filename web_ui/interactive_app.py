@@ -11,6 +11,30 @@ import dash_bootstrap_components as dbc
 
 RESULTS_DIR = os.environ.get("ROCHE_NXT_DIR", "/roche_nxt") + "/results"
 
+
+def _expression_summary_files():
+    """Legacy results/<sample>/... and order-scoped results/<order_id>/<sample>/..."""
+    patterns = [
+        os.path.join(RESULTS_DIR, "*", "expression_plots", "*_expression_summary.tsv"),
+        os.path.join(RESULTS_DIR, "*", "*", "expression_plots", "*_expression_summary.tsv"),
+    ]
+    hits = []
+    for pat in patterns:
+        hits.extend(glob.glob(pat))
+    return sorted(set(hits))
+
+
+def _expression_summary_for_sample(sample_name):
+    for root_pat in (
+        os.path.join(RESULTS_DIR, "*", sample_name, "expression_plots", f"{sample_name}_expression_summary.tsv"),
+        os.path.join(RESULTS_DIR, sample_name, "expression_plots", f"{sample_name}_expression_summary.tsv"),
+    ):
+        hits = sorted(glob.glob(root_pat), key=os.path.getmtime, reverse=True)
+        if hits:
+            return hits[0]
+    return None
+
+
 def create_dash_app(flask_app):
     dash_app = Dash(
         __name__, 
@@ -74,19 +98,19 @@ def create_dash_app(flask_app):
         Input('sample-dropdown', 'id') # Dummy input to trigger on load
     )
     def update_sample_dropdown(_):
-        # Find all expression summary files
-        pattern = os.path.join(RESULTS_DIR, "*", "expression_plots", "*_expression_summary.tsv")
-        files = glob.glob(pattern)
-        
+        files = _expression_summary_files()
+        seen = set()
         options = []
         for f in files:
-            # Extract sample name from path: RESULTS_DIR/<sample_name>/expression_plots/...
-            parts = f.split('/')
+            # .../<sample_name>/expression_plots/<file>
+            parts = f.replace("\\", "/").split("/")
             if len(parts) >= 3:
                 sample_name = parts[-3]
+                if sample_name in seen:
+                    continue
+                seen.add(sample_name)
                 options.append({'label': sample_name, 'value': sample_name})
-        
-        # Sort options
+
         options = sorted(options, key=lambda x: x['label'])
         
         # Check if sample and gene are provided in URL query string
@@ -109,8 +133,8 @@ def create_dash_app(flask_app):
         if not sample_name:
             return None
             
-        file_path = os.path.join(RESULTS_DIR, sample_name, "expression_plots", f"{sample_name}_expression_summary.tsv")
-        if not os.path.isfile(file_path):
+        file_path = _expression_summary_for_sample(sample_name)
+        if not file_path or not os.path.isfile(file_path):
             return None
             
         try:

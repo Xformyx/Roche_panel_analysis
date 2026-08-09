@@ -1033,7 +1033,7 @@ tbody tr:hover{background:#F8FAFC}
               <div class="toggle-row">
                 <div class="toggle-info">
                   <div class="toggle-label">분석 완료 후 work 디렉터리 정리</div>
-                  <div class="toggle-desc">켜면 분석이 끝난 뒤 Nextflow가 작업 폴더(work)를 정리합니다. VarDict용 최종 BAM·BAI는 먼저 results/샘플명/output/bam/에 복사·유지됩니다.<br><span style="color:#B45309;font-weight:600">⚠ 주의:</span> 이 기능을 켜면 나중에 동일 샘플로 Longitudinal 분석 시 처음부터 전체 재실행됩니다. Longitudinal 분석 가능성이 있는 샘플은 끄고 등록하세요.</div>
+                  <div class="toggle-desc">켜면 분석이 끝난 뒤 Nextflow가 작업 폴더(work)를 정리합니다. VarDict용 최종 BAM·BAI는 먼저 results/오더ID/샘플명/output/bam/에 복사·유지됩니다.<br><span style="color:#B45309;font-weight:600">⚠ 주의:</span> 이 기능을 켜면 나중에 동일 샘플로 Longitudinal 분석 시 처음부터 전체 재실행됩니다. Longitudinal 분석 가능성이 있는 샘플은 끄고 등록하세요.</div>
                 </div>
                 <label class="toggle-switch">
                   <input type="checkbox" id="set-delete_intermediate" checked>
@@ -1726,7 +1726,7 @@ tbody tr:hover{background:#F8FAFC}
               <option value="">-- 완료된 오더 선택 --</option>
             </select>
             <p id="longitReuseHint" style="display:none;font-size:.78rem;color:var(--text-light);margin-top:8px;line-height:1.45">
-              동일 샘플의 기존 work를 이어 쓰며 Select Reporter·Longitudinal만 실행됩니다. 중간·결과 파일은 <code>results/샘플명</code> 아래에 쌓입니다.
+              동일 샘플의 기존 work를 이어 쓰며 Select Reporter·Longitudinal만 실행됩니다. 결과 파일은 <code>results/오더ID/샘플명</code> 아래에 쌓입니다.
             </p>
           </div>
           <div class="longit-ref-section">
@@ -1950,7 +1950,7 @@ tbody tr:hover{background:#F8FAFC}
     <div class="review-filters">
       <div class="filter-group assembly-filter" id="assemblyToggleGroup">
         <span class="filter-label">Assembly</span>
-        <div class="assembly-toggle" id="assemblyToggle" title="좌표 표시 기준 — BAM/IGV는 항상 hg38">
+        <div class="assembly-toggle" id="assemblyToggle" title="분석에 사용한 reference가 기본입니다. hg38 분석만 hg19 좌표로 변환 표시할 수 있습니다.">
           <button type="button" id="asmBtnHg38" class="active" onclick="setReviewAssembly('hg38')">hg38</button>
           <button type="button" id="asmBtnHg19" onclick="setReviewAssembly('hg19')">hg19</button>
         </div>
@@ -3044,6 +3044,7 @@ function buildResultIcons(order) {
   var logSvg  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>';
   var qcSvg   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   var icons = '';
+  var dlBase = '/api/orders/' + id + '/download/';
 
   if (isRna) {
     // RNA panel: first icon = Expression Table XLSX download (fetch + blob, no new tab)
@@ -3055,7 +3056,7 @@ function buildResultIcons(order) {
   } else {
     // Exome panel: first icon = VCF download
     if (order.has_vcf) {
-      icons += '<button class="dl-btn dl-vcf" data-tip="VCF 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/vcf\',\'_blank\')">' + vcfSvg + '</button>';
+      icons += '<button class="dl-btn dl-vcf" data-tip="VCF 다운로드" onclick="event.stopPropagation();window.open(\'' + dlBase + 'vcf\',\'_blank\')">' + vcfSvg + '</button>';
     } else {
       icons += '<button class="dl-btn dl-vcf disabled" data-tip="VCF 미생성">' + vcfSvg + '</button>';
     }
@@ -3068,7 +3069,7 @@ function buildResultIcons(order) {
   }
 
   if (order.has_log) {
-    icons += '<button class="dl-btn dl-log" data-tip="로그 다운로드" onclick="event.stopPropagation();window.open(\'/api/download/' + sample + '/log\',\'_blank\')">' + logSvg + '</button>';
+    icons += '<button class="dl-btn dl-log" data-tip="로그 다운로드" onclick="event.stopPropagation();window.open(\'' + dlBase + 'log\',\'_blank\')">' + logSvg + '</button>';
   } else {
     icons += '<button class="dl-btn dl-log disabled" data-tip="로그 미생성">' + logSvg + '</button>';
   }
@@ -3088,7 +3089,7 @@ function downloadExpressionXlsx(sample, orderId) {
   btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
   btn.setAttribute('data-tip', '변환 중...');
 
-  fetch('/api/download/' + sample + '/expression_xlsx')
+  fetch('/api/orders/' + orderId + '/download/expression_xlsx')
     .then(function(res) {
       if (!res.ok) throw new Error('서버 오류 ' + res.status);
       return res.blob();
@@ -3386,7 +3387,7 @@ function rerunOrder(id) {
 }
 
 function forceOrder(id) {
-  showConfirm('처음부터 실행', '기능: 저장된 작업·결과를 지우고 처음부터 새로 분석합니다.\n\n• 기존 Docker 컨테이너가 있으면 제거합니다.\n• DB에 기록된 work 디렉터리(및 해당 오더의 Nextflow work)를 삭제합니다.\n• results/샘플명 폴더 전체를 삭제합니다.\n• 그 다음 동일 오더로 파이프라인을 처음부터 다시 시작합니다.\n\n계속하시겠습니까?', function() {
+  showConfirm('처음부터 실행', '기능: 저장된 작업·결과를 지우고 처음부터 새로 분석합니다.\n\n• 기존 Docker 컨테이너가 있으면 제거합니다.\n• DB에 기록된 work 디렉터리(및 해당 오더의 Nextflow work)를 삭제합니다.\n• results/오더ID 폴더 전체를 삭제합니다.\n• 그 다음 동일 오더로 파이프라인을 처음부터 다시 시작합니다.\n\n계속하시겠습니까?', function() {
     setOrderStatusLocally(id, 'starting');
     showToast('처음부터 실행 요청 중...', 'info');
     apiFetch('/api/orders/' + id + '/force', { method: 'POST' }).then(function(r) {
@@ -3398,7 +3399,7 @@ function forceOrder(id) {
 }
 
 function deleteOrder(id) {
-  showConfirm('오더 삭제', '기능: 이 오더를 DB에서 제거하고, 디스크에 남은 분석 산출물도 함께 지웁니다.\n\n• work/오더ID (Nextflow 작업 디렉터리)\n• work/.nxf_home/오더ID (Nextflow 세션)\n• results/샘플명 (해당 샘플 결과 전체)\n• fastq/오더ID (FASTQ 심볼릭 링크 폴더)\n• 로그·샘플시트 파일\n\n되돌릴 수 없습니다. 계속하시겠습니까?', function() {
+  showConfirm('오더 삭제', '기능: 이 오더를 DB에서 제거하고, 디스크에 남은 분석 산출물도 함께 지웁니다.\n\n• work/오더ID (Nextflow 작업 디렉터리)\n• work/.nxf_home/오더ID (Nextflow 세션)\n• results/오더ID (해당 오더 결과)\n• fastq/오더ID (FASTQ 심볼릭 링크 폴더)\n• 로그·샘플시트 파일\n\n되돌릴 수 없습니다. 계속하시겠습니까?', function() {
     apiFetch('/api/orders/' + id + '/delete', { method: 'DELETE' }).then(function(r) {
       if (r.success) {
         showToast('오더를 삭제했습니다.', 'success');
@@ -3416,12 +3417,19 @@ var reviewAllData = [];
 var reviewFilteredData = [];
 var reviewSortCol = '';
 var reviewSortAsc = true;
-// hg19 view state
-var reviewAssembly = 'hg38';              // 'hg38' | 'hg19' (display-only)
+// Assembly view state
+var reviewNativeAssembly = 'hg38';        // analysis reference from the order ('hg38' | 'hg19')
+var reviewAssembly = 'hg38';              // currently displayed assembly
 var reviewLiftoverByKey = {};             // "chr:pos" (hg38) -> {chrom19, pos19, ok}
 var reviewLiftoverPending = null;         // in-flight fetch promise
 var reviewColumns = [];
 var reviewSampleName = '';
+var reviewOrderId = '';
+
+/** True when table should apply hg38→hg19 liftover (hg38-native data only). */
+function shouldLiftoverToHg19() {
+  return reviewNativeAssembly === 'hg38' && reviewAssembly === 'hg19' && hg19ViewEnabled;
+}
 
 var colLabels = {
   CHROM:'Chr', POS:'Position', REF:'Ref', ALT:'Alt', GENE:'Gene',
@@ -3452,7 +3460,6 @@ function openReview(orderId) {
   setupReviewIgvPane(orderId);
   reviewLiftoverByKey = {};
   reviewLiftoverPending = null;
-  initReviewAssemblyToggle();
 
   // Reset list filter
   reviewListFilter = '';
@@ -3463,9 +3470,12 @@ function openReview(orderId) {
     reviewAllData = r.data;
     reviewColumns = r.columns;
     reviewSampleName = r.sample_name;
+    reviewOrderId = orderId;
+    // Default ASSEMBLY to the order's analysis reference (hg19 runs must open as hg19)
+    initReviewAssemblyForOrder(r.reference || 'hg38');
     document.getElementById('reviewTitle').textContent = r.order_name || r.sample_name;
     document.getElementById('reviewDlBtn').onclick = function() {
-      window.open('/api/download/' + encodeURIComponent(r.sample_name) + '/txt', '_blank');
+      window.open('/api/orders/' + orderId + '/download/txt', '_blank');
     };
 
     // Update BL button count
@@ -3483,7 +3493,7 @@ function openReview(orderId) {
     populateReviewDropdowns();
     applyReviewFilters();
 
-    if (reviewAssembly === 'hg19' && hg19ViewEnabled) {
+    if (shouldLiftoverToHg19()) {
       ensureLiftoverLoaded().then(renderReviewTable);
     }
   }).catch(function() { showToast('Variant 데이터를 불러올 수 없습니다.', 'error'); });
@@ -3509,11 +3519,29 @@ function clearReviewFilters() {
   document.getElementById('rv-filter').value = '';
 }
 
-function initReviewAssemblyToggle() {
-  var stored = '';
-  try { stored = localStorage.getItem(REVIEW_ASSEMBLY_KEY) || ''; } catch (e) {}
-  reviewAssembly = (hg19ViewEnabled && stored === 'hg19') ? 'hg19' : 'hg38';
+function initReviewAssemblyForOrder(reference) {
+  reviewNativeAssembly = (reference === 'hg19') ? 'hg19' : 'hg38';
+  // Always open on the analysis reference. For hg38-native only, allow restoring
+  // a previous "show as hg19" display preference (liftover view).
+  reviewAssembly = reviewNativeAssembly;
+  if (reviewNativeAssembly === 'hg38' && hg19ViewEnabled) {
+    try {
+      var stored = localStorage.getItem(REVIEW_ASSEMBLY_KEY) || '';
+      if (stored === 'hg19') reviewAssembly = 'hg19';
+    } catch (e) {}
+  }
   updateAssemblyButtons();
+  updateAssemblyToggleTitle();
+}
+
+function updateAssemblyToggleTitle() {
+  var el = document.getElementById('assemblyToggle');
+  if (!el) return;
+  if (reviewNativeAssembly === 'hg19') {
+    el.title = '이 오더는 hg19로 분석되었습니다. 좌표는 hg19 기준이며 hg38 변환은 지원하지 않습니다.';
+  } else {
+    el.title = '이 오더는 hg38로 분석되었습니다. hg19를 선택하면 좌표만 liftover로 표시합니다 (BAM/IGV는 hg38).';
+  }
 }
 
 function updateAssemblyButtons() {
@@ -3522,23 +3550,41 @@ function updateAssemblyButtons() {
   if (!b38 || !b19) return;
   b38.classList.toggle('active', reviewAssembly === 'hg38');
   b19.classList.toggle('active', reviewAssembly === 'hg19');
+  // Disable the non-native opposite when reverse liftover is unavailable
+  if (reviewNativeAssembly === 'hg19') {
+    b38.disabled = true;
+    b38.title = 'hg19 분석 결과는 hg38 좌표 변환을 지원하지 않습니다';
+    b19.disabled = false;
+    b19.title = '';
+  } else {
+    b38.disabled = false;
+    b38.title = '';
+    b19.disabled = !hg19ViewEnabled;
+    b19.title = hg19ViewEnabled ? '' : 'hg19 보기 기능이 비활성화되어 있습니다';
+  }
 }
 
 function setReviewAssembly(asm) {
   if (asm !== 'hg38' && asm !== 'hg19') return;
-  if (asm === 'hg19' && !hg19ViewEnabled) {
+  if (reviewNativeAssembly === 'hg19' && asm === 'hg38') {
+    showToast('hg19로 분석한 결과는 hg38 좌표 변환을 지원하지 않습니다.', 'error');
+    return;
+  }
+  if (asm === 'hg19' && reviewNativeAssembly === 'hg38' && !hg19ViewEnabled) {
     showToast('hg19 보기 기능이 활성화되어 있지 않습니다. ENABLE_HG19_VIEW 및 chain 파일을 확인하세요.', 'error');
     return;
   }
   reviewAssembly = asm;
-  try { localStorage.setItem(REVIEW_ASSEMBLY_KEY, asm); } catch (e) {}
+  if (reviewNativeAssembly === 'hg38') {
+    try { localStorage.setItem(REVIEW_ASSEMBLY_KEY, asm); } catch (e) {}
+  }
   updateAssemblyButtons();
   buildReviewHeader();
   var doRefresh = function() {
     populateReviewDropdowns();
     applyReviewFilters();
   };
-  if (asm === 'hg19') {
+  if (shouldLiftoverToHg19()) {
     ensureLiftoverLoaded().then(doRefresh);
   } else {
     doRefresh();
@@ -3597,10 +3643,10 @@ function buildReviewHeader() {
 function populateReviewDropdowns() {
   var chroms = {};
   var types = {};
-  var useHg19 = (reviewAssembly === 'hg19' && hg19ViewEnabled);
+  var liftMode = shouldLiftoverToHg19();
   reviewAllData.forEach(function(r) {
     if (r.CHROM) {
-      if (useHg19) {
+      if (liftMode) {
         var lf = liftoverFor(r);
         if (lf && lf.ok) chroms[lf.chrom19] = 1;
       } else {
@@ -3633,7 +3679,7 @@ function applyReviewFilters() {
   var filterVal = document.getElementById('rv-filter').value;
   var typeVal = document.getElementById('rv-type').value;
 
-  var useHg19Filter = (reviewAssembly === 'hg19' && hg19ViewEnabled);
+  var liftMode = shouldLiftoverToHg19();
   reviewFilteredData = reviewAllData.filter(function(r) {
     // List filter (whitelist / onhold quick-filter)
     // BL 필터: blacklist만 표시. 그 외: blacklist 제외
@@ -3647,7 +3693,7 @@ function applyReviewFilters() {
     // chromosome / position filters operate on the currently displayed assembly
     var rowChrom = r.CHROM;
     var rowPos = parseInt(r.POS);
-    if (useHg19Filter) {
+    if (liftMode) {
       var lf = liftoverFor(r);
       if (lf && lf.ok) {
         rowChrom = lf.chrom19;
@@ -3728,12 +3774,12 @@ function renderReviewTable() {
   }
 
   var html = '';
-  var useHg19 = (reviewAssembly === 'hg19' && hg19ViewEnabled);
+  var liftMode = shouldLiftoverToHg19();
   reviewFilteredData.forEach(function(r, idx) {
-    // IGV/BAM must always use hg38; data-chrom/data-pos are kept as hg38.
+    // data-chrom/data-pos follow the analysis reference (for IGV locus jump).
     var chromHg38 = escapeHtml(r.CHROM || '');
     var posHg38 = escapeHtml(r.POS || '');
-    var lift = useHg19 ? liftoverFor(r) : null;
+    var lift = liftMode ? liftoverFor(r) : null;
     var listTag = r._list_tag || '';
     var rowClass = 'variant-row';
     if (listTag === 'whitelist') rowClass += ' vl-row-whitelist';
@@ -3749,7 +3795,7 @@ function renderReviewTable() {
       var val = escapeHtml(r[c] || '');
       var cls = '';
       var titleVal = r[c] || '';
-      if (c === 'CHROM' && useHg19) {
+      if (c === 'CHROM' && liftMode) {
         if (lift && lift.ok) {
           val = escapeHtml(lift.chrom19 || r.CHROM || '');
           titleVal = 'hg38: ' + (r.CHROM || '') + ' → hg19: ' + (lift.chrom19 || '');
@@ -3758,7 +3804,7 @@ function renderReviewTable() {
           val = escapeHtml(r.CHROM || '');
           titleVal = 'hg19로 변환할 수 없는 chromosome입니다 (hg38: ' + (r.CHROM || '') + ')';
         }
-      } else if (c === 'POS' && useHg19) {
+      } else if (c === 'POS' && liftMode) {
         if (lift && lift.ok) {
           val = escapeHtml(String(lift.pos19));
           titleVal = 'hg38: ' + (r.POS || '') + ' → hg19: ' + lift.pos19;
@@ -3767,7 +3813,7 @@ function renderReviewTable() {
           val = 'n/a';
           titleVal = 'hg19로 liftover 실패 (hg38: ' + (r.POS || '') + ')';
         }
-      } else if (c === 'HGVS_G' && useHg19) {
+      } else if (c === 'HGVS_G' && liftMode) {
         if (lift && lift.ok) {
           var nc19 = NC_HG19[r.CHROM] || '';
           val = nc19 ? escapeHtml(nc19 + ':g.' + lift.pos19 + (r.REF||'') + '>' + (r.ALT||'')) : 'n/a';
@@ -3799,7 +3845,9 @@ function renderReviewTable() {
 }
 
 function downloadReviewVcf() {
-  if (reviewSampleName) {
+  if (reviewOrderId) {
+    window.open('/api/orders/' + reviewOrderId + '/download/txt', '_blank');
+  } else if (reviewSampleName) {
     window.open('/api/download/' + encodeURIComponent(reviewSampleName) + '/txt', '_blank');
   }
 }
@@ -4010,6 +4058,7 @@ function renderQCTabs(d) {
     if (d.alignment_umi_deduped || d.alignment_aligned) tabs.push({ id: 'alignment', label: 'Alignment' });
     if (d.insert_size_umi_deduped || d.insert_size_aligned) tabs.push({ id: 'insertsize', label: 'Insert Size' });
     if (d.duplicates) tabs.push({ id: 'duplicates', label: 'Duplicates' });
+    if (d.umi_qc) tabs.push({ id: 'umi', label: 'UMI' });
     if (d.mismatch_rate) tabs.push({ id: 'mismatch', label: 'Mismatch Rate' });
   }
 
@@ -4040,6 +4089,7 @@ function buildQCTabContent(tabId, d) {
     case 'alignment': return buildAlignmentTab(d);
     case 'insertsize': return buildInsertSizeTab(d);
     case 'duplicates': return buildDuplicatesTab(d);
+    case 'umi': return buildUmiTab(d);
     case 'mismatch': return buildMismatchTab(d);
     // ── RNA-seq tabs ─────────────────────────────────────────────────────────────────────────
     case 'rna_alignment': return buildRnaAlignmentTab(d);
@@ -4172,11 +4222,15 @@ function buildRnaExpressionTab(d) {
   var genes = expr.top_genes || [];
   var total = expr.total_genes || 0;
   var sample = d.sample_name || '';
+  var oid = d.order_id || '';
+  var exprDl = oid
+    ? ('/api/orders/' + oid + '/download/expression')
+    : ('/api/download/' + encodeURIComponent(sample) + '/expression');
 
   // Gene Search Box
   var html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">';
   html += '<input type="text" id="rna-gene-search" placeholder="Gene 검색 (Symbol 또는 Ensembl ID)" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:.82rem" oninput="rnaGeneSearch(this.value, \'' + sample + '\')">';
-  html += '<a href="/api/download/' + sample + '/expression" style="font-size:.78rem;color:var(--primary);white-space:nowrap" download>TSV 다운로드</a>';
+  html += '<a href="' + exprDl + '" style="font-size:.78rem;color:var(--primary);white-space:nowrap" download>TSV 다운로드</a>';
   html += '</div>';
   html += '<div id="rna-gene-search-result" style="display:none;margin-bottom:10px;padding:10px 14px;background:rgba(68,114,196,0.08);border:1px solid rgba(68,114,196,0.25);border-radius:8px"></div>';
   html += '<div style="margin-bottom:8px;font-size:.78rem;color:var(--text-muted)">전체 유전자 ' + fmtNum(total) + '개 &middot; 상위 ' + genes.length + '개 표시 (TPM 내림차순) &middot; 행 클릭 시 인터랙티브 플롯에서 하이라이트</div>';
@@ -4958,6 +5012,57 @@ function buildDuplicatesTab(d) {
   html += qcRow('Duplication Rate', fmtPct(dup.percent_duplication));
   html += qcRow('Estimated Library Size', fmtNum(dup.estimated_library_size));
   html += '</div>';
+  return html;
+}
+
+function buildUmiTab(d) {
+  var u = d.umi_qc || {};
+  var fam = u.umi_families || {};
+  var clip = u.clipov || {};
+  var reads = u.reads || {};
+  var html = '<div class="qc-detail-grid">';
+  html += '<div class="qc-section-title">UMI Family Metrics</div>';
+  html += qcRow('Total UMI Families', fmtNum(fam.total_families));
+  html += qcRow('Singleton Families',
+    fmtNum(fam.singleton_families) +
+    (fam.singleton_fraction != null ? ' (' + (100 * fam.singleton_fraction).toFixed(2) + '%)' : ''));
+  html += qcRow('Mean Family Size', fam.mean_family_size != null ? Number(fam.mean_family_size).toFixed(3) : '-');
+  html += qcRow('Median Family Size', fam.median_family_size != null ? fam.median_family_size : '-');
+  html += qcRow('% Families ≥ 3', fam.pct_family_ge3 != null ? (100 * fam.pct_family_ge3).toFixed(2) + '%' : '-');
+  html += qcRow('% Families ≥ 5', fam.pct_family_ge5 != null ? (100 * fam.pct_family_ge5).toFixed(2) + '%' : '-');
+  html += qcRow('UMI Duplication Rate',
+    reads.umi_duplication_rate != null ? (100 * reads.umi_duplication_rate).toFixed(2) + '%' : '-');
+  html += qcRow('PF Reads (Aligned)', fmtNum(reads.pf_reads_aligned));
+  html += qcRow('PF Reads (UMI Deduped)', fmtNum(reads.pf_reads_umi_deduped));
+  html += '</div>';
+
+  html += '<div class="qc-detail-grid" style="margin-top:14px">';
+  html += '<div class="qc-section-title">ClipBam (Overlapping Reads)</div>';
+  html += qcRow('Reads Clipped Overlapping',
+    fmtNum(clip.reads_clipped_overlapping) +
+    (clip.pct_reads_clipped_overlapping != null ? ' (' + (100 * clip.pct_reads_clipped_overlapping).toFixed(2) + '%)' : ''));
+  html += qcRow('Bases Clipped Overlapping',
+    fmtNum(clip.bases_clipped_overlapping) +
+    (clip.pct_bases_clipped_overlapping != null ? ' (' + (100 * clip.pct_bases_clipped_overlapping).toFixed(2) + '%)' : ''));
+  html += '</div>';
+
+  var hist = fam.family_size_histogram || [];
+  if (hist.length) {
+    var maxC = 0;
+    hist.forEach(function(h) { if (h.count > maxC) maxC = h.count; });
+    html += '<div style="margin-top:16px">';
+    html += '<div class="qc-section-title">Family Size Distribution</div>';
+    html += '<div style="display:flex;align-items:flex-end;gap:3px;height:120px;padding:8px 4px 0;border-bottom:1px solid var(--border,#2a3348)">';
+    hist.forEach(function(h) {
+      var pct = maxC ? (100 * h.count / maxC) : 0;
+      var label = h.label || h.family_size;
+      html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end" title="size ' + label + ': ' + h.count.toLocaleString() + '">';
+      html += '<div style="width:100%;max-width:18px;background:var(--accent,#4f8ef7);height:' + Math.max(2, pct) + '%;border-radius:2px 2px 0 0"></div>';
+      html += '<div style="font-size:9px;color:var(--muted,#64748b);margin-top:3px">' + label + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
   return html;
 }
 
@@ -5874,10 +5979,12 @@ function checkFeatures() {
     if (typeof cachedOrders !== 'undefined' && cachedOrders && cachedOrders.length) {
       renderOrderTable();
     }
+    // Always show ASSEMBLY toggle — defaults to the order's analysis reference.
+    // hg38→hg19 liftover still requires hg19ViewEnabled + chain file.
     var tg = document.getElementById('assemblyToggleGroup');
     var tgSep = document.getElementById('assemblyToggleSep');
-    if (tg) tg.style.display = hg19ViewEnabled ? 'flex' : 'none';
-    if (tgSep) tgSep.style.display = hg19ViewEnabled ? 'block' : 'none';
+    if (tg) tg.style.display = 'flex';
+    if (tgSep) tgSep.style.display = 'block';
     if (hg19ChainMissing) {
       console.warn('ENABLE_HG19_VIEW is on but the chain file is missing: ' +
                    '/roche_nxt/data/liftover/hg38ToHg19.over.chain.gz');
@@ -6467,8 +6574,20 @@ function initIgvBrowser() {
     var orderId = igvContext.order_id;
     var bamUrl = buildOrderFileUrl(orderId, track.rel_path);
     var baiUrl = track.index_rel_path ? buildOrderFileUrl(orderId, track.index_rel_path) : null;
+    var genomeId = igvContext.genome_id || 'hg38';
+    var genomeOpt;
+    if (genomeId === 'hg38') {
+      genomeOpt = 'hg38';
+    } else {
+      // Use locally-served FASTA to avoid external server dependency (e.g. hg19 S3 403)
+      genomeOpt = {
+        id: genomeId,
+        fastaURL: '/api/genome/' + genomeId + '/fasta',
+        indexURL: '/api/genome/' + genomeId + '/fai',
+      };
+    }
     var options = {
-      genome: igvContext.genome_id || 'hg38',
+      genome: genomeOpt,
       showTrackLabels: false,
       showTrackLabelButton: false,
       tracks: [{
@@ -6637,6 +6756,61 @@ function onVariantRowClick(tr) {
 
 <script src="/static/gene_presets.js"></script>
 
+<!-- ── 서비스 재시작 경고 모달 ── -->
+<div id="restartWarningModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+  z-index:9998;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card,#1e2330);border-radius:12px;padding:32px 36px;
+    box-shadow:0 8px 32px rgba(0,0,0,.5);max-width:440px;width:90%;text-align:left">
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"
+        style="width:22px;height:22px;flex-shrink:0">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span style="font-size:1rem;font-weight:700;color:var(--text-primary,#e2e8f0)">서비스 재시작</span>
+    </div>
+
+    <p style="font-size:.88rem;color:var(--text-secondary,#94a3b8);line-height:1.6;margin:0 0 12px">
+      컨테이너를 새로 생성합니다. <strong style="color:var(--text-primary,#e2e8f0)">FASTQ / BED 경로 변경</strong>이
+      이 시점에 실제로 반영됩니다.
+    </p>
+    <p style="font-size:.88rem;color:var(--text-secondary,#94a3b8);line-height:1.6;margin:0 0 16px">
+      재시작 중 <strong style="color:var(--text-primary,#e2e8f0)">약 10~20초간 Web UI 연결이 끊깁니다.</strong>
+      완료 후 페이지가 자동으로 새로고침됩니다.
+    </p>
+
+    <!-- 분석 중 추가 경고 (runningCount > 0 일 때만 표시) -->
+    <div id="restartAnalysisWarn" style="display:none;background:rgba(239,68,68,.1);
+      border:1px solid rgba(239,68,68,.35);border-radius:8px;padding:10px 14px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"
+          style="width:15px;height:15px;flex-shrink:0">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span style="font-size:.82rem;font-weight:600;color:#ef4444">
+          현재 분석 <span class="rw-analysis-count">0</span>건 실행 중
+        </span>
+      </div>
+      <p style="font-size:.8rem;color:#fca5a5;margin:0;line-height:1.5">
+        분석 컨테이너(nxt_*)는 계속 실행되지만, 재시작 중에는
+        <strong>진행 상황 모니터링이 일시 중단</strong>됩니다.
+        가능하면 분석 완료 후 재시작하는 것을 권장합니다.
+      </p>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="_cancelRestart()"
+        style="font-size:.85rem;padding:7px 18px">취소</button>
+      <button class="btn btn-primary" onclick="_confirmRestart()"
+        style="font-size:.85rem;padding:7px 18px;background:#f59e0b;border-color:#f59e0b;color:#000">
+        재시작
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ── 서비스 재시작 오버레이 ── -->
 <div id="restartOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;
   display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px">
@@ -6652,7 +6826,32 @@ function onVariantRowClick(tr) {
 
 <script>
 function restartService() {
-  if (!confirm('서비스를 재시작합니다. 약 10초간 연결이 끊깁니다.\n계속하시겠습니까?')) return;
+  // 실행 중인 분석 컨테이너 확인 후 경고 모달 표시
+  apiFetch('/api/resources')
+    .then(function(d) {
+      var running = (d && d.running_analyses) ? d.running_analyses : 0;
+      _showRestartWarning(running);
+    })
+    .catch(function() {
+      _showRestartWarning(0);
+    });
+}
+
+function _showRestartWarning(runningCount) {
+  var modal = document.getElementById('restartWarningModal');
+  var analysisWarn = document.getElementById('restartAnalysisWarn');
+
+  if (runningCount > 0) {
+    analysisWarn.style.display = 'block';
+    analysisWarn.querySelector('.rw-analysis-count').textContent = runningCount;
+  } else {
+    analysisWarn.style.display = 'none';
+  }
+  modal.style.display = 'flex';
+}
+
+function _confirmRestart() {
+  document.getElementById('restartWarningModal').style.display = 'none';
 
   var btn = document.getElementById('restartServiceBtn');
   if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
@@ -6665,6 +6864,10 @@ function restartService() {
     .finally(function() {
       _pollUntilBack(0);
     });
+}
+
+function _cancelRestart() {
+  document.getElementById('restartWarningModal').style.display = 'none';
 }
 
 function _pollUntilBack(attempt) {

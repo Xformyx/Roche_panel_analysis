@@ -53,6 +53,107 @@ LOG_DIR = os.path.join(BASE_DIR, "log")
 DB_FILE = os.path.join(BASE_DIR, "log", "orders_nxt.db")
 
 
+def _legacy_results_root(sample_name):
+    """Legacy layout: results/<sample_name>/."""
+    if not sample_name:
+        return None
+    return os.path.join(RESULTS_DIR, sample_name)
+
+
+def _order_scoped_results_root(order_id, sample_name):
+    """Preferred layout: results/<order_id>/<sample_name>/ (may not exist yet)."""
+    if not order_id or not sample_name:
+        return None
+    return os.path.join(RESULTS_DIR, order_id, sample_name)
+
+
+def _order_results_order_dir(order_id):
+    """results/<order_id>/ — Force/delete wipe target."""
+    if not order_id:
+        return None
+    return os.path.join(RESULTS_DIR, order_id)
+
+
+def _order_results_root(order, allow_missing=False):
+    """Absolute path to this order's sample results dir.
+
+    Prefer results/<order_id>/<sample>/; fall back to legacy results/<sample>/.
+    With allow_missing=True, return the preferred path even if it does not exist.
+    """
+    if not order:
+        return None
+    order_id = (order.get("id") or "").strip()
+    sample = (order.get("sample_name") or "").strip()
+    if not sample:
+        return None
+    preferred = _order_scoped_results_root(order_id, sample)
+    legacy = _legacy_results_root(sample)
+    if preferred and os.path.isdir(preferred):
+        return os.path.realpath(preferred)
+    if legacy and os.path.isdir(legacy):
+        return os.path.realpath(legacy)
+    if allow_missing and preferred:
+        return preferred
+    return None
+
+
+def _host_to_work_nxt(host_path):
+    """Map a host path under BASE_DIR to /work_nxt/... container path."""
+    return "/work_nxt/" + os.path.relpath(host_path, BASE_DIR).replace("\\", "/")
+
+
+def _glob_in_order_results(order, pattern):
+    """glob under the order results root (pattern may include **)."""
+    root = _order_results_root(order)
+    if not root:
+        return []
+    return sorted(glob.glob(os.path.join(root, pattern), recursive=True))
+
+
+def _find_sample_results_roots(sample_name):
+    """All on-disk results roots for a sample (order-scoped + legacy), newest first."""
+    if not sample_name:
+        return []
+    roots = []
+    for p in glob.glob(os.path.join(RESULTS_DIR, "*", sample_name)):
+        if os.path.isdir(p):
+            roots.append(p)
+    legacy = _legacy_results_root(sample_name)
+    if legacy and os.path.isdir(legacy) and legacy not in roots:
+        # Avoid mistaking results/<order_id> when sample_name equals an order id leaf
+        if not os.path.isdir(os.path.join(legacy, sample_name)):
+            roots.append(legacy)
+    roots.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return roots
+
+
+def _glob_under_sample_results(sample_name, pattern):
+    """glob pattern under every results root for sample_name (newest roots first)."""
+    hits = []
+    for root in _find_sample_results_roots(sample_name):
+        hits.extend(glob.glob(os.path.join(root, pattern), recursive=True))
+    # de-dupe preserving order
+    seen = set()
+    out = []
+    for h in hits:
+        if h not in seen:
+            seen.add(h)
+            out.append(h)
+    return out
+
+
+def _expression_summary_paths():
+    """All expression summary TSVs (legacy + order-scoped layouts)."""
+    patterns = [
+        os.path.join(RESULTS_DIR, "*", "expression_plots", "*_expression_summary.tsv"),
+        os.path.join(RESULTS_DIR, "*", "*", "expression_plots", "*_expression_summary.tsv"),
+    ]
+    hits = []
+    for pat in patterns:
+        hits.extend(glob.glob(pat))
+    return sorted(set(hits))
+
+
 def _get_flask_secret_key():
     key = os.environ.get("FLASK_SECRET_KEY", "").strip()
     if key:
@@ -735,28 +836,28 @@ def purge_order_disk_assets(order):
         os.path.join(FASTQ_DIR, order_id),
     ]
 
-    # Guard: only delete results/{sample} when no other order shares the same sample_name.
-    # This protects a completed baseline/followup's results when a Longitudinal companion
-    # order (Case 2 promote, or reuse-mode Case 1 where sample_name was inherited) is deleted.
-    def _other_order_uses_sample(sample_name, exclude_id):
+    # Order-scoped results: results/<order_id>/ (never wipe another order's tree).
+    # Skip when this order reuses another order's work (longitudinal companion).
+    if not reuse_wid:
+        order_res = _order_results_order_dir(order_id)
+        if order_res:
+            dir_candidates.append(order_res)
+        # Legacy shared layout only if no other order still uses this sample_name
         try:
             db = get_db()
-            row = db.execute(
+            other = db.execute(
                 "SELECT id FROM orders WHERE sample_name=? AND id!=? LIMIT 1",
-                (sample_name, exclude_id),
+                (sample, order_id),
             ).fetchone()
-            return row is not None
+            if other is None:
+                legacy = _legacy_results_root(sample)
+                if legacy:
+                    dir_candidates.append(legacy)
         except Exception:
-            return True  # err on the safe side
+            pass
 
-    can_delete_results = (
-        not reuse_wid
-        and not _other_order_uses_sample(sample, order_id)
-    )
-    if can_delete_results:
-        dir_candidates.append(os.path.join(RESULTS_DIR, sample))
     nfwd = (order.get("nf_work_dir") or "").strip()
-    if nfwd and can_delete_results:
+    if nfwd and not reuse_wid:
         dir_candidates.append(nfwd)
 
     seen_real = set()
@@ -869,8 +970,11 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
 
     os.makedirs(os.path.join(BASE_DIR, work_dir_rel), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, nxf_home_rel), exist_ok=True)
-    os.makedirs(os.path.join(RESULTS_DIR, sample), exist_ok=True)
+    order_outdir_host = _order_scoped_results_root(order_id, sample)
+    if order_outdir_host:
+        os.makedirs(order_outdir_host, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
+    outdir_container = f"/work_nxt/results/{order_id}"
 
     af = order.get("af_threshold") or 0.005
     ref = order.get("reference") or "hg38"
@@ -961,7 +1065,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
             "-name", run_name,
             "-work-dir", f"/work_nxt/{work_dir_rel}",
             "--input", ss_container_path,
-            "--outdir", "/work_nxt/results",
+            "--outdir", outdir_container,
             "--reference", ref,
             "--data_dir", "/work_nxt_data",
             "--max_cpus",   str(cpus_per_sample),
@@ -980,7 +1084,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
             "-name", run_name,
             "-work-dir", f"/work_nxt/{work_dir_rel}",
             "--input", ss_container_path,
-            "--outdir", "/work_nxt/results",
+            "--outdir", outdir_container,
             "--reference", ref,
             "--af_threshold", str(af),
             "--data_dir", "/work_nxt_data",
@@ -1053,46 +1157,54 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
 
         if baseline_id and germline_id:
             db_conn = get_db()
-            baseline_row = db_conn.execute("SELECT sample_name FROM orders WHERE id=?", (baseline_id,)).fetchone()
-            germline_row = db_conn.execute("SELECT sample_name FROM orders WHERE id=?", (germline_id,)).fetchone()
+            baseline_row = db_conn.execute("SELECT * FROM orders WHERE id=?", (baseline_id,)).fetchone()
+            germline_row = db_conn.execute("SELECT * FROM orders WHERE id=?", (germline_id,)).fetchone()
 
             if baseline_row and germline_row:
-                bl_sample = baseline_row["sample_name"]
-                gm_sample = germline_row["sample_name"]
-
-                results_rel = os.path.relpath(RESULTS_DIR, BASE_DIR)
+                bl_order = dict_from_row(baseline_row)
+                gm_order = dict_from_row(germline_row)
+                bl_sample = bl_order["sample_name"]
+                gm_sample = gm_order["sample_name"]
+                bl_root = _order_results_root(bl_order)
+                gm_root = _order_results_root(gm_order)
 
                 # Baseline annotated VCF txt
-                bl_ann_host = os.path.join(RESULTS_DIR, bl_sample, "output", f"{bl_sample}_vardict_annotated_vcf.txt")
-                if not os.path.isfile(bl_ann_host):
-                    import glob as _glob2
-                    bl_candidates = _glob2.glob(os.path.join(RESULTS_DIR, bl_sample, "output", "**", f"{bl_sample}_vardict_annotated_vcf.txt"), recursive=True)
-                    if bl_candidates:
-                        bl_ann_host = bl_candidates[0]
-                if os.path.isfile(bl_ann_host):
-                    bl_ann_container = f"/work_nxt/{os.path.relpath(bl_ann_host, BASE_DIR)}"
-                    nf_cmd.extend(["--longitudinal_baseline_ann_txt", bl_ann_container])
+                bl_ann_host = ""
+                if bl_root:
+                    bl_ann_host = os.path.join(bl_root, "output", f"{bl_sample}_vardict_annotated_vcf.txt")
+                    if not os.path.isfile(bl_ann_host):
+                        bl_candidates = glob.glob(
+                            os.path.join(bl_root, "output", "**", f"{bl_sample}_vardict_annotated_vcf.txt"),
+                            recursive=True,
+                        )
+                        if bl_candidates:
+                            bl_ann_host = bl_candidates[0]
+                if bl_ann_host and os.path.isfile(bl_ann_host):
+                    nf_cmd.extend(["--longitudinal_baseline_ann_txt", _host_to_work_nxt(bl_ann_host)])
 
                 # Germline clipped_sorted BAM (prefer results/, fallback to work/)
-                gm_bam_host = os.path.join(RESULTS_DIR, gm_sample, "output", "bam", f"{gm_sample}_clipped_sorted.bam")
-                gm_bai_host = gm_bam_host + ".bai"
-                if not os.path.isfile(gm_bam_host):
-                    import glob as _glob3
-                    gm_candidates = _glob3.glob(os.path.join(BASE_DIR, "work", "**", f"{gm_sample}_clipped_sorted.bam"), recursive=True)
-                    # Prefer the actual file over symlinks
+                gm_bam_host = ""
+                if gm_root:
+                    gm_bam_host = os.path.join(gm_root, "output", "bam", f"{gm_sample}_clipped_sorted.bam")
+                if not gm_bam_host or not os.path.isfile(gm_bam_host):
+                    gm_candidates = glob.glob(
+                        os.path.join(BASE_DIR, "work", "**", f"{gm_sample}_clipped_sorted.bam"),
+                        recursive=True,
+                    )
                     gm_candidates_real = [p for p in gm_candidates if not os.path.islink(p)]
                     if gm_candidates_real:
                         gm_bam_host = gm_candidates_real[0]
-                        gm_bai_host = gm_bam_host[:-4] + ".bai"
                     elif gm_candidates:
                         gm_bam_host = os.path.realpath(gm_candidates[0])
-                        gm_bai_host = gm_bam_host[:-4] + ".bai"
-                if os.path.isfile(gm_bam_host):
-                    gm_bam_container = f"/work_nxt/{os.path.relpath(gm_bam_host, BASE_DIR)}"
-                    gm_bai_container = f"/work_nxt/{os.path.relpath(gm_bai_host, BASE_DIR)}"
+                if gm_bam_host and os.path.isfile(gm_bam_host):
+                    gm_bai_host = gm_bam_host + ".bai"
+                    if not os.path.isfile(gm_bai_host):
+                        alt_bai = gm_bam_host[:-4] + ".bai"
+                        if os.path.isfile(alt_bai):
+                            gm_bai_host = alt_bai
                     nf_cmd.extend([
-                        "--longitudinal_germline_bam", gm_bam_container,
-                        "--longitudinal_germline_bai", gm_bai_container,
+                        "--longitudinal_germline_bam", _host_to_work_nxt(gm_bam_host),
+                        "--longitudinal_germline_bai", _host_to_work_nxt(gm_bai_host),
                     ])
 
     if panel_type != "rna" and extra_nf_params:
@@ -1553,6 +1665,16 @@ def api_resources():
     fastq_path = FASTQ_HOST_DIR if FASTQ_HOST_DIR and os.path.exists(FASTQ_HOST_DIR) else run_path
     disk_fastq = psutil.disk_usage(fastq_path)
 
+    # 실행 중인 분석 컨테이너 수 (nxt_ 접두어)
+    try:
+        nxt_result = subprocess.run(
+            ["docker", "ps", "--filter", "name=nxt_", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        running_analyses = len([l for l in nxt_result.stdout.strip().splitlines() if l])
+    except Exception:
+        running_analyses = 0
+
     return jsonify({
         "cpu_percent": cpu,
         "cpu_count": psutil.cpu_count(),
@@ -1569,6 +1691,7 @@ def api_resources():
         "disk_fastq_percent":   disk_fastq.percent,
         "disk_fastq_same":      os.path.realpath(fastq_path) == os.path.realpath(run_path)
                                 or disk_run.total == disk_fastq.total,
+        "running_analyses": running_analyses,
     })
 
 
@@ -1589,12 +1712,20 @@ def api_orders():
     for r in rows:
         o = dict_from_row(r)
         sample = o.get("sample_name", "")
-        o["has_vcf"] = bool(glob.glob(os.path.join(RESULTS_DIR, sample, "**", f"{sample}*.vcf"), recursive=True))
-        o["has_log"] = bool(glob.glob(os.path.join(LOG_DIR, f"{sample}_*_nf.log")))
-        qc_dir = os.path.join(RESULTS_DIR, sample, "QC_report")
-        o["has_qc"] = os.path.isdir(qc_dir) and bool(os.listdir(qc_dir))
-        o["has_expression"] = bool(glob.glob(os.path.join(
-            RESULTS_DIR, sample, "expression_plots", f"{sample}_expression_summary.tsv")))
+        oid = o.get("id", "")
+        root = _order_results_root(o)
+        o["has_vcf"] = bool(
+            glob.glob(os.path.join(root, "**", f"{sample}*.vcf"), recursive=True)
+        ) if root else False
+        o["has_log"] = bool(
+            os.path.isfile(os.path.join(LOG_DIR, f"{sample}_{oid}_nf.log"))
+            or glob.glob(os.path.join(LOG_DIR, f"{sample}_*_nf.log"))
+        )
+        qc_dir = os.path.join(root, "QC_report") if root else ""
+        o["has_qc"] = bool(qc_dir and os.path.isdir(qc_dir) and os.listdir(qc_dir))
+        o["has_expression"] = bool(
+            root and glob.glob(os.path.join(root, "expression_plots", f"{sample}_expression_summary.tsv"))
+        )
         result.append(o)
     return jsonify(result)
 
@@ -1851,9 +1982,18 @@ def api_force_order(order_id):
     _cleanup_nf_lock(order_id)
     if order.get("nf_work_dir") and os.path.isdir(order["nf_work_dir"]):
         shutil.rmtree(order["nf_work_dir"], ignore_errors=True)
-    result_dir = os.path.join(RESULTS_DIR, order["sample_name"])
-    if os.path.isdir(result_dir):
-        shutil.rmtree(result_dir, ignore_errors=True)
+    order_res = _order_results_order_dir(order_id)
+    if order_res and os.path.isdir(order_res):
+        shutil.rmtree(order_res, ignore_errors=True)
+    # Legacy shared results/<sample>/ — only wipe if no other order uses this sample
+    legacy = _legacy_results_root(order["sample_name"])
+    if legacy and os.path.isdir(legacy):
+        other = db.execute(
+            "SELECT id FROM orders WHERE sample_name=? AND id!=? LIMIT 1",
+            (order["sample_name"], order_id),
+        ).fetchone()
+        if other is None:
+            shutil.rmtree(legacy, ignore_errors=True)
     try:
         cid = start_analysis(
             order, force=True, resume=False, started_by_user_id=session.get("user_id") or "",
@@ -1867,8 +2007,9 @@ def api_force_order(order_id):
 def api_rerun_qc(order_id):
     """Re-run QC_REPORT only using existing BAM files and (optionally updated) BED settings.
 
-    Finds the published deduped BAM in results/<sample>/output/bam/ and launches
-    Nextflow with --qc_only mode.  Variant calls are NOT repeated.
+    Finds the published deduped BAM in results/<order_id>/<sample>/output/bam/
+    (or legacy results/<sample>/) and launches Nextflow with --qc_only mode.
+    Variant calls are NOT repeated.
     Returns 409 if no BAM is found (user must do a full force-rerun instead).
     """
     _require_auth()
@@ -1882,20 +2023,15 @@ def api_rerun_qc(order_id):
     ref    = order.get("reference") or "hg38"
 
     # Locate existing deduped BAM (clipped_sorted = UMI deduped final BAM)
-    import glob as _glob3
-    bam_candidates = _glob3.glob(
-        os.path.join(RESULTS_DIR, sample, "output", "bam", "*_clipped_sorted.bam")
-    )
+    bam_candidates = _glob_in_order_results(order, os.path.join("output", "bam", "*_clipped_sorted.bam"))
     if not bam_candidates:
         return jsonify({
             "success": False,
-            "error": f"기존 BAM 파일을 찾을 수 없습니다 ({sample}/output/bam/). 처음부터 재실행하세요.",
+            "error": f"기존 BAM 파일을 찾을 수 없습니다 (results/.../{sample}/output/bam/). 처음부터 재실행하세요.",
         }), 409
 
     deduped_bam = bam_candidates[0]
-    # Container-internal path
-    results_rel  = os.path.relpath(RESULTS_DIR, BASE_DIR)
-    container_bam = f"/work_nxt/{results_rel}/{sample}/output/bam/{os.path.basename(deduped_bam)}"
+    container_bam = _host_to_work_nxt(deduped_bam)
 
     # Resolve BED overrides (same logic as start_analysis)
     extra_nf = ["--qc_only", "true", "--qc_deduped_bam", container_bam]
@@ -1924,14 +2060,11 @@ def api_check_bam(order_id):
     """Check whether a published BAM exists for this order (used by UI to decide rerun options)."""
     _require_auth()
     db = get_db()
-    row = db.execute("SELECT sample_name FROM orders WHERE id=?", (order_id,)).fetchone()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
         return jsonify({"exists": False}), 404
-    sample = row["sample_name"]
-    import glob as _glob4
-    bam_candidates = _glob4.glob(
-        os.path.join(RESULTS_DIR, sample, "output", "bam", "*_clipped_sorted.bam")
-    )
+    order = dict_from_row(row)
+    bam_candidates = _glob_in_order_results(order, os.path.join("output", "bam", "*_clipped_sorted.bam"))
     return jsonify({"exists": bool(bam_candidates),
                     "bam": bam_candidates[0] if bam_candidates else None})
 
@@ -2024,16 +2157,12 @@ def api_reannotate(order_id):
     sample = order["sample_name"]
 
     # Find published VarDict VCF
-    vcf_candidates = glob.glob(
-        os.path.join(RESULTS_DIR, sample, "**", f"{sample}_vardict.vcf"),
-        recursive=True,
-    )
+    vcf_candidates = _glob_in_order_results(order, os.path.join("**", f"{sample}_vardict.vcf"))
     if not vcf_candidates:
         return jsonify({"success": False, "error": f"Published VarDict VCF를 찾을 수 없습니다: {sample}_vardict.vcf"}), 404
 
     vcf_host = vcf_candidates[0]
-    # Convert host path to container path
-    vcf_container = vcf_host.replace(RESULTS_DIR, "/work_nxt/results", 1)
+    vcf_container = _host_to_work_nxt(vcf_host)
 
     try:
         start_analysis(
@@ -2146,36 +2275,34 @@ def api_promote_to_longitudinal(order_id):
     # ── Bypass mode: use published BAM + annotated TXT when work dir is sparse ──
     # When delete_intermediate=Y cleaned the work dir, we can skip the heavy
     # FASTQ→BAM→VarDict steps by pointing Nextflow directly at the published
-    # outputs that were preserved in results/<sample>/output/.
+    # outputs that were preserved in results/<order_id>/<sample>/output/.
     sample = order["sample_name"]
     bypass_params = []
+    root = _order_results_root(order)
 
-    bam_pattern  = os.path.join(RESULTS_DIR, sample, "output", "bam", f"{sample}_clipped_sorted.bam")
-    ann_pattern  = os.path.join(RESULTS_DIR, sample, "output", f"{sample}_vardict_annotated_vcf.txt")
+    bam_pattern = ""
+    ann_pattern = ""
+    if root:
+        bam_pattern = os.path.join(root, "output", "bam", f"{sample}_clipped_sorted.bam")
+        ann_pattern = os.path.join(root, "output", f"{sample}_vardict_annotated_vcf.txt")
+        if not os.path.isfile(ann_pattern):
+            candidates = glob.glob(
+                os.path.join(root, "output", "**", f"{sample}_vardict_annotated_vcf.txt"),
+                recursive=True,
+            )
+            if candidates:
+                ann_pattern = candidates[0]
 
-    # Also allow the annotated txt that may live under a subdirectory (output_subdir)
-    import glob as _glob
-    if not os.path.isfile(ann_pattern):
-        candidates = _glob.glob(os.path.join(RESULTS_DIR, sample, "output", "**", f"{sample}_vardict_annotated_vcf.txt"), recursive=True)
-        if candidates:
-            ann_pattern = candidates[0]
-
-    if os.path.isfile(bam_pattern) and os.path.isfile(ann_pattern):
+    if bam_pattern and ann_pattern and os.path.isfile(bam_pattern) and os.path.isfile(ann_pattern):
         bai_path = bam_pattern + ".bai"
         if not os.path.isfile(bai_path):
-            bai_candidates = _glob.glob(os.path.join(RESULTS_DIR, sample, "output", "bam", "*.bai"))
+            bai_candidates = glob.glob(os.path.join(root, "output", "bam", "*.bai"))
             bai_path = bai_candidates[0] if bai_candidates else bam_pattern + ".bai"
 
-        # Container-internal paths (/work_nxt maps to host BASE_DIR)
-        results_rel = os.path.relpath(RESULTS_DIR, BASE_DIR)
-        container_bam = f"/work_nxt/{results_rel}/{sample}/output/bam/{os.path.basename(bam_pattern)}"
-        container_bai = f"/work_nxt/{results_rel}/{sample}/output/bam/{os.path.basename(bai_path)}"
-        container_ann = f"/work_nxt/{os.path.relpath(ann_pattern, BASE_DIR)}"
-
         bypass_params = [
-            "--precomputed_bam",     container_bam,
-            "--precomputed_bai",     container_bai,
-            "--precomputed_ann_txt", container_ann,
+            "--precomputed_bam",     _host_to_work_nxt(bam_pattern),
+            "--precomputed_bai",     _host_to_work_nxt(bai_path),
+            "--precomputed_ann_txt", _host_to_work_nxt(ann_pattern),
         ]
         bypass_mode = True
     else:
@@ -2187,7 +2314,7 @@ def api_promote_to_longitudinal(order_id):
     cached_count = 0
     if os.path.isdir(work_dir):
         try:
-            cached_count = len(_glob.glob(os.path.join(work_dir, "**", ".exitcode"), recursive=True))
+            cached_count = len(glob.glob(os.path.join(work_dir, "**", ".exitcode"), recursive=True))
         except Exception:
             pass
 
@@ -2378,39 +2505,50 @@ def api_results_image(rel_path):
     return send_file(safe_path, mimetype=mime)
 
 
-@app.route("/api/download/<sample_name>/<file_type>")
-def api_download(sample_name, file_type):
-    try:
-        if file_type == "vcf":
-            fp = glob.glob(os.path.join(RESULTS_DIR, sample_name, "**", f"{sample_name}*.vcf"), recursive=True)
-            fp = fp[0] if fp else ""
-        elif file_type == "txt":
-            fp = glob.glob(os.path.join(RESULTS_DIR, sample_name, "**", f"{sample_name}*annotated*.txt"), recursive=True)
-            fp = fp[0] if fp else ""
-        elif file_type == "log":
+def _download_file_for_order(order, file_type):
+    """Resolve a downloadable artifact for an order. Returns (filepath|None, flask_response|None)."""
+    sample_name = order["sample_name"]
+    order_id = order["id"]
+    root = _order_results_root(order)
+    fp = ""
+
+    if file_type == "vcf":
+        hits = _glob_in_order_results(order, os.path.join("**", f"{sample_name}*.vcf"))
+        fp = hits[0] if hits else ""
+    elif file_type == "txt":
+        hits = _glob_in_order_results(order, os.path.join("**", f"{sample_name}*annotated*.txt"))
+        fp = hits[0] if hits else ""
+    elif file_type == "log":
+        preferred = os.path.join(LOG_DIR, f"{sample_name}_{order_id}_nf.log")
+        if os.path.isfile(preferred):
+            fp = preferred
+        else:
             candidates = glob.glob(os.path.join(LOG_DIR, f"{sample_name}_*_nf.log"))
             fp = candidates[0] if candidates else ""
-        # ── RNA-seq specific download types ──────────────────────────────────
-        elif file_type == "counts":
-            # featureCounts raw count matrix
-            candidates = glob.glob(os.path.join(RESULTS_DIR, sample_name, "featureCounts", f"{sample_name}_counts.txt"))
-            fp = candidates[0] if candidates else ""
-        elif file_type == "expression":
-            # CPM/TPM expression summary
-            candidates = glob.glob(os.path.join(RESULTS_DIR, sample_name, "expression_plots", f"{sample_name}_expression_summary.tsv"))
-            fp = candidates[0] if candidates else ""
-        elif file_type == "multiqc":
-            # MultiQC HTML report
-            candidates = glob.glob(os.path.join(RESULTS_DIR, "MultiQC", "multiqc_report.html"))
-            fp = candidates[0] if candidates else ""
-        elif file_type == "rna_qc_json":
-            # RNA QC JSON
-            candidates = glob.glob(os.path.join(RESULTS_DIR, sample_name, "QC_report", f"{sample_name}_rna_qc.json"))
-            fp = candidates[0] if candidates else ""
-        elif file_type == "fusion":
-            # STAR-Fusion results (prefer coding_effect abridged)
-            fusion_dir = os.path.join(RESULTS_DIR, sample_name, "star_fusion")
-            fp = ""
+    elif file_type == "counts":
+        if root:
+            p = os.path.join(root, "featureCounts", f"{sample_name}_counts.txt")
+            fp = p if os.path.isfile(p) else ""
+    elif file_type == "expression":
+        if root:
+            p = os.path.join(root, "expression_plots", f"{sample_name}_expression_summary.tsv")
+            fp = p if os.path.isfile(p) else ""
+    elif file_type == "multiqc":
+        # Per-order outdir first, then legacy top-level MultiQC
+        candidates = []
+        if order_id:
+            candidates.extend(glob.glob(os.path.join(RESULTS_DIR, order_id, "MultiQC", "multiqc_report.html")))
+        if root:
+            candidates.extend(glob.glob(os.path.join(root, "..", "MultiQC", "multiqc_report.html")))
+        candidates.extend(glob.glob(os.path.join(RESULTS_DIR, "MultiQC", "multiqc_report.html")))
+        fp = next((c for c in candidates if os.path.isfile(c)), "")
+    elif file_type == "rna_qc_json":
+        if root:
+            p = os.path.join(root, "QC_report", f"{sample_name}_rna_qc.json")
+            fp = p if os.path.isfile(p) else ""
+    elif file_type == "fusion":
+        if root:
+            fusion_dir = os.path.join(root, "star_fusion")
             for pat in [
                 f"{sample_name}_star-fusion.fusion_predictions.abridged.coding_effect.tsv",
                 f"{sample_name}_star-fusion.fusion_predictions.abridged.tsv",
@@ -2419,37 +2557,111 @@ def api_download(sample_name, file_type):
                 if os.path.isfile(candidate):
                     fp = candidate
                     break
-        elif file_type == "expression_xlsx":
-            # Expression summary TSV → Excel (expressed genes only, count > 0)
-            import io
-            tsv_candidates = glob.glob(os.path.join(
-                RESULTS_DIR, sample_name, "expression_plots",
-                f"{sample_name}_expression_summary.tsv"))
-            if not tsv_candidates or not os.path.isfile(tsv_candidates[0]):
-                return jsonify({"error": "Expression file not found"}), 404
-            import pandas as pd
-            df = pd.read_csv(tsv_candidates[0], sep="\t")
-            # Only include expressed genes (count > 0) — reduces ~62k rows to ~15-20k
-            df = df[df["count"] > 0].copy()
-            df.sort_values("TPM", ascending=False, inplace=True)
-            col_map = {"gene_id": "Gene ID", "gene_symbol": "Gene Symbol",
-                       "length": "Length (bp)", "count": "Raw Count",
-                       "CPM": "CPM", "TPM": "TPM", "log2CPM": "log2(CPM+1)"}
-            df.rename(columns={k: v for k, v in col_map.items() if k in df.columns}, inplace=True)
-            buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                df.to_excel(writer, index=False, sheet_name="Expression")
-                ws = writer.sheets["Expression"]
-                for col in ws.columns:
-                    max_len = max((len(str(cell.value or "")) for cell in col), default=10)
-                    ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
-            buf.seek(0)
-            resp = make_response(buf.read())
-            resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            resp.headers["Content-Disposition"] = f'attachment; filename="{sample_name}_expression.xlsx"'
-            return resp
+    elif file_type == "expression_xlsx":
+        import io
+        tsv = ""
+        if root:
+            p = os.path.join(root, "expression_plots", f"{sample_name}_expression_summary.tsv")
+            if os.path.isfile(p):
+                tsv = p
+        if not tsv:
+            return None, (jsonify({"error": "Expression file not found"}), 404)
+        import pandas as pd
+        df = pd.read_csv(tsv, sep="\t")
+        df = df[df["count"] > 0].copy()
+        df.sort_values("TPM", ascending=False, inplace=True)
+        col_map = {"gene_id": "Gene ID", "gene_symbol": "Gene Symbol",
+                   "length": "Length (bp)", "count": "Raw Count",
+                   "CPM": "CPM", "TPM": "TPM", "log2CPM": "log2(CPM+1)"}
+        df.rename(columns={k: v for k, v in col_map.items() if k in df.columns}, inplace=True)
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Expression")
+            ws = writer.sheets["Expression"]
+            for col in ws.columns:
+                max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+        buf.seek(0)
+        resp = make_response(buf.read())
+        resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{sample_name}_expression.xlsx"'
+        return None, resp
+    else:
+        return None, (jsonify({"error": "Invalid file type"}), 400)
+
+    if fp and os.path.isfile(fp):
+        return fp, None
+    return None, (jsonify({"error": "File not found"}), 404)
+
+
+@app.route("/api/orders/<order_id>/download/<file_type>")
+def api_order_download(order_id, file_type):
+    """Download order-scoped result artifacts (preferred over sample-only download)."""
+    try:
+        db = get_db()
+        row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Order not found"}), 404
+        order = dict_from_row(row)
+        fp, special = _download_file_for_order(order, file_type)
+        if special is not None:
+            if isinstance(special, tuple):
+                return special
+            return special
+        return send_file(fp, as_attachment=True)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/download/<sample_name>/<file_type>")
+def api_download(sample_name, file_type):
+    """Legacy sample-keyed download (ambiguous when multiple orders share a sample).
+
+    Resolves the newest results root for the sample. Prefer
+    /api/orders/<order_id>/download/<file_type>.
+    """
+    try:
+        # Prefer a DB order with this sample (newest completed/running)
+        db = get_db()
+        row = db.execute(
+            "SELECT * FROM orders WHERE sample_name=? ORDER BY updated_at DESC LIMIT 1",
+            (sample_name,),
+        ).fetchone()
+        if row:
+            fp, special = _download_file_for_order(dict_from_row(row), file_type)
+            if special is not None:
+                if isinstance(special, tuple):
+                    return special
+                return special
+            if fp:
+                return send_file(fp, as_attachment=True)
+
+        # Fallback: scan disk without an order row
+        if file_type == "vcf":
+            hits = _glob_under_sample_results(sample_name, os.path.join("**", f"{sample_name}*.vcf"))
+            fp = hits[0] if hits else ""
+        elif file_type == "txt":
+            hits = _glob_under_sample_results(sample_name, os.path.join("**", f"{sample_name}*annotated*.txt"))
+            fp = hits[0] if hits else ""
+        elif file_type == "log":
+            candidates = glob.glob(os.path.join(LOG_DIR, f"{sample_name}_*_nf.log"))
+            fp = candidates[0] if candidates else ""
         else:
-            return jsonify({"error": "Invalid file type"}), 400
+            hits = _glob_under_sample_results(sample_name, os.path.join("**", "*"))
+            fp = ""
+            # limited fallbacks for RNA
+            if file_type == "expression":
+                hits = _glob_under_sample_results(
+                    sample_name, os.path.join("expression_plots", f"{sample_name}_expression_summary.tsv")
+                )
+                fp = hits[0] if hits else ""
+            elif file_type == "counts":
+                hits = _glob_under_sample_results(
+                    sample_name, os.path.join("featureCounts", f"{sample_name}_counts.txt")
+                )
+                fp = hits[0] if hits else ""
+            else:
+                return jsonify({"error": "File not found"}), 404
         if fp and os.path.isfile(fp):
             return send_file(fp, as_attachment=True)
         return jsonify({"error": "File not found"}), 404
@@ -2466,9 +2678,10 @@ def api_qc_data(order_id):
         return jsonify({"error": "Order not found"}), 404
     order = dict_from_row(row)
     sample = order["sample_name"]
+    root = _order_results_root(order) or ""
 
-    qc_dir = os.path.join(RESULTS_DIR, sample, "QC_report")
-    trim_dir = os.path.join(RESULTS_DIR, sample, "trimming")
+    qc_dir = os.path.join(root, "QC_report") if root else ""
+    trim_dir = os.path.join(root, "trimming") if root else ""
 
     def _parse_picard(filepath):
         """Parse a Picard-style metrics file: return list of dicts (one per data row)."""
@@ -2518,7 +2731,12 @@ def api_qc_data(order_id):
                     continue
         return None
 
-    result = {"success": True, "sample_name": sample, "order_name": order.get("order_name", "")}
+    result = {
+        "success": True,
+        "order_id": order_id,
+        "sample_name": sample,
+        "order_name": order.get("order_name", ""),
+    }
 
     # Subsampling info (stored at analysis-start time)
     sub_info_raw = order.get("subsample_info", "") or ""
@@ -2667,6 +2885,49 @@ def api_qc_data(order_id):
         except Exception:
             pass
 
+    # 7b. UMI QC (family size / clip / UMI duplication)
+    umi_json = os.path.join(qc_dir, f"{sample}_umi_qc.json")
+    if os.path.isfile(umi_json):
+        try:
+            with open(umi_json, "r") as fh:
+                result["umi_qc"] = json.load(fh)
+        except Exception:
+            pass
+    else:
+        # Fallback: build a minimal summary from published group TSV alone
+        group_tsv = os.path.join(qc_dir, f"{sample}_umi_group_data.tsv")
+        if os.path.isfile(group_tsv):
+            try:
+                hist = []
+                total = 0
+                singleton = 0
+                weighted = 0
+                with open(group_tsv, "r") as fh:
+                    reader = csv.DictReader(fh, delimiter="\t")
+                    for row in reader:
+                        fs = int(row["family_size"])
+                        c = int(row["count"])
+                        total += c
+                        weighted += fs * c
+                        if fs == 1:
+                            singleton = c
+                        if fs <= 20:
+                            hist.append({"family_size": fs, "count": c})
+                result["umi_qc"] = {
+                    "sample_id": sample,
+                    "umi_families": {
+                        "total_families": total,
+                        "singleton_families": singleton,
+                        "singleton_fraction": (singleton / total) if total else None,
+                        "mean_family_size": (weighted / total) if total else None,
+                        "family_size_histogram": hist,
+                    },
+                    "clipov": {},
+                    "reads": {},
+                }
+            except Exception:
+                pass
+
     # ── 8. RNA-seq QC (parsed from _rna_qc.json generated by RNASEQ_QC_SUMMARY) ──
     rna_qc_path = os.path.join(qc_dir, f"{sample}_rna_qc.json")
     if os.path.isfile(rna_qc_path):
@@ -2700,9 +2961,9 @@ def api_qc_data(order_id):
             pass
 
     # ── 9. RNA expression summary (top genes, CPM/TPM table) ─────────────────
-    expr_dir = os.path.join(RESULTS_DIR, sample, "expression_plots")
-    expr_summary_path = os.path.join(expr_dir, f"{sample}_expression_summary.tsv")
-    if os.path.isfile(expr_summary_path):
+    expr_dir = os.path.join(root, "expression_plots") if root else ""
+    expr_summary_path = os.path.join(expr_dir, f"{sample}_expression_summary.tsv") if expr_dir else ""
+    if expr_summary_path and os.path.isfile(expr_summary_path):
         try:
             import csv as _csv
             with open(expr_summary_path, "r") as fh:
@@ -2720,7 +2981,7 @@ def api_qc_data(order_id):
             pass
 
     # ── 10. RNA expression plot images (relative paths for UI) ───────────────
-    if os.path.isdir(expr_dir):
+    if expr_dir and os.path.isdir(expr_dir):
         plot_files = glob.glob(os.path.join(expr_dir, f"{sample}_*.png"))
         result["rna_plots"] = [
             os.path.relpath(p, RESULTS_DIR) for p in sorted(plot_files)
@@ -2731,7 +2992,7 @@ def api_qc_data(order_id):
         ]
 
     # ── 11. STAR-Fusion results ───────────────────────────────────────────────
-    fusion_dir = os.path.join(RESULTS_DIR, sample, "star_fusion")
+    fusion_dir = os.path.join(root, "star_fusion") if root else ""
     # Prefer coding_effect abridged file; fall back to plain abridged
     for fusion_pattern in [
         f"{sample}_star-fusion.fusion_predictions.abridged.coding_effect.tsv",
@@ -2970,6 +3231,36 @@ def api_qc_report_txt(order_id):
         for k, v in mm.items():
             row_kv(k, v)
 
+    # UMI QC
+    umi = d.get("umi_qc")
+    if umi:
+        fam = umi.get("umi_families") or {}
+        clip = umi.get("clipov") or {}
+        reads = umi.get("reads") or {}
+        h("UMI QC")
+        if fam.get("total_families") is not None:
+            row_kv("Total UMI families", f"{int(fam['total_families']):,}")
+        if fam.get("singleton_fraction") is not None:
+            row_kv("Singleton families", f"{int(fam.get('singleton_families') or 0):,} ({100*float(fam['singleton_fraction']):.2f}%)")
+        if fam.get("mean_family_size") is not None:
+            row_kv("Mean family size", f"{float(fam['mean_family_size']):.3f}")
+        if fam.get("median_family_size") is not None:
+            row_kv("Median family size", fam.get("median_family_size"))
+        if fam.get("pct_family_ge3") is not None:
+            row_kv("% families size >= 3", f"{100*float(fam['pct_family_ge3']):.2f}%")
+        if fam.get("pct_family_ge5") is not None:
+            row_kv("% families size >= 5", f"{100*float(fam['pct_family_ge5']):.2f}%")
+        if reads.get("umi_duplication_rate") is not None:
+            row_kv("UMI duplication rate", f"{100*float(reads['umi_duplication_rate']):.2f}%")
+        if reads.get("pf_reads_aligned") is not None:
+            row_kv("PF reads (aligned)", reads.get("pf_reads_aligned"))
+        if reads.get("pf_reads_umi_deduped") is not None:
+            row_kv("PF reads (UMI deduped)", reads.get("pf_reads_umi_deduped"))
+        if clip.get("pct_reads_clipped_overlapping") is not None:
+            row_kv("% reads clipped overlapping", f"{100*float(clip['pct_reads_clipped_overlapping']):.2f}%")
+        if clip.get("pct_bases_clipped_overlapping") is not None:
+            row_kv("% bases clipped overlapping", f"{100*float(clip['pct_bases_clipped_overlapping']):.2f}%")
+
     lines.append("")
     lines.append("=" * 60)
     lines.append("  End of Report")
@@ -2997,10 +3288,7 @@ def api_vcf_data(order_id):
     order = dict_from_row(row)
     sample = order["sample_name"]
 
-    candidates = glob.glob(
-        os.path.join(RESULTS_DIR, sample, "**", f"{sample}*annotated*vcf.txt"),
-        recursive=True,
-    )
+    candidates = _glob_in_order_results(order, os.path.join("**", f"{sample}*annotated*vcf.txt"))
     if not candidates:
         return jsonify({"error": "No annotated VCF table found"}), 404
     fp = candidates[0]
@@ -3070,7 +3358,8 @@ def api_vcf_data(order_id):
                         pos_val   = vals[col_idx["POS"]]   if "POS"   in col_idx else ""
                         ref_val   = vals[col_idx["REF"]]   if "REF"   in col_idx else ""
                         alt_val   = vals[col_idx["ALT"]]   if "ALT"   in col_idx else ""
-                        nc = _NC_HG38.get(chrom_val, "")
+                        nc_map = _NC_HG19 if order_ref == "hg19" else _NC_HG38
+                        nc = nc_map.get(chrom_val, "")
                         rec[c] = f"{nc}:g.{pos_val}{ref_val}>{alt_val}" if nc and pos_val else ""
                     elif c == "GT":
                         rec[c] = vals[col_idx[gt_col]] if gt_col else ""
@@ -3097,8 +3386,10 @@ def api_vcf_data(order_id):
             "success": True,
             "columns": display_cols,
             "data": rows_out,
+            "order_id": order_id,
             "sample_name": sample,
             "order_name": order.get("order_name", ""),
+            "reference": order_ref,
             "total": len(rows_out),
             "blacklisted_count": blacklisted,
         })
@@ -3111,17 +3402,6 @@ def api_vcf_data(order_id):
 # ---------------------------------------------------------------------------
 def _igv_disabled_response():
     return jsonify({"error": "IGV feature disabled"}), 404
-
-
-def _order_results_root(order):
-    """Return the absolute, real path of results/<sample>/ for this order (or None)."""
-    sample = (order or {}).get("sample_name", "")
-    if not sample:
-        return None
-    root = os.path.join(RESULTS_DIR, sample)
-    if not os.path.isdir(root):
-        return None
-    return os.path.realpath(root)
 
 
 def _safe_resolve_under(root_real, rel_path):
@@ -3326,6 +3606,40 @@ def _guess_mimetype(path):
     return "application/octet-stream"
 
 
+_GENOME_FASTA = {
+    "hg38": os.path.join(DATA_DIR, "refs/hg38/ucsc.hg38.fasta"),
+    "hg19": os.path.join(DATA_DIR, "refs/hg19/hg19.fa"),
+}
+
+
+@app.route("/api/genome/<ref>/fasta", methods=["GET", "HEAD"])
+def api_genome_fasta(ref):
+    """Serve local genome FASTA with Range support for IGV.js."""
+    if ref not in _GENOME_FASTA:
+        return jsonify({"error": "Unknown reference"}), 404
+    abs_path = _GENOME_FASTA[ref]
+    if not os.path.isfile(abs_path):
+        return jsonify({"error": "Genome FASTA not found"}), 404
+    if request.method == "HEAD":
+        total = os.path.getsize(abs_path)
+        resp = Response(status=200, mimetype="application/octet-stream")
+        resp.headers["Content-Length"] = str(total)
+        resp.headers["Accept-Ranges"] = "bytes"
+        return resp
+    return _serve_range(abs_path, "application/octet-stream")
+
+
+@app.route("/api/genome/<ref>/fai", methods=["GET"])
+def api_genome_fai(ref):
+    """Serve genome FASTA index (.fai) for IGV.js."""
+    if ref not in _GENOME_FASTA:
+        return jsonify({"error": "Unknown reference"}), 404
+    fai_path = _GENOME_FASTA[ref] + ".fai"
+    if not os.path.isfile(fai_path):
+        return jsonify({"error": "Genome FAI not found"}), 404
+    return send_file(fai_path, mimetype="application/octet-stream")
+
+
 @app.route("/api/orders/<order_id>/file/<path:filename>", methods=["GET", "HEAD"])
 def api_order_file(order_id, filename):
     """Serve result files for IGV.js. Only BAM/BAI are allowed by default."""
@@ -3515,30 +3829,29 @@ def api_longitudinal_data(order_id):
         return rows
 
     sample = order["sample_name"]
-    longit_candidates = glob.glob(
-        os.path.join(RESULTS_DIR, sample, "**", f"{sample}_longitudinal_analysis.csv"),
-        recursive=True,
+    longit_candidates = _glob_in_order_results(
+        order, os.path.join("**", f"{sample}_longitudinal_analysis.csv")
     )
     current_data = _parse_longit_csv(longit_candidates[0]) if longit_candidates else None
 
     followup_ids = [fid.strip() for fid in (order.get("followup_order_ids") or "").split(",") if fid.strip()]
     prior_followups = []
     for fid in followup_ids:
-        frow = db.execute("SELECT sample_name, order_name, created_at FROM orders WHERE id=?", (fid,)).fetchone()
+        frow = db.execute("SELECT * FROM orders WHERE id=?", (fid,)).fetchone()
         if not frow:
             continue
-        fsample = frow["sample_name"]
-        fc = glob.glob(
-            os.path.join(RESULTS_DIR, fsample, "**", f"{fsample}_longitudinal_analysis.csv"),
-            recursive=True,
+        forder = dict_from_row(frow)
+        fsample = forder["sample_name"]
+        fc = _glob_in_order_results(
+            forder, os.path.join("**", f"{fsample}_longitudinal_analysis.csv")
         )
         fdata = _parse_longit_csv(fc[0]) if fc else None
         if fdata:
             prior_followups.append({
                 "order_id": fid,
-                "order_name": frow["order_name"],
+                "order_name": forder["order_name"],
                 "sample_name": fsample,
-                "created_at": frow["created_at"],
+                "created_at": forder["created_at"],
                 "data": fdata,
             })
 
@@ -3708,18 +4021,45 @@ def api_save_settings():
 
 @app.route("/api/restart", methods=["POST"])
 def api_restart():
-    """Restart the web container via Docker socket (async — caller must poll /api/health)."""
+    """Recreate the web container via Docker socket (async — caller must poll /api/health).
+
+    Uses 'docker compose up --force-recreate' so that volume mount changes
+    (FASTQ_HOST_DIR, BED_HOST_DIR) take effect. Falls back to 'docker restart'
+    if the compose file cannot be located.
+    """
     import threading
+
+    host_dir = os.environ.get("HOST_DIR", "")
+
+    def _resolve_compose_file():
+        """Return (host_path, compose_filename) or (None, None) if not found."""
+        for fname in ("docker-compose.prod.yml", "docker-compose.yml"):
+            # Check via the container-side mount (/roche_nxt = HOST_DIR on host)
+            container_path = os.path.join(BASE_DIR, fname)
+            if os.path.isfile(container_path) and host_dir:
+                return host_dir, fname
+        return None, None
 
     def _do_restart():
         import time
         time.sleep(0.5)  # Allow HTTP response to be sent first
         try:
-            subprocess.run(
-                ["docker", "restart", "roche_nxt_web"],
-                timeout=30,
-                capture_output=True,
-            )
+            cwd, fname = _resolve_compose_file()
+            if cwd and fname:
+                subprocess.run(
+                    ["docker", "compose", "-f", fname,
+                     "up", "-d", "--force-recreate", "roche-nxt-web"],
+                    cwd=cwd,
+                    timeout=60,
+                    capture_output=True,
+                )
+            else:
+                # Fallback: simple restart (volume mounts won't change)
+                subprocess.run(
+                    ["docker", "restart", "roche_nxt_web"],
+                    timeout=30,
+                    capture_output=True,
+                )
         except Exception:
             pass
 
@@ -3749,6 +4089,17 @@ _NC_HG38 = {
     "chr16":"NC_000016.10","chr17":"NC_000017.11","chr18":"NC_000018.10",
     "chr19":"NC_000019.10","chr20":"NC_000020.11","chr21":"NC_000021.9",
     "chr22":"NC_000022.11","chrX":"NC_000023.11","chrY":"NC_000024.10",
+    "chrM":"NC_012920.1",
+}
+_NC_HG19 = {
+    "chr1":"NC_000001.10","chr2":"NC_000002.11","chr3":"NC_000003.11",
+    "chr4":"NC_000004.11","chr5":"NC_000005.9","chr6":"NC_000006.11",
+    "chr7":"NC_000007.13","chr8":"NC_000008.10","chr9":"NC_000009.11",
+    "chr10":"NC_000010.10","chr11":"NC_000011.9","chr12":"NC_000012.11",
+    "chr13":"NC_000013.10","chr14":"NC_000014.8","chr15":"NC_000015.9",
+    "chr16":"NC_000016.9","chr17":"NC_000017.10","chr18":"NC_000018.9",
+    "chr19":"NC_000019.9","chr20":"NC_000020.10","chr21":"NC_000021.8",
+    "chr22":"NC_000022.10","chrX":"NC_000023.10","chrY":"NC_000024.9",
     "chrM":"NC_012920.1",
 }
 
@@ -4271,9 +4622,13 @@ def api_rna_gene_search():
     if not sample or not query:
         return jsonify({"error": "sample and q parameters required"}), 400
 
-    expr_dir = os.path.join(RESULTS_DIR, sample, "expression_plots")
-    summary_path = os.path.join(expr_dir, f"{sample}_expression_summary.tsv")
-    if not os.path.isfile(summary_path):
+    summary_path = ""
+    for root in _find_sample_results_roots(sample):
+        p = os.path.join(root, "expression_plots", f"{sample}_expression_summary.tsv")
+        if os.path.isfile(p):
+            summary_path = p
+            break
+    if not summary_path:
         return jsonify({"error": "Expression summary not found"}), 404
 
     try:
@@ -4311,9 +4666,13 @@ def api_rna_expression_data():
     if not gene_id and not gene_symbol:
         return jsonify({"error": "gene_id or gene_symbol parameter required"}), 400
 
-    expr_dir = os.path.join(RESULTS_DIR, sample, "expression_plots")
-    summary_path = os.path.join(expr_dir, f"{sample}_expression_summary.tsv")
-    if not os.path.isfile(summary_path):
+    summary_path = ""
+    for root in _find_sample_results_roots(sample):
+        p = os.path.join(root, "expression_plots", f"{sample}_expression_summary.tsv")
+        if os.path.isfile(p):
+            summary_path = p
+            break
+    if not summary_path:
         return jsonify({"error": "Expression summary not found"}), 404
 
     try:
@@ -4356,14 +4715,12 @@ def api_rna_gene_expression_across_samples():
     if metric not in ("TPM", "CPM", "count", "log2CPM"):
         metric = "TPM"
 
-    # Find all expression summary files across all samples
-    pattern = os.path.join(RESULTS_DIR, "*", "expression_plots", "*_expression_summary.tsv")
-    summary_files = sorted(glob.glob(pattern))
+    summary_files = _expression_summary_paths()
 
     results = []
     for fpath in summary_files:
         parts = fpath.replace("\\", "/").split("/")
-        # path: RESULTS_DIR / <sample> / expression_plots / <sample>_expression_summary.tsv
+        # path: ... / <sample> / expression_plots / <sample>_expression_summary.tsv
         sample_name = parts[-3]
         try:
             import csv as _csv
@@ -4422,8 +4779,13 @@ def api_rna_multi_gene_expression():
 
     gene_list = [g.strip().upper() for g in genes_raw.split(",") if g.strip()]
 
-    summary_path = os.path.join(RESULTS_DIR, sample, "expression_plots", f"{sample}_expression_summary.tsv")
-    if not os.path.isfile(summary_path):
+    summary_path = ""
+    for root in _find_sample_results_roots(sample):
+        p = os.path.join(root, "expression_plots", f"{sample}_expression_summary.tsv")
+        if os.path.isfile(p):
+            summary_path = p
+            break
+    if not summary_path:
         return jsonify({"error": "Expression summary not found"}), 404
 
     try:
@@ -4464,14 +4826,16 @@ def api_rna_multi_gene_expression():
 @app.route("/api/rna/all_samples")
 def api_rna_all_samples():
     """Return list of all RNA samples that have expression summary files."""
-    pattern = os.path.join(RESULTS_DIR, "*", "expression_plots", "*_expression_summary.tsv")
-    files = sorted(glob.glob(pattern))
+    files = _expression_summary_paths()
     samples = []
+    seen = set()
     for f in files:
         parts = f.replace("\\", "/").split("/")
         if len(parts) >= 3:
             sample_name = parts[-3]
-            samples.append(sample_name)
+            if sample_name not in seen:
+                seen.add(sample_name)
+                samples.append(sample_name)
     return jsonify({"samples": samples, "total": len(samples)})
 
 
@@ -4482,8 +4846,15 @@ def api_rna_rseqc_data():
     if not sample:
         return jsonify({"error": "sample parameter required"}), 400
 
-    rseqc_dir = os.path.join(RESULTS_DIR, sample, "QC_report", "rseqc")
+    rseqc_dir = None
+    for root in _find_sample_results_roots(sample):
+        p = os.path.join(root, "QC_report", "rseqc")
+        if os.path.isdir(p):
+            rseqc_dir = p
+            break
     result = {"sample": sample}
+    if not rseqc_dir:
+        return jsonify(result)
 
     # infer_experiment
     infer_path = os.path.join(rseqc_dir, f"{sample}_infer_experiment.txt")

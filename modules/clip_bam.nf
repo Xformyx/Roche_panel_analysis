@@ -1,6 +1,8 @@
 process CLIP_BAM {
     tag "$sample_id"
     label 'process_medium'
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode,
+        pattern: "*_clipov_metrics.txt"
 
     input:
     tuple val(sample_id), path(input_bam)

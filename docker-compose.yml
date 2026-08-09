@@ -19,7 +19,11 @@ services:
       - ${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}:/fastq_source:ro
       - ${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}:/bed_source:ro
       - ${LIFTOVER_HOST_DIR:-/home/ken/roche_data/liftover}:/liftover:ro
+      - ${ROCHE_DATA_DIR:-/home/ken/roche_data}:/roche_data:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      # Host Compose plugin — web container only has docker-ce-cli; needed for
+      # 「서비스 재시작」 to run `docker compose up --force-recreate` (BED/FASTQ remount).
+      - /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1

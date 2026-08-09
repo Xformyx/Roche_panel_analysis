@@ -120,10 +120,12 @@ workflow UMI_PREPROCESSING {
     SORT_ALIGNED_COORD(BWA_ALIGN.out.aligned_bam)
 
     emit:
-    final_bam    = SORT_FINAL_COORD.out.sorted_bam      // tuple(sample_id, bam, bai) - clipov sorted
-    aligned_bam  = SORT_ALIGNED_COORD.out.sorted_bam    // tuple(sample_id, bam, bai) - first-pass for QC
-    deduped_bam  = MERGE_CONSENSUS_BAM.out.deduped_bam  // tuple(sample_id, bam) - deduped sorted
-    fastp_report = FASTP.out.report
+    final_bam       = SORT_FINAL_COORD.out.sorted_bam      // tuple(sample_id, bam, bai) - clipov sorted
+    aligned_bam     = SORT_ALIGNED_COORD.out.sorted_bam    // tuple(sample_id, bam, bai) - first-pass for QC
+    deduped_bam     = MERGE_CONSENSUS_BAM.out.deduped_bam  // tuple(sample_id, bam) - deduped sorted
+    fastp_report    = FASTP.out.report
+    umi_group_data  = GROUP_READS_BY_UMI.out.group_data    // tuple(sample_id, umi_group_data.tsv)
+    clipov_metrics  = CLIP_BAM.out.metrics                 // tuple(sample_id, clipov_metrics.txt)
 }
 
 // Aliased SAM_TO_FASTQ for consensus reads

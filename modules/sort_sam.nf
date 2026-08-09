@@ -41,14 +41,16 @@ process SORT_SAM_COORDINATE {
 
 /*
  * Coordinate-sort for VarDict input (clip-overlap final BAM).
- * When delete_intermediate is true, publish BAM+BAI under results/.../output/bam/ before work-dir cleanup
- * so VarDict input is retained after Nextflow removes task work directories.
+ * Always hard-link BAM+BAI into results/.../output/bam/ so IGV can access them
+ * without manual copying and without extra disk usage (hard link = same inode).
+ * When delete_intermediate is true, the work-dir copy is also removed by Nextflow,
+ * but the hard-linked results copy survives because the inode refcount stays > 0.
  */
 process SORT_SAM_COORDINATE_FINAL {
     tag "$sample_id"
     label 'process_medium'
 
-    publishDir { "${params.outdir}/${sample_id}/output/bam" }, mode: params.publish_dir_mode, pattern: "*.{bam,bai}", enabled: params.delete_intermediate
+    publishDir { "${params.outdir}/${sample_id}/output/bam" }, mode: 'link', pattern: "*.{bam,bai}", overwrite: true
 
     input:
     tuple val(sample_id), path(input_bam)

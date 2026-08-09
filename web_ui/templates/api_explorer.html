@@ -469,7 +469,7 @@ const ENDPOINTS = [
   { cat:'분석 제어 (Analysis)', method:'POST', path:'/api/orders/{order_id}/report_status',
     summary:'외부 실행 상태 보고', tag:'ext',
     pathParams:[{ name:'order_id', desc:'Order ID' }],
-    desc:'외부 CLI/프로그램이 직접 Nextflow를 실행할 때 분석 상태를 Web UI에 보고합니다.\n결과 파일은 <install_dir>/results/<sample_name>/output/ 에 위치해야 합니다.\n\n✅ 외부 프로그램 연동 방법 B\n\n허용 전이:\n  registered → running / completed / failed\n  running    → completed / failed',
+    desc:'외부 CLI/프로그램이 직접 Nextflow를 실행할 때 분석 상태를 Web UI에 보고합니다.\n결과 파일은 <install_dir>/results/<order_id>/<sample_name>/output/ 에 위치해야 합니다.\n\n✅ 외부 프로그램 연동 방법 B\n\n허용 전이:\n  registered → running / completed / failed\n  running    → completed / failed',
     body:{ status:'completed', error_message:'', nf_work_dir:'/opt/roche/work/order-id' },
     bodySchema:[
       { name:'status',        type:'string', req:true, desc:'"running", "completed", "failed" 중 하나' },

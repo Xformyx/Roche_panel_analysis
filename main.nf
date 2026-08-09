@@ -23,6 +23,7 @@ include { VARIANT_CALLING         } from './workflows/variant_calling'
 include { QC_REPORT          } from './workflows/qc_report'
 include { SELECT_REPORT      } from './workflows/select_report'
 include { LONGITUDINAL       } from './workflows/longitudinal_wf'
+include { UMI_QC             } from './modules/umi_qc'
 include { SNPEFF             } from './modules/snpeff'
 include { SNPSIFT_ANNOTATE   } from './modules/snpsift'
 include { VARIANTS_TO_TABLE  } from './modules/variants_to_table'
@@ -270,12 +271,16 @@ workflow {
             final_bam_ch   = UMI_PREPROCESSING.out.final_bam
             aligned_bam_ch = UMI_PREPROCESSING.out.aligned_bam
             deduped_bam_ch = UMI_PREPROCESSING.out.deduped_bam
+            umi_group_ch   = UMI_PREPROCESSING.out.umi_group_data
+            clipov_ch      = UMI_PREPROCESSING.out.clipov_metrics
         } else {
             log.info "Non-UMI mode: running STANDARD_PREPROCESSING (BWA + Picard MarkDuplicates)"
             STANDARD_PREPROCESSING(samples_ch, genome_fasta, genome_dict, genome_fai, genome_idx)
             final_bam_ch   = STANDARD_PREPROCESSING.out.final_bam
             aligned_bam_ch = STANDARD_PREPROCESSING.out.aligned_bam
             deduped_bam_ch = STANDARD_PREPROCESSING.out.deduped_bam
+            umi_group_ch   = Channel.empty()
+            clipov_ch      = Channel.empty()
         }
 
         // ── 3. Variant Calling ───────────────────────────────────
@@ -305,6 +310,21 @@ workflow {
             blocklist,
             bsgenome_ref
         )
+
+        // ── 4b. UMI QC (family-size / clip / UMI duplication) ────
+        if (params.use_umi.toString() == 'true') {
+            def aln_aligned_ch = QC_REPORT.out.alignment_metrics
+                .filter { sid, f -> f.name.contains('_alignment_metrics_aligned') }
+            def aln_deduped_ch = QC_REPORT.out.alignment_metrics
+                .filter { sid, f -> f.name.contains('_alignment_metrics_umi_deduped') }
+
+            umi_qc_input = umi_group_ch
+                .join(clipov_ch)
+                .join(aln_aligned_ch)
+                .join(aln_deduped_ch)
+
+            UMI_QC(umi_qc_input)
+        }
 
         // ── 5. Select Reporter (optional) ────────────────────────
         if (params.run_select_reporter) {

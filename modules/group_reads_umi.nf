@@ -1,6 +1,8 @@
 process GROUP_READS_BY_UMI {
     tag "$sample_id"
     label 'process_medium'
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode,
+        pattern: "*_umi_group_data.tsv"
 
     input:
     tuple val(sample_id), path(merged_bam)
