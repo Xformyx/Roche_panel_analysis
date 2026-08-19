@@ -1662,7 +1662,15 @@ def api_resources():
     run_path = BASE_DIR if os.path.exists(BASE_DIR) else "/"
     disk_run = psutil.disk_usage(run_path)
 
-    fastq_path = FASTQ_HOST_DIR if FASTQ_HOST_DIR and os.path.exists(FASTQ_HOST_DIR) else run_path
+    # FASTQ disk usage must be measured on a path visible inside the container.
+    # FASTQ_HOST_DIR is the host path (e.g. /data/Output) and usually does not
+    # exist in-container; the bind mount is FASTQ_SOURCE_DIR (/fastq_source).
+    if os.path.isdir(FASTQ_SOURCE_DIR):
+        fastq_path = FASTQ_SOURCE_DIR
+    elif FASTQ_HOST_DIR and os.path.exists(FASTQ_HOST_DIR):
+        fastq_path = FASTQ_HOST_DIR
+    else:
+        fastq_path = run_path
     disk_fastq = psutil.disk_usage(fastq_path)
 
     # 실행 중인 분석 컨테이너 수 (nxt_ 접두어)
