@@ -85,6 +85,25 @@ workflow {
     def snpeff_db     = genome.snpeff_db
     def bsgenome_ref  = genome.bsgenome
 
+    // Longitudinal must never silently reuse the Followup's own VCF/BAM.
+    if (params.run_longitudinal) {
+        if (!params.longitudinal_baseline_ann_txt || !params.longitudinal_germline_bam) {
+            error "ERROR: --run_longitudinal requires --longitudinal_baseline_ann_txt and --longitudinal_germline_bam. Without them SELECT_REPORTERS would fall back to the Followup sample itself."
+        }
+        if (!file(params.longitudinal_baseline_ann_txt).exists()) {
+            error "ERROR: Baseline annotated VCF not found: ${params.longitudinal_baseline_ann_txt}"
+        }
+        if (!file(params.longitudinal_germline_bam).exists()) {
+            error "ERROR: Germline BAM not found: ${params.longitudinal_germline_bam}"
+        }
+        if (!genome.bed_longit) {
+            error "ERROR: Longitudinal analysis requires bed_longit for reference '${params.reference}'"
+        }
+        if (!blocklist.exists()) {
+            error "ERROR: Blocklist not found for reference '${params.reference}': ${genome.blocklist}"
+        }
+    }
+
     // ── QC-only mode: re-run QC_REPORT using existing BAMs, new BED settings ──
     // Activated when --qc_only is set and --qc_deduped_bam points to existing BAM.
     // Skips FastQC / UMI preprocessing / VarDict / SnpEff / annotation.
@@ -98,16 +117,23 @@ workflow {
             .map { row -> row.sample_id ?: row.order_id ?: "sample" }
             .first()
 
-        def deduped_bam_path = file(params.qc_deduped_bam)
-        def deduped_bai_path = params.qc_deduped_bai
-            ? file(params.qc_deduped_bai)
-            : file("${params.qc_deduped_bam}.bai")
+        def resolve_bai = { bam_file, explicit ->
+            if (explicit) {
+                return file(explicit)
+            }
+            def samtools_bai = file("${bam_file}.bai")
+            def picard_bai   = file("${bam_file.parent}/${bam_file.baseName}.bai")
+            if (samtools_bai.exists()) return samtools_bai
+            if (picard_bai.exists())   return picard_bai
+            return samtools_bai
+        }
 
-        // For the aligned BAM channel use the same deduped BAM if no separate aligned BAM given
+        def deduped_bam_path = file(params.qc_deduped_bam)
+        def deduped_bai_path = resolve_bai(deduped_bam_path, params.qc_deduped_bai)
+
+        // Prefer a real first-pass aligned BAM; fall back to the deduped BAM.
         def aligned_bam_path = params.qc_aligned_bam ? file(params.qc_aligned_bam) : deduped_bam_path
-        def aligned_bai_path = params.qc_aligned_bai
-            ? file(params.qc_aligned_bai)
-            : file("${aligned_bam_path}.bai")
+        def aligned_bai_path = resolve_bai(aligned_bam_path, params.qc_aligned_bai)
 
         aligned_bam_ch_qc = sample_id_ch.map { sid ->
             tuple(sid, aligned_bam_path, aligned_bai_path)
@@ -230,17 +256,13 @@ workflow {
 
         SELECT_REPORT(select_ann_ch, select_germline_ch, select_followup_ch, blocklist)
 
-        if (genome.bed_longit) {
-            LONGITUDINAL(
-                final_bam_ch,
-                SELECT_REPORT.out.reporters,
-                file(genome.bed_longit),
-                blocklist,
-                bsgenome_ref
-            )
-        } else {
-            log.warn "Longitudinal analysis skipped: bed_longit is not configured for reference '${params.reference}'"
-        }
+        LONGITUDINAL(
+            final_bam_ch,
+            SELECT_REPORT.out.reporters,
+            file(genome.bed_longit),
+            blocklist,
+            bsgenome_ref
+        )
 
     } else {
 
@@ -359,17 +381,13 @@ workflow {
 
         // ── 6. Longitudinal Analysis (optional) ──────────────────
         if (params.run_longitudinal && params.run_select_reporter) {
-            if (genome.bed_longit) {
-                LONGITUDINAL(
-                    final_bam_ch,
-                    SELECT_REPORT.out.reporters,
-                    file(genome.bed_longit),
-                    blocklist,
-                    bsgenome_ref
-                )
-            } else {
-                log.warn "Longitudinal analysis skipped: bed_longit is not configured for reference '${params.reference}'"
-            }
+            LONGITUDINAL(
+                final_bam_ch,
+                SELECT_REPORT.out.reporters,
+                file(genome.bed_longit),
+                blocklist,
+                bsgenome_ref
+            )
         }
 
     }

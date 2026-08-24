@@ -1,4 +1,4 @@
 {
-    "version": "1.4.0",
-    "comment": "Order별 results 분리, clipped_sorted BAM 항상 publish, IGV/Review hg19·BAM 우선순위 수정"
+    "version": "1.4.1",
+    "comment": "hg19 blocklist/longitudinal BED, Longitudinal 입력 검증, la_blist_type 반영, BED 마운트·QC BAM 인덱스 수정"
 }

@@ -413,6 +413,19 @@ else
     fi
 fi
 
+# 소스 tar는 data/ 를 제외하므로, 이번 패치에서 바뀐 레퍼런스 파일은 overlay로 복사
+_OVERLAY=""
+if [[ -d "$PATCH_DIR/data_overlay" ]]; then
+    _OVERLAY="$PATCH_DIR/data_overlay"
+elif [[ -d "$(dirname "$PATCH_DIR")/data_overlay" ]]; then
+    _OVERLAY="$(dirname "$PATCH_DIR")/data_overlay"
+fi
+if [[ -n "$_OVERLAY" ]]; then
+    _ensure_dir "$DATA_DIR"
+    cp -a "$_OVERLAY/." "$DATA_DIR/"
+    ok "data overlay 적용 → $DATA_DIR"
+fi
+
 # ── Step 8: .env 파일 설정 ─────────────────────────────────────────────────────
 step ".env 환경 설정"
 
@@ -445,7 +458,7 @@ else
 HOST_DIR=${INSTALL_DIR}
 DATA_HOST_DIR=${DATA_DIR}
 FASTQ_HOST_DIR=${FASTQ_DIR}
-BED_HOST_DIR=${DATA_DIR}/bed/hg38
+BED_HOST_DIR=${DATA_DIR}/bed
 RESULTS_HOST_DIR=${INSTALL_DIR}/results
 WORK_HOST_DIR=${INSTALL_DIR}/work
 LOG_HOST_DIR=${INSTALL_DIR}/log

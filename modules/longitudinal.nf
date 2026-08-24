@@ -19,7 +19,7 @@ process LONGITUDINAL_ANALYSIS {
         --sample_bam       ${followup_bam} \
         --target_bed       ${target_bed} \
         --blocklist        ${blocklist} \
-        --blist_type       variant \
+        --blist_type       ${params.la_blist_type} \
         --output           ${sample_id}_longitudinal_analysis.csv \
         --reference        ${bsgenome} \
         --reads_threshold  ${params.la_reads_threshold} \

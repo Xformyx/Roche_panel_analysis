@@ -17,7 +17,7 @@ services:
       - ${HOST_DIR:-.}/web_ui:/app
       - ${HOST_DIR:-.}:/roche_nxt
       - ${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}:/fastq_source:ro
-      - ${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}:/bed_source:ro
+      - ${BED_HOST_DIR:-/home/ken/Roche/data/bed}:/bed_source:ro
       - ${LIFTOVER_HOST_DIR:-/home/ken/roche_data/liftover}:/liftover:ro
       - ${ROCHE_DATA_DIR:-/home/ken/roche_data}:/roche_data:ro
       - /var/run/docker.sock:/var/run/docker.sock
@@ -35,7 +35,7 @@ services:
       - HOST_DIR=${HOST_DIR:-.}
       - ANALYSIS_IMAGE=roche_nxt_analysis:latest
       - FASTQ_HOST_DIR=${FASTQ_HOST_DIR:-/home/ken/Roche/fastq}
-      - BED_HOST_DIR=${BED_HOST_DIR:-/home/ken/Roche/data/bed/hg38}
+      - BED_HOST_DIR=${BED_HOST_DIR:-/home/ken/Roche/data/bed}
       - ENABLE_LONGITUDINAL=${ENABLE_LONGITUDINAL:-false}
       - ENABLE_IGV=${ENABLE_IGV:-false}
       - ENABLE_HG19_VIEW=${ENABLE_HG19_VIEW:-false}

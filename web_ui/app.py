@@ -102,6 +102,96 @@ def _host_to_work_nxt(host_path):
     return "/work_nxt/" + os.path.relpath(host_path, BASE_DIR).replace("\\", "/")
 
 
+def _validate_longitudinal_peers(db, order):
+    """Require completed Baseline/Germline orders on the same reference.
+
+    Returns (baseline_order, germline_order) dicts. Raises RuntimeError on
+    missing, incomplete, or mixed-assembly peers so Longitudinal cannot
+    silently compare incompatible samples.
+    """
+    baseline_id = (order.get("baseline_order_id") or "").strip()
+    germline_id = (order.get("germline_order_id") or "").strip()
+    if not baseline_id or not germline_id:
+        raise RuntimeError("Longitudinal 오더는 Baseline과 Germline 오더가 필요합니다.")
+
+    followup_ref = order.get("reference") or "hg38"
+    peers = []
+    for ref_id, label in ((baseline_id, "Baseline"), (germline_id, "Germline")):
+        row = db.execute("SELECT * FROM orders WHERE id=?", (ref_id,)).fetchone()
+        if not row:
+            raise RuntimeError(f"{label} 오더를 찾을 수 없습니다: {ref_id}")
+        peer = dict_from_row(row)
+        if peer.get("status") != "completed":
+            raise RuntimeError(f"{label} 오더는 분석 완료(completed) 상태여야 합니다.")
+        peer_ref = peer.get("reference") or "hg38"
+        if peer_ref != followup_ref:
+            raise RuntimeError(
+                f"{label} 오더의 reference({peer_ref})가 Followup({followup_ref})과 다릅니다. "
+                "같은 레퍼런스로 분석된 오더만 Longitudinal에 사용할 수 있습니다."
+            )
+        peers.append(peer)
+    return peers[0], peers[1]
+
+
+def _resolve_longitudinal_input_files(bl_order, gm_order):
+    """Locate Baseline annotated VCF and Germline BAM/BAI on the host.
+
+    Raises RuntimeError if either artifact is missing so Nextflow cannot
+    fall back to the Followup's own VCF/BAM.
+    """
+    bl_sample = bl_order["sample_name"]
+    gm_sample = gm_order["sample_name"]
+    bl_root = _order_results_root(bl_order)
+    gm_root = _order_results_root(gm_order)
+
+    bl_ann_host = ""
+    if bl_root:
+        bl_ann_host = os.path.join(bl_root, "output", f"{bl_sample}_vardict_annotated_vcf.txt")
+        if not os.path.isfile(bl_ann_host):
+            bl_candidates = glob.glob(
+                os.path.join(bl_root, "output", "**", f"{bl_sample}_vardict_annotated_vcf.txt"),
+                recursive=True,
+            )
+            if bl_candidates:
+                bl_ann_host = bl_candidates[0]
+    if not bl_ann_host or not os.path.isfile(bl_ann_host):
+        raise RuntimeError(
+            f"Baseline annotated VCF를 찾을 수 없습니다 "
+            f"(order={bl_order.get('id')}, sample={bl_sample}). "
+            "Baseline 오더 결과가 삭제되었으면 다시 분석한 뒤 Longitudinal을 실행하세요."
+        )
+
+    gm_bam_host = ""
+    if gm_root:
+        gm_bam_host = os.path.join(gm_root, "output", "bam", f"{gm_sample}_clipped_sorted.bam")
+    if not gm_bam_host or not os.path.isfile(gm_bam_host):
+        gm_candidates = glob.glob(
+            os.path.join(BASE_DIR, "work", "**", f"{gm_sample}_clipped_sorted.bam"),
+            recursive=True,
+        )
+        gm_candidates_real = [p for p in gm_candidates if not os.path.islink(p)]
+        if gm_candidates_real:
+            gm_bam_host = gm_candidates_real[0]
+        elif gm_candidates:
+            gm_bam_host = os.path.realpath(gm_candidates[0])
+    if not gm_bam_host or not os.path.isfile(gm_bam_host):
+        raise RuntimeError(
+            f"Germline BAM을 찾을 수 없습니다 "
+            f"(order={gm_order.get('id')}, sample={gm_sample}). "
+            "Germline 오더 결과가 삭제되었으면 다시 분석한 뒤 Longitudinal을 실행하세요."
+        )
+
+    gm_bai_host = gm_bam_host + ".bai"
+    if not os.path.isfile(gm_bai_host):
+        alt_bai = gm_bam_host[:-4] + ".bai"
+        if os.path.isfile(alt_bai):
+            gm_bai_host = alt_bai
+        else:
+            raise RuntimeError(f"Germline BAI를 찾을 수 없습니다: {gm_bam_host}")
+
+    return bl_ann_host, gm_bam_host, gm_bai_host
+
+
 def _glob_in_order_results(order, pattern):
     """glob under the order results root (pattern may include **)."""
     root = _order_results_root(order)
@@ -892,6 +982,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
     now = datetime.now().isoformat()
     sample = order["sample_name"]
     order_id = order["id"]
+    panel_type = (order.get("panel_type") or "exome").strip().lower()
 
     max_cpus, max_mem, max_conc = get_resource_limits()
 
@@ -925,6 +1016,32 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
     # Defaults to HOST_DIR/data so existing single-server setups work unchanged.
     data_host_dir = os.environ.get("DATA_HOST_DIR", "") or os.path.join(host_root, "data")
     bed_host_dir = BED_HOST_DIR or os.path.join(data_host_dir, "bed")
+
+    extra_joined = " ".join(extra_nf_params or [])
+    skip_fastq_check = "--precomputed_bam" in extra_joined or "--qc_only" in extra_joined
+    if not skip_fastq_check:
+        for fq_name, label in ((order.get("r1_fastq"), "R1 FASTQ"), (order.get("r2_fastq"), "R2 FASTQ")):
+            if not fq_name:
+                continue
+            fq_path = os.path.join(fastq_host_dir, fq_name)
+            if not os.path.isfile(fq_path):
+                raise RuntimeError(f"{label}를 찾을 수 없습니다: {fq_path}")
+
+    if panel_type != "rna":
+        for key, label in (
+            ("bed_file", "Capture BED"),
+            ("bed_primary_file", "Primary BED"),
+            ("bed_bait_file", "Bait interval list"),
+        ):
+            rel = (order.get(key) or "").strip()
+            if not rel:
+                continue
+            bed_path = os.path.join(bed_host_dir, rel)
+            if not os.path.isfile(bed_path):
+                raise RuntimeError(
+                    f"{label}를 찾을 수 없습니다: {bed_path} "
+                    f"(BED_HOST_DIR={bed_host_dir})"
+                )
 
     host_samplesheet_dir = os.path.join(host_root, "log", "samplesheets")
     os.makedirs(os.path.join(LOG_DIR, "samplesheets"), exist_ok=True)
@@ -1040,8 +1157,6 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
         use_umi_flag = enable_umi_global
     umi_structure = settings.get("umi_read_structure", "3M3S+T 3M3S+T")
 
-    panel_type = (order.get("panel_type") or "exome").strip().lower()
-
     if panel_type == "rna":
         # ── RNAseq pipeline ────────────────────────────────────────────────
         # RNA-specific reference paths: use settings value if explicitly set,
@@ -1150,62 +1265,16 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
             "--la_blist_type",      str(settings.get("la_blist_type",      "variant")),
         ])
 
-        # Pass Baseline VCF and Germline BAM paths so SELECT_REPORTERS uses
-        # the correct cross-sample inputs (not the Followup's own data).
-        baseline_id = (order.get("baseline_order_id") or "").strip()
-        germline_id = (order.get("germline_order_id") or "").strip()
-
-        if baseline_id and germline_id:
-            db_conn = get_db()
-            baseline_row = db_conn.execute("SELECT * FROM orders WHERE id=?", (baseline_id,)).fetchone()
-            germline_row = db_conn.execute("SELECT * FROM orders WHERE id=?", (germline_id,)).fetchone()
-
-            if baseline_row and germline_row:
-                bl_order = dict_from_row(baseline_row)
-                gm_order = dict_from_row(germline_row)
-                bl_sample = bl_order["sample_name"]
-                gm_sample = gm_order["sample_name"]
-                bl_root = _order_results_root(bl_order)
-                gm_root = _order_results_root(gm_order)
-
-                # Baseline annotated VCF txt
-                bl_ann_host = ""
-                if bl_root:
-                    bl_ann_host = os.path.join(bl_root, "output", f"{bl_sample}_vardict_annotated_vcf.txt")
-                    if not os.path.isfile(bl_ann_host):
-                        bl_candidates = glob.glob(
-                            os.path.join(bl_root, "output", "**", f"{bl_sample}_vardict_annotated_vcf.txt"),
-                            recursive=True,
-                        )
-                        if bl_candidates:
-                            bl_ann_host = bl_candidates[0]
-                if bl_ann_host and os.path.isfile(bl_ann_host):
-                    nf_cmd.extend(["--longitudinal_baseline_ann_txt", _host_to_work_nxt(bl_ann_host)])
-
-                # Germline clipped_sorted BAM (prefer results/, fallback to work/)
-                gm_bam_host = ""
-                if gm_root:
-                    gm_bam_host = os.path.join(gm_root, "output", "bam", f"{gm_sample}_clipped_sorted.bam")
-                if not gm_bam_host or not os.path.isfile(gm_bam_host):
-                    gm_candidates = glob.glob(
-                        os.path.join(BASE_DIR, "work", "**", f"{gm_sample}_clipped_sorted.bam"),
-                        recursive=True,
-                    )
-                    gm_candidates_real = [p for p in gm_candidates if not os.path.islink(p)]
-                    if gm_candidates_real:
-                        gm_bam_host = gm_candidates_real[0]
-                    elif gm_candidates:
-                        gm_bam_host = os.path.realpath(gm_candidates[0])
-                if gm_bam_host and os.path.isfile(gm_bam_host):
-                    gm_bai_host = gm_bam_host + ".bai"
-                    if not os.path.isfile(gm_bai_host):
-                        alt_bai = gm_bam_host[:-4] + ".bai"
-                        if os.path.isfile(alt_bai):
-                            gm_bai_host = alt_bai
-                    nf_cmd.extend([
-                        "--longitudinal_germline_bam", _host_to_work_nxt(gm_bam_host),
-                        "--longitudinal_germline_bai", _host_to_work_nxt(gm_bai_host),
-                    ])
+        # Fail fast if Baseline/Germline artifacts are missing or mixed-assembly.
+        # Nextflow used to fall back to the Followup's own VCF/BAM in that case.
+        db_conn = get_db()
+        bl_order, gm_order = _validate_longitudinal_peers(db_conn, order)
+        bl_ann_host, gm_bam_host, gm_bai_host = _resolve_longitudinal_input_files(bl_order, gm_order)
+        nf_cmd.extend([
+            "--longitudinal_baseline_ann_txt", _host_to_work_nxt(bl_ann_host),
+            "--longitudinal_germline_bam", _host_to_work_nxt(gm_bam_host),
+            "--longitudinal_germline_bai", _host_to_work_nxt(gm_bai_host),
+        ])
 
     if panel_type != "rna" and extra_nf_params:
         nf_cmd.extend(extra_nf_params)
@@ -1781,13 +1850,22 @@ def api_create_order():
     order_id = datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:6]
     now = datetime.now().isoformat()
 
+    db = get_db()
+
     if order_type == "longitudinal":
         if not data.get("baseline_order_id") or not data.get("germline_order_id"):
             return jsonify({"success": False, "error": "Longitudinal requires baseline and germline order selection"}), 400
+        try:
+            _validate_longitudinal_peers(db, {
+                "baseline_order_id": data.get("baseline_order_id"),
+                "germline_order_id": data.get("germline_order_id"),
+                "reference": data.get("reference", "hg38") if data.get("reference") in ("hg38", "hg19") else "hg38",
+            })
+        except RuntimeError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
 
     followup_ids = ",".join(data.get("followup_order_ids", [])) if isinstance(data.get("followup_order_ids"), list) else data.get("followup_order_ids", "")
 
-    db = get_db()
     created_by = session.get("user_id") or ""
     # use_umi: '' (inherit global), 'Y', or 'N'
     use_umi_val = (data.get("use_umi") or "").strip().upper()
@@ -1885,10 +1963,10 @@ def api_update_order(order_id):
         "order_name", "patient_name", "patient_dob", "chart_number",
         "department", "doctor_name", "diagnosis", "doctor_comment",
         "sample_name", "r1_fastq", "r2_fastq", "reference", "profile",
-        "bed_file", "delete_intermediate",
+        "bed_file", "bed_primary_file", "bed_bait_file", "delete_intermediate",
         "order_type", "baseline_order_id", "germline_order_id", "followup_order_ids",
         "reuse_work_order_id",
-        "use_umi",
+        "use_umi", "panel_type",
     ]
     sets = ["updated_at=?"]
     params = [now]
@@ -1903,12 +1981,29 @@ def api_update_order(order_id):
                 val = (val or "").strip().upper()
                 if val not in ("Y", "N", ""):
                     val = ""
+            if col == "panel_type":
+                val = (val or "exome").strip().lower()
+                if val not in ("exome", "rna"):
+                    val = "exome"
             sets.append(f"{col}=?")
             params.append(val)
 
     if "af_threshold" in data:
         sets.append("af_threshold=?")
         params.append(float(data["af_threshold"]))
+
+    merged = dict_from_row(row)
+    for col, val in zip(
+        [s.split("=")[0] for s in sets if s != "updated_at=?"],
+        params[1:],
+    ):
+        if col != "id":
+            merged[col] = val
+    if (merged.get("order_type") or "") == "longitudinal":
+        try:
+            _validate_longitudinal_peers(db, merged)
+        except RuntimeError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
 
     params.append(order_id)
     db.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id=?", params)
@@ -2041,8 +2136,16 @@ def api_rerun_qc(order_id):
     deduped_bam = bam_candidates[0]
     container_bam = _host_to_work_nxt(deduped_bam)
 
-    # Resolve BED overrides (same logic as start_analysis)
     extra_nf = ["--qc_only", "true", "--qc_deduped_bam", container_bam]
+    aligned_candidates = _glob_in_order_results(order, os.path.join("output", "bam", "*_aligned_sorted.bam"))
+    if not aligned_candidates:
+        aligned_candidates = glob.glob(
+            os.path.join(BASE_DIR, "work", order_id, "**", f"{sample}_aligned_sorted.bam"),
+            recursive=True,
+        )
+    if aligned_candidates:
+        extra_nf += ["--qc_aligned_bam", _host_to_work_nxt(aligned_candidates[0])]
+
     if order.get("bed_file"):
         extra_nf += ["--target_bed",    f"/work_nxt_bed/{order['bed_file']}"]
     if order.get("bed_primary_file"):
@@ -2235,15 +2338,14 @@ def api_promote_to_longitudinal(order_id):
             "error": "Baseline/Germline 오더는 변환 대상 오더 자신일 수 없습니다.",
         }), 400
 
-    for ref_id, label in ((baseline_id, "Baseline"), (germline_id, "Germline")):
-        ref = db.execute("SELECT id, status FROM orders WHERE id=?", (ref_id,)).fetchone()
-        if not ref:
-            return jsonify({"success": False, "error": f"{label} 오더를 찾을 수 없습니다: {ref_id}"}), 400
-        if ref["status"] != "completed":
-            return jsonify({
-                "success": False,
-                "error": f"{label} 오더는 분석 완료(completed) 상태여야 합니다.",
-            }), 400
+    try:
+        _validate_longitudinal_peers(db, {
+            "baseline_order_id": baseline_id,
+            "germline_order_id": germline_id,
+            "reference": order.get("reference") or "hg38",
+        })
+    except RuntimeError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
 
     followup_ids_raw = data.get("followup_order_ids", "")
     if isinstance(followup_ids_raw, list):

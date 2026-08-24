@@ -1,7 +1,8 @@
-# Roche_nxt v1.4.0 배포 가이드
+# Roche_nxt v1.4.1 배포 가이드
 
 생성일: 2026-08-09  
-버전: **1.4.0**
+갱신: 2026-08-24  
+버전: **1.4.1** (번들 폴더는 `v1.4.0_full`)
 
 ---
 
@@ -66,7 +67,7 @@ bash $USB/roche_install.sh \
   --source offline
 ```
 
-패치 후 웹에서 `Ver.1.4.0` 확인.  
+패치 후 웹에서 `Ver.1.4.1` 확인.  
 (예전에 `NXF_SYNTAX_PARSER=v1` 을 썼다면 스크립트가 `.env`에서 자동 제거합니다.)
 
 ### EONE (기존, `/home/roche`, hg19 이미 있음)
@@ -108,7 +109,7 @@ ls <DATA_HOST_DIR>/refs/hg19/hg19.fa
 ls <DATA_HOST_DIR>/refs/hg38/ucsc.hg38.fasta
 ```
 
-웹 UI 사이드바: **Ver.1.4.0**
+웹 UI 사이드바: **Ver.1.4.1**
 
 ---
 
@@ -117,7 +118,7 @@ ls <DATA_HOST_DIR>/refs/hg38/ucsc.hg38.fasta
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Xformyx/Roche_panel_analysis/main/deploy/scripts/upgrade_from_github.sh) \
   --install-dir /opt/roche_nxt \
-  --tag v1.4.0
+  --tag v1.4.1
 ```
 
 레퍼런스 data는 USB/별도 전달분이 그대로 필요합니다.

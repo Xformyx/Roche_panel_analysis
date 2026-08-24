@@ -232,6 +232,16 @@ else
     fi
 fi
 
+# 소스 tar는 data/ 를 제외하는 경우가 있어, 바뀐 레퍼런스만 overlay로 복사
+if [[ -d "$PATCH_DIR/data_overlay" ]]; then
+    mkdir -p "$DATA_DIR"
+    cp -a "$PATCH_DIR/data_overlay/." "$DATA_DIR/"
+    ok "data overlay 적용 → $DATA_DIR"
+    if [[ -f "$DATA_DIR/blocklist/panel_blocklist_hg19ucsc.txt" ]]; then
+        ok "hg19 blocklist: $DATA_DIR/blocklist/panel_blocklist_hg19ucsc.txt"
+    fi
+fi
+
 # ── Step 4: Source update ─────────────────────────────────────────────────────
 h "Step 4/7 — 소스 파일 업데이트"
 

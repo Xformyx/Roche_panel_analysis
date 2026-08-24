@@ -24,7 +24,7 @@ process MISMATCH_RATE {
         --read_min_mq 30 \
         --read_max_dp 20000 \
         --blocklist ${blocklist} \
-        --blist_type variant \
+        --blist_type ${params.la_blist_type} \
         --output ${sample_id}_mismatch_rate.csv \
         --reference ${bsgenome_ref}
     """
