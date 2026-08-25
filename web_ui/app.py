@@ -1019,13 +1019,18 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
 
     extra_joined = " ".join(extra_nf_params or [])
     skip_fastq_check = "--precomputed_bam" in extra_joined or "--qc_only" in extra_joined
+    # start_analysis runs inside the web container. Host paths (FASTQ_HOST_DIR,
+    # BED_HOST_DIR) are only for sibling `docker run -v`. Existence checks must
+    # use the container mounts (/fastq_source, /bed_source).
+    fastq_check_root = FASTQ_SOURCE_DIR if os.path.isdir(FASTQ_SOURCE_DIR) else fastq_host_dir
+    bed_check_root = BED_SOURCE_DIR if os.path.isdir(BED_SOURCE_DIR) else bed_host_dir
     if not skip_fastq_check:
         for fq_name, label in ((order.get("r1_fastq"), "R1 FASTQ"), (order.get("r2_fastq"), "R2 FASTQ")):
             if not fq_name:
                 continue
-            fq_path = os.path.join(fastq_host_dir, fq_name)
+            fq_path = os.path.join(fastq_check_root, fq_name)
             if not os.path.isfile(fq_path):
-                raise RuntimeError(f"{label}를 찾을 수 없습니다: {fq_path}")
+                raise RuntimeError(f"{label}를 찾을 수 없습니다: {fq_name}")
 
     if panel_type != "rna":
         for key, label in (
@@ -1036,11 +1041,11 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
             rel = (order.get(key) or "").strip()
             if not rel:
                 continue
-            bed_path = os.path.join(bed_host_dir, rel)
+            bed_path = os.path.join(bed_check_root, rel)
             if not os.path.isfile(bed_path):
                 raise RuntimeError(
-                    f"{label}를 찾을 수 없습니다: {bed_path} "
-                    f"(BED_HOST_DIR={bed_host_dir})"
+                    f"{label}를 찾을 수 없습니다: {rel} "
+                    f"(BED mount={bed_check_root})"
                 )
 
     host_samplesheet_dir = os.path.join(host_root, "log", "samplesheets")

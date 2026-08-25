@@ -35,6 +35,17 @@ def validateParams() {
     }
 }
 
+def resolveBai(bam_file, explicit) {
+    if (explicit) {
+        return file(explicit)
+    }
+    def samtools_bai = file("${bam_file}.bai")
+    def picard_bai   = file("${bam_file.parent}/${bam_file.baseName}.bai")
+    if (samtools_bai.exists()) return samtools_bai
+    if (picard_bai.exists())   return picard_bai
+    return samtools_bai
+}
+
 // ── Main workflow ────────────────────────────────────────────
 workflow {
 
@@ -117,23 +128,12 @@ workflow {
             .map { row -> row.sample_id ?: row.order_id ?: "sample" }
             .first()
 
-        def resolve_bai = { bam_file, explicit ->
-            if (explicit) {
-                return file(explicit)
-            }
-            def samtools_bai = file("${bam_file}.bai")
-            def picard_bai   = file("${bam_file.parent}/${bam_file.baseName}.bai")
-            if (samtools_bai.exists()) return samtools_bai
-            if (picard_bai.exists())   return picard_bai
-            return samtools_bai
-        }
-
         def deduped_bam_path = file(params.qc_deduped_bam)
-        def deduped_bai_path = resolve_bai(deduped_bam_path, params.qc_deduped_bai)
+        def deduped_bai_path = resolveBai(deduped_bam_path, params.qc_deduped_bai)
 
         // Prefer a real first-pass aligned BAM; fall back to the deduped BAM.
         def aligned_bam_path = params.qc_aligned_bam ? file(params.qc_aligned_bam) : deduped_bam_path
-        def aligned_bai_path = resolve_bai(aligned_bam_path, params.qc_aligned_bai)
+        def aligned_bai_path = resolveBai(aligned_bam_path, params.qc_aligned_bai)
 
         aligned_bam_ch_qc = sample_id_ch.map { sid ->
             tuple(sid, aligned_bam_path, aligned_bai_path)
