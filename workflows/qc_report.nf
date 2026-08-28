@@ -15,6 +15,7 @@
 include { COLLECT_ALIGNMENT_METRICS                       } from '../modules/qc_metrics'
 include { MARK_DUPLICATES                                 } from '../modules/qc_metrics'
 include { COLLECT_INSERT_SIZE                              } from '../modules/qc_metrics'
+include { REFERENCE_BUILD_INFO                            } from '../modules/qc_metrics'
 include { COUNT_READS as COUNT_READS_CAPTURE              } from '../modules/qc_metrics'
 include { COUNT_READS as COUNT_READS_PRIMARY              } from '../modules/qc_metrics'
 include { BED_TO_INTERVAL_LIST as BED_TO_ILIST_PRIMARY    } from '../modules/hs_metrics'
@@ -36,6 +37,7 @@ workflow QC_REPORT {
     bait_ilist        // path? — HsMetrics BAIT interval_list (null → convert capture_bed)
     blocklist         // path
     bsgenome_ref      // val
+    reference_label   // val   — params.reference ('hg38', 'hg19', …)
 
     main:
 
@@ -86,6 +88,9 @@ workflow QC_REPORT {
     sample_ids_ch = aligned_bam_ch.map { sid, bam, bai -> sid }
     BED_TO_ILIST_PRIMARY(sample_ids_ch, primary_bed, genome_dict, "primary_target")
 
+    // 5b. Record which reference build actually produced these results
+    REFERENCE_BUILD_INFO(sample_ids_ch, genome_fai, reference_label, genome_fasta.name)
+
     target_ilist_ch = BED_TO_ILIST_PRIMARY.out.interval_list
         .map { sid, name, ilist -> tuple(sid, ilist) }
 
@@ -131,4 +136,5 @@ workflow QC_REPORT {
     hs_metrics_aln           = HS_METRICS_ALIGNED.out.hs_metrics
     hs_metrics_ded           = HS_METRICS_DEDUPED.out.hs_metrics
     mismatch                 = MISMATCH_RATE.out.mismatch
+    reference_build          = REFERENCE_BUILD_INFO.out.info
 }

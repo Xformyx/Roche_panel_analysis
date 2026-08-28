@@ -426,6 +426,33 @@ if [[ -n "$_OVERLAY" ]]; then
     ok "data overlay 적용 → $DATA_DIR"
 fi
 
+# hg38 은 primary-only 빌드(refs/hg38_primary)를 사용한다. 레퍼런스 tar 에는
+# refs/hg38 만 들어 있으므로, 없으면 여기서 만들어 둔다. 이게 없으면 hg38
+# 분석이 아예 시작되지 않는다.
+_HG38P="$DATA_DIR/refs/hg38_primary/ucsc.hg38.primary.fasta"
+_HG38P_SCRIPT=""
+for c in "$PATCH_DIR/install_hg38_primary.sh" \
+         "$(dirname "$PATCH_DIR")/install_hg38_primary.sh" \
+         "$SCRIPT_DIR/install_hg38_primary.sh"; do
+    [[ -f "$c" ]] && { _HG38P_SCRIPT="$c"; break; }
+done
+
+if [[ -s "$_HG38P.bwt" && -s "$_HG38P.sa" ]]; then
+    ok "hg38_primary 레퍼런스 이미 설치됨"
+elif [[ ! -d "$DATA_DIR/refs/hg38" ]]; then
+    warn "refs/hg38 이 없어 hg38_primary 를 준비하지 못했습니다. hg38 분석 전에 설치하세요."
+elif [[ -z "$_HG38P_SCRIPT" ]]; then
+    warn "install_hg38_primary.sh 를 찾지 못했습니다. hg38 분석 전에 수동으로 실행하세요."
+else
+    info "hg38_primary 레퍼런스 준비 중 (USB 페이로드가 있으면 복사, 없으면 생성 — 최대 70분)"
+    if HG38_PRIMARY_EMBEDDED=1 bash "$_HG38P_SCRIPT" --data-dir "$DATA_DIR"; then
+        ok "hg38_primary 레퍼런스 준비 완료"
+    else
+        warn "hg38_primary 준비에 실패했습니다. 설치는 계속되지만 hg38 분석은 동작하지 않습니다."
+        warn "  bash $_HG38P_SCRIPT --data-dir $DATA_DIR"
+    fi
+fi
+
 # ── Step 8: .env 파일 설정 ─────────────────────────────────────────────────────
 step ".env 환경 설정"
 

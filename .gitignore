@@ -32,6 +32,7 @@ deploy/*
 !deploy/scripts/
 deploy/scripts/*
 !deploy/scripts/*.sh
+!deploy/scripts/*.py
 deploy/usb/
 deploy/docker_offline/
 deploy/licenses/

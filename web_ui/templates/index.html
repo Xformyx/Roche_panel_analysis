@@ -1831,6 +1831,7 @@ tbody tr:hover{background:#F8FAFC}
               <option value="hg38">hg38 (GRCh38)</option>
               <option value="hg19">hg19 (GRCh37)</option>
             </select>
+            <div id="ord-reference-build" style="display:none;font-size:.72rem;color:var(--text-muted);margin-top:4px;line-height:1.4"></div>
           </div>
           <div class="form-group">
             <label>AF Threshold</label>
@@ -5358,6 +5359,20 @@ function openCreateModal() {
   loadDefaultSettings();
 }
 
+// 'hg38' named the full alt-bearing build before 2026-08-26 and the primary-only
+// build after, so show which one actually produced this order's results.
+function showOrderReferenceBuildInfo(o) {
+  var el = document.getElementById('ord-reference-build');
+  if (!el) return;
+  var build = o && o.reference_build;
+  if (!build) { el.style.display = 'none'; el.textContent = ''; return; }
+  var isLegacy = build.indexOf('ucsc.hg38.fasta:') === 0;
+  el.textContent = '분석에 사용된 빌드: ' + (o.reference_build_label || build)
+    + (isLegacy ? ' — 현재 기본 빌드와 다릅니다. Longitudinal 비교에는 재분석이 필요합니다.' : '');
+  el.style.color = isLegacy ? '#DC2626' : 'var(--text-muted)';
+  el.style.display = '';
+}
+
 function openEditModal(orderId) {
   editingOrderId = orderId;
   editingOrderLongitudinal = false;
@@ -5387,6 +5402,7 @@ function openEditModal(orderId) {
     document.getElementById('ord-doctor_comment').value = o.doctor_comment || '';
     document.getElementById('ord-sample_name').value = o.sample_name || '';
     document.getElementById('ord-reference').value = o.reference || 'hg38';
+    showOrderReferenceBuildInfo(o);
     document.getElementById('ord-af_threshold').value = o.af_threshold || 0.005;
     document.getElementById('ord-bed_file').value = o.bed_file || '';
     document.getElementById('ord-bed_primary_file').value = o.bed_primary_file || '';
@@ -5464,6 +5480,7 @@ function resetOrderForm() {
   document.getElementById('ord-bed_primary_file').value = '';
   document.getElementById('ord-bed_bait_file').value = '';
   document.getElementById('ord-reference').value = 'hg38';
+  showOrderReferenceBuildInfo(null);
   document.getElementById('ord-delete_intermediate').checked = true;
   var useUmiSel = document.getElementById('ord-use_umi');
   if (useUmiSel) useUmiSel.value = '';

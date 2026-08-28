@@ -71,6 +71,38 @@ process COLLECT_INSERT_SIZE {
     """
 }
 
+process REFERENCE_BUILD_INFO {
+    tag "$sample_id"
+    label 'process_low'
+    publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
+
+    input:
+    val   sample_id
+    path  genome_fai
+    val   reference_label
+    val   fasta_name
+
+    output:
+    tuple val(sample_id), path("${sample_id}_reference_build.txt"), emit: info
+
+    // The 'reference' label alone cannot identify the build: 'hg38' meant the
+    // full 3,366-contig FASTA before 2026-08-26 and the 2,580-contig
+    // primary-only FASTA after. Record the resolved identity so results stay
+    // attributable and Longitudinal can refuse to mix builds.
+    script:
+    """
+    contigs=\$(wc -l < ${genome_fai})
+    alt=\$(cut -f1 ${genome_fai} | grep -cE '_alt\$|^HLA-' || true)
+    {
+        printf 'reference_label\\t%s\\n' '${reference_label}'
+        printf 'fasta\\t%s\\n'           '${fasta_name}'
+        printf 'contigs\\t%s\\n'         "\$contigs"
+        printf 'alt_contigs\\t%s\\n'     "\$alt"
+        printf 'build_tag\\t%s:%s\\n'    '${fasta_name}' "\$contigs"
+    } > ${sample_id}_reference_build.txt
+    """
+}
+
 process COUNT_READS {
     tag "${sample_id} - ${bam_label} [${bed_region}]"
     label 'process_medium'

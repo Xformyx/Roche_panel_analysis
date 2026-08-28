@@ -165,7 +165,8 @@ workflow {
             primary_bed,
             bait_ilist,
             blocklist,
-            bsgenome_ref
+            bsgenome_ref,
+            params.reference
         )
 
         return
@@ -330,7 +331,8 @@ workflow {
             primary_bed,   // primary BED → CountReads on-target
             bait_ilist,    // bait interval_list → HsMetrics BAIT (null = use capture BED)
             blocklist,
-            bsgenome_ref
+            bsgenome_ref,
+            params.reference
         )
 
         // ── 4b. UMI QC (family-size / clip / UMI duplication) ────

@@ -102,6 +102,144 @@ def _host_to_work_nxt(host_path):
     return "/work_nxt/" + os.path.relpath(host_path, BASE_DIR).replace("\\", "/")
 
 
+# 'hg38' is not a stable identifier: before 2026-08-26 it resolved to the full
+# 3,366-contig UCSC build, after it resolves to the 2,580-contig primary-only
+# build. Results from the two are not interchangeable, so orders carry the
+# resolved build ('<fasta>:<contig count>') alongside the label.
+_REF_FASTA_RE = re.compile(r"(ucsc\.hg38\.primary\.fasta|ucsc\.hg38\.fasta|hg19\.fa)\b")
+
+# Contig counts of the builds we ship, used to name a build found in an old
+# Nextflow report that predates REFERENCE_BUILD_INFO.
+_KNOWN_BUILD_CONTIGS = {
+    "ucsc.hg38.primary.fasta": 2580,
+    "ucsc.hg38.fasta": 3366,
+    "hg19.fa": 93,
+}
+
+
+def _parse_reference_build_file(path):
+    """Read build_tag from a QC_report/<sample>_reference_build.txt."""
+    try:
+        with open(path, errors="replace") as fh:
+            for line in fh:
+                key, _, val = line.rstrip("\n").partition("\t")
+                if key == "build_tag" and val.strip():
+                    return val.strip()
+    except OSError:
+        pass
+    return ""
+
+
+def _reference_build_from_report(results_root):
+    """Recover the build from pipeline_info/report.html for pre-tag orders.
+
+    Nextflow embeds the resolved params in its HTML report, so the genome FASTA
+    path is recorded even for runs made before REFERENCE_BUILD_INFO existed.
+    """
+    if not results_root:
+        return ""
+    # results_root is <...>/<order_id>/<sample>; pipeline_info sits beside it
+    for candidate in (
+        os.path.join(os.path.dirname(results_root), "pipeline_info", "report.html"),
+        os.path.join(results_root, "pipeline_info", "report.html"),
+    ):
+        if not os.path.isfile(candidate):
+            continue
+        try:
+            with open(candidate, errors="replace") as fh:
+                found = _REF_FASTA_RE.search(fh.read())
+        except OSError:
+            continue
+        if found:
+            name = found.group(1)
+            contigs = _KNOWN_BUILD_CONTIGS.get(name)
+            return f"{name}:{contigs}" if contigs else name
+    return ""
+
+
+def _configured_genome_fasta(label):
+    """FASTA that nextflow.config currently maps a reference label to.
+
+    Parsed from the config rather than duplicated here so the guard can never
+    disagree with what the pipeline will actually align against.
+    """
+    if not label:
+        return ""
+    try:
+        with open(os.path.join(BASE_DIR, "nextflow.config"), errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return ""
+    block = re.search(r"'%s'\s*\{(.*?)\n\s*\}" % re.escape(label), text, re.S)
+    if not block:
+        return ""
+    found = re.search(r'fasta\s*=\s*"([^"]+)"', block.group(1))
+    if not found:
+        return ""
+    return found.group(1).replace("${params.data_dir}", DATA_DIR)
+
+
+def _current_reference_build(label):
+    """Build the current config would produce for a label, or '' if unknown."""
+    fasta = _configured_genome_fasta(label)
+    if not fasta:
+        return ""
+    try:
+        with open(fasta + ".fai") as fh:
+            contigs = sum(1 for _ in fh)
+    except OSError:
+        return ""
+    return f"{os.path.basename(fasta)}:{contigs}"
+
+
+def _order_reference_build(order, db=None):
+    """Resolved reference build for an order, or '' when it cannot be determined.
+
+    Reads the stored column first, then the pipeline's reference_build.txt, then
+    the Nextflow report. Whatever is discovered is cached back onto the order so
+    the lookup happens once per order rather than on every request.
+    """
+    if not order:
+        return ""
+    stored = (order.get("reference_build") or "").strip()
+    if stored:
+        return stored
+
+    results_root = _order_results_root(order)
+    build = ""
+    if results_root:
+        sample = (order.get("sample_name") or "").strip()
+        build = _parse_reference_build_file(
+            os.path.join(results_root, "QC_report", f"{sample}_reference_build.txt")
+        ) or _reference_build_from_report(results_root)
+
+    if build:
+        order["reference_build"] = build
+        try:
+            conn = db or get_db()
+            conn.execute(
+                "UPDATE orders SET reference_build=? WHERE id=?",
+                (build, order.get("id")),
+            )
+            conn.commit()
+        except Exception:
+            app.logger.warning("reference_build 캐시 실패: %s", order.get("id"))
+    return build
+
+
+def _reference_build_label(build):
+    """Human-readable build description, e.g. 'primary-only, 2,580 contigs'."""
+    if not build:
+        return "미확인"
+    name, _, contigs = build.partition(":")
+    kind = {
+        "ucsc.hg38.primary.fasta": "primary-only",
+        "ucsc.hg38.fasta": "full (alt 포함)",
+        "hg19.fa": "hg19",
+    }.get(name, name)
+    return f"{kind}, {int(contigs):,} contigs" if contigs.isdigit() else kind
+
+
 def _validate_longitudinal_peers(db, order):
     """Require completed Baseline/Germline orders on the same reference.
 
@@ -115,6 +253,10 @@ def _validate_longitudinal_peers(db, order):
         raise RuntimeError("Longitudinal 오더는 Baseline과 Germline 오더가 필요합니다.")
 
     followup_ref = order.get("reference") or "hg38"
+    # The Followup has not run yet, so its build is whatever the current config
+    # resolves to for this label — compare peers against that, not against a
+    # stale stored value.
+    followup_build = _current_reference_build(followup_ref)
     peers = []
     for ref_id, label in ((baseline_id, "Baseline"), (germline_id, "Germline")):
         row = db.execute("SELECT * FROM orders WHERE id=?", (ref_id,)).fetchone()
@@ -128,6 +270,17 @@ def _validate_longitudinal_peers(db, order):
             raise RuntimeError(
                 f"{label} 오더의 reference({peer_ref})가 Followup({followup_ref})과 다릅니다. "
                 "같은 레퍼런스로 분석된 오더만 Longitudinal에 사용할 수 있습니다."
+            )
+        # Matching labels are not enough: 'hg38' named the full alt-bearing build
+        # before 2026-08-26 and the primary-only build after, and the two differ
+        # sharply in coverage around chr14 IGH.
+        peer_build = _order_reference_build(peer, db)
+        if followup_build and peer_build and peer_build != followup_build:
+            raise RuntimeError(
+                f"{label} 오더는 {_reference_build_label(peer_build)} 레퍼런스로 분석되었고, "
+                f"Followup은 {_reference_build_label(followup_build)}로 분석됩니다. "
+                f"같은 '{peer_ref}' 라벨이지만 서로 다른 빌드라 시점 간 비교가 왜곡됩니다. "
+                f"{label} 오더를 현재 레퍼런스로 재분석한 뒤 사용하세요."
             )
         peers.append(peer)
     return peers[0], peers[1]
@@ -462,6 +615,9 @@ def init_db():
         ("container_name",   "TEXT DEFAULT ''"),
         ("bed_primary_file", "TEXT DEFAULT ''"),
         ("bed_bait_file",    "TEXT DEFAULT ''"),
+        # Resolved reference build, e.g. 'ucsc.hg38.primary.fasta:2580'. The
+        # 'reference' label is ambiguous across versions — see _order_reference_build.
+        ("reference_build",  "TEXT DEFAULT ''"),
     ]:
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col} {coldef}")
@@ -1931,7 +2087,11 @@ def api_get_order(order_id):
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
         return jsonify({"error": "Not found"}), 404
-    return jsonify(dict_from_row(row))
+    order = dict_from_row(row)
+    build = _order_reference_build(order, db)
+    order["reference_build"] = build
+    order["reference_build_label"] = _reference_build_label(build)
+    return jsonify(order)
 
 
 @app.route("/api/orders/<order_id>", methods=["PUT"])
@@ -3219,10 +3379,15 @@ def api_qc_report_txt(order_id):
     def row_kv(k, v):
         lines.append(f"  {k:<40} {v}")
 
+    _build = _order_reference_build(order, db)
     lines.append("Roche_nxt QC Summary Report")
     lines.append(f"Sample  : {d.get('sample_name','')}")
     lines.append(f"Order   : {d.get('order_name','')}")
     lines.append(f"Order ID: {order_id}")
+    lines.append(
+        f"Reference: {order.get('reference') or 'hg38'}"
+        f" ({_reference_build_label(_build)})"
+    )
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # QC Key Metrics Summary
@@ -3721,8 +3886,10 @@ def _guess_mimetype(path):
     return "application/octet-stream"
 
 
+# hg38 points at the primary-only build so IGV's contig list matches the BAM
+# headers produced by genomes.hg38 in nextflow.config.
 _GENOME_FASTA = {
-    "hg38": os.path.join(DATA_DIR, "refs/hg38/ucsc.hg38.fasta"),
+    "hg38": os.path.join(DATA_DIR, "refs/hg38_primary/ucsc.hg38.primary.fasta"),
     "hg19": os.path.join(DATA_DIR, "refs/hg19/hg19.fa"),
 }
 
