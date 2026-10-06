@@ -26,7 +26,7 @@ process COLLECT_HS_METRICS {
     publishDir { "${params.outdir}/${sample_id}/QC_report" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(sample_id), val(bam_label), path(input_bam), path(bait_interval_list), path(target_interval_list)
+    tuple val(sample_id), val(bam_label), path(input_bam), path(bait_interval_list, stageAs: 'bait.interval_list'), path(target_interval_list, stageAs: 'target.interval_list')
     path  genome_fasta
     path  genome_dict
     path  genome_fai
