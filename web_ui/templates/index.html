@@ -1856,7 +1856,7 @@ tbody tr:hover{background:#F8FAFC}
           </div>
           <!-- Primary BED -->
           <div class="form-group full">
-            <label>Primary BED <span style="font-size:.68rem;color:var(--text-muted);font-weight:400">— On-Target reads 계산 · HsMetrics TARGET</span></label>
+            <label>Primary BED <span style="font-size:.68rem;color:var(--text-muted);font-weight:400">— On-Target reads 계산</span></label>
             <div style="display:flex;gap:8px;align-items:center">
               <input type="text" id="ord-bed_primary_file" placeholder="선택 안함 (기본: primary_targets.bed)" readonly style="flex:1">
               <button class="btn btn-outline btn-sm" type="button" onclick="openBedBrowser('primary')">찾기</button>
@@ -1865,7 +1865,7 @@ tbody tr:hover{background:#F8FAFC}
           </div>
           <!-- Bait Interval List -->
           <div class="form-group full">
-            <label>Bait Interval List <span style="font-size:.68rem;color:var(--text-muted);font-weight:400">— HsMetrics BAIT_INTERVALS (.interval_list)</span></label>
+            <label>Bait Interval List <span style="font-size:.68rem;color:var(--text-muted);font-weight:400">— HsMetrics BAIT · TARGET (.interval_list)</span></label>
             <div style="display:flex;gap:8px;align-items:center">
               <input type="text" id="ord-bed_bait_file" placeholder="선택 안함 (기본: capture_targets_bait.interval_list)" readonly style="flex:1">
               <button class="btn btn-outline btn-sm" type="button" onclick="openBedBrowser('bait')">찾기</button>
@@ -4089,12 +4089,12 @@ function renderQCSummary(d) {
     + '<div class="kpi-value">' + (onTargetPrimaryPct != null ? (onTargetPrimaryPct * 100).toFixed(2) + '%' : '—') + '</div>'
     + '<div class="kpi-sub">분석 타겟 커버 (primary BED 기준)</div></div>';
 
-  // On-Target Rate — Bases from HsMetrics (PCT_USABLE_BASES_ON_TARGET, primary target)
+  // On-Target Rate — Bases from HsMetrics (PCT_USABLE_BASES_ON_TARGET, capture target)
   var onTargetBasesPct = parseFloat(hs.pct_usable_bases_on_target);
   html += '<div class="qc-kpi ' + kpiClass(onTargetBasesPct, 0.30, 0.15, true) + '">'
     + '<div class="kpi-label">On-Target Rate (Bases)</div>'
     + '<div class="kpi-value">' + fmtPct(hs.pct_usable_bases_on_target) + '</div>'
-    + '<div class="kpi-sub">PCT_USABLE_BASES_ON_TARGET (primary BED 기준 염기)</div></div>';
+    + '<div class="kpi-sub">PCT_USABLE_BASES_ON_TARGET (capture BED 기준 염기)</div></div>';
 
   var q30 = parseFloat(fastp.after_q30_rate);
   html += '<div class="qc-kpi ' + kpiClass(q30, 0.90, 0.80, true) + '">'

@@ -1392,10 +1392,10 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
         # Capture BED (VarDict variant calling)
         if order.get("bed_file"):
             nf_cmd.extend(["--target_bed", f"/work_nxt_bed/{order['bed_file']}"])
-        # Primary BED (on-target reads + HsMetrics TARGET)
+        # Primary BED (on-target reads)
         if order.get("bed_primary_file"):
             nf_cmd.extend(["--primary_bed", f"/work_nxt_bed/{order['bed_primary_file']}"])
-        # Bait interval list (HsMetrics BAIT_INTERVALS)
+        # Bait interval list (HsMetrics BAIT and TARGET)
         if order.get("bed_bait_file"):
             nf_cmd.extend(["--bait_intervals", f"/work_nxt_bed/{order['bed_bait_file']}"])
 

@@ -89,8 +89,8 @@ workflow {
     def genome_dict   = file(resolved_dict)
     def genome_fai    = file("${resolved_fasta}.fai")
     def target_bed    = file(resolved_bed)           // capture BED (VarDict)
-    def primary_bed   = file(resolved_primary)       // primary BED (CountReads + HsMetrics TARGET)
-    def bait_ilist    = resolved_bait ? file(resolved_bait) : null  // HsMetrics BAIT (interval_list)
+    def primary_bed   = file(resolved_primary)       // primary BED (CountReads on-target)
+    def bait_ilist    = resolved_bait ? file(resolved_bait) : null  // HsMetrics BAIT and TARGET
     def dbsnp_vcf     = file(resolved_dbsnp)
     def blocklist     = file(genome.blocklist)
     def snpeff_db     = genome.snpeff_db
@@ -329,7 +329,7 @@ workflow {
             genome_fai,
             target_bed,    // capture BED → VarDict / mismatch rate
             primary_bed,   // primary BED → CountReads on-target
-            bait_ilist,    // bait interval_list → HsMetrics BAIT (null = use capture BED)
+            bait_ilist,    // capture interval_list → HsMetrics BAIT and TARGET (null = convert capture BED)
             blocklist,
             bsgenome_ref,
             params.reference

@@ -133,7 +133,7 @@ SNUH는 자체 패널 타겟 BED(`coords.cons.bed`)를 사용합니다.
 | 필드 | 선택 파일 | 역할 |
 |------|-----------|------|
 | **Capture BED** | `coords.cons.bed` | 변이 검출(VarDict) 범위 + On-Target %(Capture) 계산 |
-| **Primary BED** | `coords.cons.bed` | On-Target %(Primary) + HsMetrics TARGET 커버리지 |
+| **Primary BED** | `coords.cons.bed` | On-Target %(Primary) |
 | **Bait Interval List** | 비워둠 (권장) | 자동으로 Capture BED로 대체됨 |
 
 > **비워두면 되는 이유**: Bait Interval List를 지정하지 않으면 파이프라인이 Capture BED를  

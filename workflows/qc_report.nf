@@ -7,9 +7,9 @@
  * BED usage:
  *   capture_bed  → VarDict (upstream) + MISMATCH_RATE
  *   primary_bed  → COUNT_READS (on-target reads, strict target region)
- *                  HsMetrics TARGET_INTERVALS
- *   bait_ilist   → HsMetrics BAIT_INTERVALS
- *                  (pre-built interval_list; if null, capture_bed is converted on-the-fly)
+ *   bait_ilist   → HsMetrics BAIT_INTERVALS and TARGET_INTERVALS
+ *                  (pre-built capture interval_list; if null, capture_bed is converted on-the-fly)
+ *                  White paper uses the same capture interval list for both.
  */
 
 include { COLLECT_ALIGNMENT_METRICS                       } from '../modules/qc_metrics'
@@ -18,7 +18,6 @@ include { COLLECT_INSERT_SIZE                              } from '../modules/qc
 include { REFERENCE_BUILD_INFO                            } from '../modules/qc_metrics'
 include { COUNT_READS as COUNT_READS_CAPTURE              } from '../modules/qc_metrics'
 include { COUNT_READS as COUNT_READS_PRIMARY              } from '../modules/qc_metrics'
-include { BED_TO_INTERVAL_LIST as BED_TO_ILIST_PRIMARY    } from '../modules/hs_metrics'
 include { BED_TO_INTERVAL_LIST as BED_TO_ILIST_CAPTURE    } from '../modules/hs_metrics'
 include { COLLECT_HS_METRICS as HS_METRICS_ALIGNED        } from '../modules/hs_metrics'
 include { COLLECT_HS_METRICS as HS_METRICS_DEDUPED        } from '../modules/hs_metrics'
@@ -33,8 +32,8 @@ workflow QC_REPORT {
     genome_dict       // path
     genome_fai        // path
     capture_bed       // path  — VarDict BED / mismatch rate
-    primary_bed       // path  — on-target reads + HsMetrics TARGET
-    bait_ilist        // path? — HsMetrics BAIT interval_list (null → convert capture_bed)
+    primary_bed       // path  — on-target reads (CountReads)
+    bait_ilist        // path? — HsMetrics BAIT and TARGET (null → convert capture_bed)
     blocklist         // path
     bsgenome_ref      // val
     reference_label   // val   — params.reference ('hg38', 'hg19', …)
@@ -84,43 +83,32 @@ workflow QC_REPORT {
         'primary'
     )
 
-    // 5. Convert primary BED → TARGET interval_list
+    // 5. Record which reference build actually produced these results
     sample_ids_ch = aligned_bam_ch.map { sid, bam, bai -> sid }
-    BED_TO_ILIST_PRIMARY(sample_ids_ch, primary_bed, genome_dict, "primary_target")
-
-    // 5b. Record which reference build actually produced these results
     REFERENCE_BUILD_INFO(sample_ids_ch, genome_fai, reference_label, genome_fasta.name)
 
-    target_ilist_ch = BED_TO_ILIST_PRIMARY.out.interval_list
-        .map { sid, name, ilist -> tuple(sid, ilist) }
-
-    // 6. Resolve BAIT interval_list
-    //    If a pre-built bait_ilist was supplied, use it directly.
-    //    Otherwise convert capture_bed on-the-fly (BED → interval_list).
+    // 6. HsMetrics BAIT and TARGET are the same capture interval list.
+    //    A pre-built bait list is the capture targets in interval_list form.
+    //    If it is absent, convert capture_bed on the fly and use that for both.
     if (bait_ilist) {
-        // Pre-built bait interval list (e.g. KAPA_HyperCap_DS_NHL_Panel_capture_targets_bait.interval_list)
-        bait_ilist_ch = sample_ids_ch.map { sid -> tuple(sid, bait_ilist) }
+        hs_ilist_ch = sample_ids_ch.map { sid -> tuple(sid, bait_ilist) }
     } else {
-        // No pre-built bait list — convert capture BED on-the-fly
         BED_TO_ILIST_CAPTURE(sample_ids_ch, capture_bed, genome_dict, "capture_bait")
-        bait_ilist_ch = BED_TO_ILIST_CAPTURE.out.interval_list
+        hs_ilist_ch = BED_TO_ILIST_CAPTURE.out.interval_list
             .map { sid, name, ilist -> tuple(sid, ilist) }
     }
 
-    // 7. HsMetrics — aligned BAM
-    //    BAIT = capture/bait interval_list, TARGET = primary interval_list
+    // 7. HsMetrics — aligned BAM. The same interval list is passed as BAIT and TARGET.
     hs_aligned_input = aligned_bam_ch
-        .join(bait_ilist_ch)
-        .join(target_ilist_ch)
-        .map { sid, bam, bai, bait_il, target_il -> tuple(sid, 'aligned', bam, bait_il, target_il) }
+        .join(hs_ilist_ch)
+        .map { sid, bam, bai, ilist -> tuple(sid, 'aligned', bam, ilist, ilist) }
 
     HS_METRICS_ALIGNED(hs_aligned_input, genome_fasta, genome_dict, genome_fai)
 
     // 8. HsMetrics — UMI deduped BAM
     hs_deduped_input = deduped_bam_ch
-        .join(bait_ilist_ch)
-        .join(target_ilist_ch)
-        .map { sid, bam, bait_il, target_il -> tuple(sid, 'umi_deduped', bam, bait_il, target_il) }
+        .join(hs_ilist_ch)
+        .map { sid, bam, ilist -> tuple(sid, 'umi_deduped', bam, ilist, ilist) }
 
     HS_METRICS_DEDUPED(hs_deduped_input, genome_fasta, genome_dict, genome_fai)
 
