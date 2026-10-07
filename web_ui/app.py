@@ -1132,6 +1132,43 @@ def purge_order_disk_assets(order):
             pass
 
 
+def _ensure_offline_nextflow(host_root):
+    """Expose the Nextflow jar already baked into the analysis image.
+
+    Each run uses a fresh NXF_HOME, so the launcher would otherwise download
+    nextflow-*-one.jar from www.nextflow.io. Hospitals have no outbound network.
+    """
+    nxf_ver = "26.04.2"
+    jar_name = f"nextflow-{nxf_ver}-one.jar"
+    rel = f".nextflow-offline/framework/{nxf_ver}/{jar_name}"
+    dest = os.path.join(BASE_DIR, rel)
+    if os.path.isfile(dest) and os.path.getsize(dest) > 1_000_000:
+        return f"/work_nxt/{rel}"
+
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    script = (
+        "set -euo pipefail; "
+        f"src=$(find /root/.nextflow /opt/nextflow -name '{jar_name}' 2>/dev/null | head -1 || true); "
+        'test -n "$src"; '
+        f"mkdir -p /work_nxt/.nextflow-offline/framework/{nxf_ver}; "
+        'cp -a "$src" /work_nxt/.nextflow-offline/framework/' + nxf_ver + '/; '
+        "chmod -R a+rX /work_nxt/.nextflow-offline"
+    )
+    result = subprocess.run(
+        ["docker", "run", "--rm", "--user", "0:0",
+         "-v", f"{host_root}:/work_nxt",
+         ANALYSIS_IMAGE, "bash", "-lc", script],
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0 or not os.path.isfile(dest):
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(
+            "오프라인 Nextflow jar를 분석 이미지에서 꺼내지 못했습니다. "
+            f"{detail}"
+        )
+    return f"/work_nxt/{rel}"
+
+
 def start_analysis(order, force=False, resume=True, started_by_user_id=None, extra_nf_params=None):
     """Start a Nextflow analysis via docker run roche_nxt_analysis."""
     db = get_db()
@@ -1248,6 +1285,7 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
 
     os.makedirs(os.path.join(BASE_DIR, work_dir_rel), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, nxf_home_rel), exist_ok=True)
+    nxf_bin = _ensure_offline_nextflow(host_root)
     order_outdir_host = _order_scoped_results_root(order_id, sample)
     if order_outdir_host:
         os.makedirs(order_outdir_host, exist_ok=True)
@@ -1446,6 +1484,9 @@ def start_analysis(order, force=False, resume=True, started_by_user_id=None, ext
         "-e", f"HOME=/work_nxt/{nxf_home_rel}",
         "-e", f"NXF_HOME=/work_nxt/{nxf_home_rel}",
         "-e", "NXF_ANSI_LOG=false",
+        "-e", "NXF_OFFLINE=true",
+        "-e", "NXF_DISABLE_CHECK_LATEST=true",
+        "-e", f"NXF_BIN={nxf_bin}",
         "-w", f"/work_nxt/{nxf_home_rel}",
         "-v", f"{host_root}:/work_nxt",
         "-v", f"{fastq_host_dir}:/work_nxt_fastq_source:ro",

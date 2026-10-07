@@ -249,10 +249,15 @@ RUN mkdir -p /opt/java && cd /opt/java && \
 ENV NXF_JAVA_HOME=/opt/java/jdk-17.0.13+11-jre
 
 ENV NXF_VER=26.04.2
-RUN curl -s https://get.nextflow.io | bash && \
+ENV NXF_HOME=/opt/nextflow
+ENV NXF_OFFLINE=true
+ENV NXF_DISABLE_CHECK_LATEST=true
+RUN mkdir -p /opt/nextflow && \
+    curl -s https://get.nextflow.io | bash && \
     mv nextflow /usr/local/bin/ && \
     chmod +x /usr/local/bin/nextflow && \
-    nextflow -version
+    nextflow -version && \
+    chmod -R a+rX /opt/nextflow
 
 # 8) Environment variables for tool paths (used by Nextflow modules)
 ENV FGBIO_JAR=/tools/fgbio/fgbio-2.2.1.jar

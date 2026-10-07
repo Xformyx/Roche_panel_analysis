@@ -381,7 +381,9 @@ else
     _extract_data_tar() {
         local tar_file="$1"
         local top
-        top=$(tar -tf "$tar_file" 2>/dev/null | head -1 | cut -d/ -f1)
+        # head 가 1줄만 읽고 끊으면 tar 가 SIGPIPE 로 비정상 종료한다.
+        # pipefail 이 켜져 있으면 여기서 스크립트가 메시지 없이 끝난다.
+        top=$(tar -tf "$tar_file" 2>/dev/null | head -1 | cut -d/ -f1 || true)
         local strip=0
         case "$top" in
             refs|dbsnp|snpeff|bed|blocklist|liftover) strip=0 ;;
